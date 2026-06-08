@@ -16,9 +16,9 @@ const fieldClass =
 
 export default function MyPage() {
   const [accs, setAccs] = usePersistentList(accountStore);
-  const [fridge] = usePersistentList(fridgeStore);
-  const [shopping] = usePersistentList(shoppingStore);
-  const [meals] = usePersistentList(mealStore);
+  const [fridge, setFridge] = usePersistentList(fridgeStore);
+  const [shopping, setShopping] = usePersistentList(shoppingStore);
+  const [meals, setMeals] = usePersistentList(mealStore);
 
   const account = accs[0] ?? null;
 
@@ -69,10 +69,9 @@ export default function MyPage() {
   function resetAll() {
     if (typeof window === "undefined") return;
     if (!window.confirm("冷蔵庫・買い物・献立履歴をすべて削除します。よろしいですか？")) return;
-    fridgeStore.save([]);
-    shoppingStore.save([]);
-    mealStore.save([]);
-    window.location.reload();
+    setFridge([]);
+    setShopping([]);
+    setMeals([]);
   }
 
   // 未ログイン：登録 / ログイン
