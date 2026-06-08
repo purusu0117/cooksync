@@ -30,11 +30,12 @@ export default function RecipeDetail({ id }: Props) {
   const recipes = useAllRecipes();
   const [stored, setStored] = usePersistentList(recipeStore);
   const [shopping, setShopping] = usePersistentList(shoppingStore);
-  const [, setMeals] = usePersistentList(mealStore);
+  const [meals, setMeals] = usePersistentList(mealStore);
   const [fridge] = usePersistentList(fridgeStore);
   const [note, setNote] = useState("");
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
+  const madeCount = meals.filter((m) => m.recipeId === id).length;
 
   function handleDelete() {
     if (typeof window !== "undefined" && !window.confirm("このレシピを削除しますか？")) return;
@@ -118,6 +119,7 @@ export default function RecipeDetail({ id }: Props) {
           {recipe.tags.cookTime ? `⏱ ${recipe.tags.cookTime}分` : ""}
           {recipe.kcal ? ` / ${recipe.kcal}kcal` : ""}
           {recipe.servings ? `　${recipe.servings}人分` : ""}
+          {madeCount > 0 ? `　🍳 ${madeCount}回作った` : ""}
         </p>
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
