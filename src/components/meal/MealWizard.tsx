@@ -88,6 +88,8 @@ export default function MealWizard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
+  const [comment, setComment] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
 
   const priority = useMemo(
     () => sortByExpiry(fridge).filter((f) => bucketOf(f.expiresOn) === "priority"),
@@ -250,6 +252,29 @@ export default function MealWizard() {
     setPhase("done");
   }
 
+  async function getComment() {
+    if (commentLoading) return;
+    setCommentLoading(true);
+    try {
+      const res = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          menu: picks.map((p) => ({ slot: p.slot, name: p.recipe.name })),
+          fridge: fridge.map((f) => f.name),
+          expiring: priority.map((p) => p.name),
+          recent: recent.map((r) => r.recipeName),
+        }),
+      });
+      const data = await res.json();
+      setComment(res.ok && data.text ? data.text : "コメント取得に失敗しました");
+    } catch {
+      setComment("コメント取得に失敗しました");
+    } finally {
+      setCommentLoading(false);
+    }
+  }
+
   function downloadIcs() {
     // 当日の買い物リマインダー（30分）。昼は11:00 / 夜は17:00 を目安に。
     const hasLunch = picks.some((p) => p.slot === "昼");
@@ -263,9 +288,9 @@ export default function MealWizard() {
     const ics = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//pantry//meal//JP",
+      "PRODID:-//CookSync//meal//JP",
       "BEGIN:VEVENT",
-      `UID:${crypto.randomUUID()}@pantry`,
+      `UID:${crypto.randomUUID()}@cooksync`,
       `DTSTART:${dtStart}`,
       `DTEND:${dtEnd}`,
       "SUMMARY:🛒 スーパーで買い物",
@@ -577,6 +602,25 @@ export default function MealWizard() {
                 </li>
               ))}
             </ul>
+          </div>
+
+          <div className="mt-3">
+            {comment ? (
+              <div className="rounded-2xl border border-brand/20 bg-gradient-to-br from-brand-soft to-emerald-50 p-4 text-sm leading-relaxed text-ink">
+                <p className="mb-1 text-xs font-bold text-brand-dark">✨ AIから</p>
+                {comment}
+              </div>
+            ) : (
+              <button
+                onClick={getComment}
+                disabled={commentLoading}
+                className="w-full rounded-xl border border-brand/30 bg-surface py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
+              >
+                {commentLoading
+                  ? "AIがコメントを書いています…（15〜30秒）"
+                  : "✨ AIにひとこともらう"}
+              </button>
+            )}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">

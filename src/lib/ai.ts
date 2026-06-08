@@ -8,11 +8,18 @@ const TIMEOUT_MS = 240_000; // Web研究は時間がかかるので長め
 
 // 役割固定の system prompt（英語＝Windows argvでも文字化けしない）。
 // プロジェクトのCLAUDE.md/AGENTS.mdに引きずられないよう明示。
-const SYSTEM =
+const SYSTEM_JSON =
   "You are a recipe-research API. Output ONLY the single JSON object that the user asks for — no surrounding prose, no markdown code fences, no explanation. Never edit files, write code, or perform any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
 
+const SYSTEM_TEXT =
+  "You are a friendly Japanese home-cooking assistant inside an app. Answer concisely in Japanese plain text only (no markdown, no code). Never edit files or do any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
+
 /** claude CLI を起動し、--output-format json の result テキストを返す */
-function runClaude(prompt: string, allowWeb = true): Promise<string> {
+function runClaude(
+  prompt: string,
+  allowWeb = true,
+  system: string = SYSTEM_JSON,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     // ⚠️ 日本語プロンプトを argv で渡すと Windows で文字化けする → stdin に UTF-8 で流す。
     // --allowedTools は可変長なので必ず末尾。
@@ -23,7 +30,7 @@ function runClaude(prompt: string, allowWeb = true): Promise<string> {
       "--output-format",
       "json",
       "--append-system-prompt",
-      SYSTEM,
+      system,
     ];
     if (allowWeb) args.push("--allowedTools", "WebSearch,WebFetch");
 
@@ -73,6 +80,12 @@ export function extractJson<T>(text: string): T {
   const end = t.lastIndexOf("}");
   if (start === -1 || end === -1) throw new Error("No JSON found in model output");
   return JSON.parse(t.slice(start, end + 1)) as T;
+}
+
+/** プロンプトを渡してプレーンテキストを得る（Web無し＝速い・軽い） */
+export async function askClaudeText(prompt: string): Promise<string> {
+  const text = await runClaude(prompt, false, SYSTEM_TEXT);
+  return text.trim();
 }
 
 /** プロンプトを渡してJSONを得る（Web研究あり） */
