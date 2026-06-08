@@ -52,6 +52,7 @@ interface MissingChoice {
   amount: string;
   note: string;
   selected: boolean;
+  inFridge: boolean; // 冷蔵庫にある（既定でチェックしない／在庫ありと表示）
 }
 
 const TIMINGS: { value: MealTiming; label: string; hint: string }[] = [
@@ -168,20 +169,23 @@ export default function MealWizard() {
     const choices: MissingChoice[] = [];
     for (const p of allPicks) {
       for (const ing of p.recipe.ingredients) {
-        const inFridge = fridgeNames.some((n) => ingredientMatches(n, ing.name));
-        if (inFridge) continue;
         const key = ing.name;
         if (seen.has(key)) continue;
         seen.add(key);
+        const inFridge = fridgeNames.some((n) => ingredientMatches(n, ing.name));
+        // 全材料を表示（忘れ・在庫切れに気づけるように）。
+        // 在庫ありは既定でチェックしない。在庫に無い買い足し品だけ既定チェック。
         choices.push({
           name: ing.name,
           amount: ing.amount,
           note: `${p.slot}の${p.recipe.name}用`,
-          // 買い足し品は既定でチェック。基本調味料は「無ければ」ユーザー判断
-          selected: !!ing.toBuy,
+          inFridge,
+          selected: !inFridge && !!ing.toBuy,
         });
       }
     }
+    // 在庫に無いもの（買う候補）を上に、在庫ありを下にまとめる
+    choices.sort((a, b) => Number(a.inFridge) - Number(b.inFridge));
     setMissing(choices);
   }
 
@@ -722,17 +726,21 @@ export default function MealWizard() {
         <section className="animate-pop-in">
           <h2 className="mb-1 text-sm font-bold text-ink">在庫の確認</h2>
           <p className="mb-3 text-xs text-ink-soft">
-            冷蔵庫に無い材料です。<b>家に無いものだけチェック</b>すると買い物リストに追加します（調味料も念のため確認）。
+            レシピの全材料です。<b>家に無いものだけチェック</b>すると買い物リストに追加します。「在庫あり」は確認用なのでチェック不要（切らしていたらチェック）。
           </p>
           {missing.length === 0 ? (
             <p className="rounded-2xl border border-line bg-surface p-4 text-sm text-ink-soft">
-              冷蔵庫の在庫で足りそうです。
+              材料はありません。
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
               {missing.map((m, idx) => (
                 <li key={m.name}>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5">
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-xl border border-line px-3 py-2.5 ${
+                      m.inFridge ? "bg-paper" : "bg-surface"
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={m.selected}
@@ -745,6 +753,11 @@ export default function MealWizard() {
                     />
                     <span className="flex-1 text-sm text-ink">
                       {m.name} <span className="text-ink-soft">{m.amount}</span>
+                      {m.inFridge && (
+                        <span className="ml-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-medium text-brand-dark">
+                          在庫あり
+                        </span>
+                      )}
                     </span>
                     <span className="text-[11px] text-ink-soft/70">{m.note}</span>
                   </label>
