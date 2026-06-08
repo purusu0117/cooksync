@@ -28,8 +28,9 @@ export async function POST(request: Request) {
     const buf = Buffer.from(await res.arrayBuffer());
     const dir = path.join(process.cwd(), "public", "recipes");
     await fs.mkdir(dir, { recursive: true });
-    const rel = `/recipes/${safeId}.png`;
     await fs.writeFile(path.join(dir, `${safeId}.png`), buf);
+    // ?v= でキャッシュバスト：再生成時に同じファイル名でもブラウザが必ず読み直す
+    const rel = `/recipes/${safeId}.png?v=${Date.now()}`;
 
     return Response.json({ image: rel });
   } catch (e) {
