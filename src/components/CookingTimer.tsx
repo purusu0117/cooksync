@@ -1,10 +1,19 @@
 "use client";
 
-// 調理タイマー。レシピ手順から拾った「N分」をワンタップで開始できる。
-// 終了時：ビープ音（Web Audio）＋バイブ（対応端末）＋画面表示。
+// 調理タイマー（複数同時に走らせられる）。
+// 例：3分・4分・5分を同時にかけられる。終了でビープ(Web Audio)＋バイブ。
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Timer, X, Pause, Play } from "lucide-react";
+import { Timer, X, Pause, Play, Plus } from "lucide-react";
+
+interface TimerItem {
+  id: string;
+  label: string;
+  total: number;
+  secondsLeft: number;
+  paused: boolean;
+  done: boolean;
+}
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -17,17 +26,18 @@ export default function CookingTimer({
 }: {
   suggestions?: number[];
 }) {
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const [paused, setPaused] = useState(false);
+  const [timers, setTimers] = useState<TimerItem[]>([]);
   const audioRef = useRef<AudioContext | null>(null);
-
-  const done = remaining === 0;
-  const active = remaining !== null && remaining > 0 && !paused;
+  const rung = useRef<Set<string>>(new Set());
 
   const presets = Array.from(new Set([3, 5, 10, ...suggestions]))
     .filter((n) => n > 0)
     .sort((a, b) => a - b)
     .slice(0, 8);
+
+  const hasActive = timers.some(
+    (t) => !t.paused && !t.done && t.secondsLeft > 0,
+  );
 
   const ring = useCallback(() => {
     try {
@@ -52,20 +62,31 @@ export default function CookingTimer({
     });
   }, []);
 
-  // カウントダウン（setTimeoutのコールバック内でのみ更新＝effect同期setStateを避ける）
+  // 1秒ごとに全タイマーを進める（実行中のものがある間だけ）
   useEffect(() => {
-    if (remaining === null || remaining <= 0 || paused) return;
-    const t = setTimeout(
-      () => setRemaining((r) => (r === null ? r : r - 1)),
-      1000,
-    );
-    return () => clearTimeout(t);
-  }, [remaining, paused]);
+    if (!hasActive) return;
+    const iv = setInterval(() => {
+      setTimers((prev) =>
+        prev.map((t) => {
+          if (t.paused || t.done || t.secondsLeft <= 0) return t;
+          const s = t.secondsLeft - 1;
+          return s <= 0
+            ? { ...t, secondsLeft: 0, done: true }
+            : { ...t, secondsLeft: s };
+        }),
+      );
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [hasActive]);
 
-  // 終了時に鳴らす（外部システム=音/バイブの同期。setStateはしない）
+  // 新たに完了したタイマーを鳴らす（id単位で1回だけ）
   useEffect(() => {
-    if (remaining === 0) ring();
-  }, [remaining, ring]);
+    const newly = timers.filter((t) => t.done && !rung.current.has(t.id));
+    if (newly.length > 0) {
+      newly.forEach((t) => rung.current.add(t.id));
+      ring();
+    }
+  }, [timers, ring]);
 
   function ensureAudio() {
     try {
@@ -82,68 +103,97 @@ export default function CookingTimer({
     }
   }
 
-  function start(min: number) {
+  function addTimer(min: number) {
     ensureAudio();
-    setPaused(false);
-    setRemaining(min * 60);
+    setTimers((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        label: `${min}分`,
+        total: min * 60,
+        secondsLeft: min * 60,
+        paused: false,
+        done: false,
+      },
+    ]);
   }
-  function stop() {
-    setRemaining(null);
-    setPaused(false);
+  function togglePause(id: string) {
+    setTimers((prev) =>
+      prev.map((t) =>
+        t.id === id && !t.done ? { ...t, paused: !t.paused } : t,
+      ),
+    );
+  }
+  function removeTimer(id: string) {
+    rung.current.delete(id);
+    setTimers((prev) => prev.filter((t) => t.id !== id));
   }
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-4">
       <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-ink">
         <Timer size={16} className="text-brand" /> 調理タイマー
+        <span className="ml-1 text-xs font-normal text-ink-soft">
+          （タップで複数同時にかけられます）
+        </span>
       </h2>
+
       <div className="flex flex-wrap gap-2">
         {presets.map((m) => (
           <button
             key={m}
             type="button"
-            onClick={() => start(m)}
-            className="rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
+            onClick={() => addTimer(m)}
+            className="inline-flex items-center gap-0.5 rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
           >
+            <Plus size={12} />
             {m}分
           </button>
         ))}
       </div>
 
-      {remaining !== null && (
-        <div
-          className={`mt-3 flex items-center gap-3 rounded-xl px-4 py-3 ${
-            done ? "bg-accent-soft" : "bg-paper"
-          }`}
-        >
-          <span
-            className={`font-mono text-2xl font-bold tabular-nums ${
-              done ? "text-accent-dark" : "text-ink"
-            }`}
-          >
-            {done ? "⏰ 時間です！" : fmt(remaining)}
-          </span>
-          {!done && (
-            <button
-              type="button"
-              onClick={() => setPaused((p) => !p)}
-              className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-brand text-white"
-              aria-label={active ? "一時停止" : "再開"}
+      {timers.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-2">
+          {timers.map((t) => (
+            <li
+              key={t.id}
+              className={`flex items-center gap-3 rounded-xl px-4 py-2.5 ${
+                t.done ? "bg-accent-soft" : "bg-paper"
+              }`}
             >
-              {active ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={stop}
-            className={`grid h-9 w-9 place-items-center rounded-full border border-line text-ink-soft ${
-              done ? "ml-auto" : ""
-            }`}
-            aria-label="閉じる"
-          >
-            <X size={16} />
-          </button>
-        </div>
+              <span className="text-xs font-medium text-ink-soft">
+                {t.label}
+              </span>
+              <span
+                className={`font-mono text-xl font-bold tabular-nums ${
+                  t.done ? "text-accent-dark" : "text-ink"
+                }`}
+              >
+                {t.done ? "⏰ 完了！" : fmt(t.secondsLeft)}
+              </span>
+              {!t.done && (
+                <button
+                  type="button"
+                  onClick={() => togglePause(t.id)}
+                  className="ml-auto grid h-8 w-8 place-items-center rounded-full bg-brand text-white"
+                  aria-label={t.paused ? "再開" : "一時停止"}
+                >
+                  {t.paused ? <Play size={14} /> : <Pause size={14} />}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => removeTimer(t.id)}
+                className={`grid h-8 w-8 place-items-center rounded-full border border-line text-ink-soft ${
+                  t.done ? "ml-auto" : ""
+                }`}
+                aria-label="削除"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

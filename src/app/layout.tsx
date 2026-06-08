@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     "冷蔵庫の在庫と賞味期限を見える化し、期限が近い食材から献立を提案、買い物リストまで一気通貫で管理する個人用キッチンアプリ。",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "default", title: APP_NAME },
-  icons: { icon: "/icon-512.png", apple: "/apple-icon.png" },
+  icons: { icon: "/icon-512.jpg", apple: "/apple-icon.jpg" },
 };
 
 export const viewport: Viewport = {
