@@ -99,6 +99,8 @@ export default function MealWizard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
+  const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
+  const [searchRound, setSearchRound] = useState(0); // 探索回数（角度を変える）
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [comment, setComment] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
@@ -142,6 +144,9 @@ export default function MealWizard() {
     setSlots(s);
     setPicks([]);
     setSlotIndex(0);
+    setAiResults([]);
+    setAiSeen([]);
+    setSearchRound(0);
     setPhase("pick");
   }
 
@@ -227,7 +232,11 @@ export default function MealWizard() {
         clearJob();
         setAiLoading(false);
         if (mapped.length === 0) setAiError("レシピが取得できませんでした");
-        else setAiResults(mapped);
+        else {
+          setAiResults(mapped);
+          // 次回探索で避けるため、出た料理名を記録
+          setAiSeen((prev) => [...prev, ...mapped.map((r) => r.name)]);
+        }
         return;
       }
       if (data.status === "error" || data.status === "missing") {
@@ -247,6 +256,8 @@ export default function MealWizard() {
     setAiError("");
     setAiResults([]);
     setAiLoading(true);
+    const round = searchRound + 1;
+    setSearchRound(round);
     // 完了通知の許可を確保（初回はダイアログ。アプリを離れても通知が届く）
     void enablePush();
     try {
@@ -256,12 +267,15 @@ export default function MealWizard() {
         body: JSON.stringify({
           wish: wish.trim(),
           servings,
+          round,
           fridge: fridge.map((f) => f.name),
           expiring: priority.map((p) => p.name),
           filters,
+          // 最近作った＋これまでに提案した料理は避ける（再探索で別案を出す）
           avoid: [
             ...recent.map((r) => r.recipeName),
             ...picks.map((p) => p.recipe.name),
+            ...aiSeen,
           ],
         }),
       });
@@ -570,9 +584,54 @@ export default function MealWizard() {
                 disabled={aiLoading}
                 className="shrink-0 whitespace-nowrap rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
               >
-                {aiLoading ? "探索中…" : "AIで探す"}
+                {aiLoading
+                  ? "探索中…"
+                  : aiResults.length > 0
+                    ? "別の角度で再探索"
+                    : "AIで探す"}
               </button>
             </div>
+
+            {/* どんな条件で探すかを明記（未選択は「おまかせ」） */}
+            <div className="mt-2 rounded-xl border border-line/60 bg-surface/70 px-3 py-2 text-[11px] leading-relaxed text-ink-soft">
+              <p className="mb-0.5 font-semibold text-brand-dark">
+                この条件で探します（未選択は「おまかせ」）
+              </p>
+              <p>
+                🍽 作りたいもの：
+                <span className="text-ink">{wish.trim() || "おまかせ"}</span>
+              </p>
+              <p>
+                🎨 方向性：
+                <span className="text-ink">
+                  {[
+                    filters.cuisine,
+                    filters.heaviness,
+                    filters.staple,
+                    filters.cookTime ? `${filters.cookTime}分以内` : null,
+                  ]
+                    .filter(Boolean)
+                    .join("・") || "おまかせ"}
+                </span>
+              </p>
+              <p>
+                👥 人数：<span className="text-ink">{servings}人分</span>
+              </p>
+              <p>
+                🔴 使い切りたい食材：
+                <span className="text-ink">
+                  {priority.length
+                    ? priority.map((p) => p.name).join("・")
+                    : "なし"}
+                </span>
+              </p>
+              {searchRound > 0 && (
+                <p className="text-brand-dark">
+                  🔄 次は{searchRound + 1}回目：前回と違うジャンル・角度で探します
+                </p>
+              )}
+            </div>
+
             {aiLoading && (
               <p className="mt-2 animate-pulse text-xs text-brand-dark">
                 AIがレシピをWeb検索中…（最大1〜2分）。アプリを閉じても裏で続きます。戻ると結果が出ます。

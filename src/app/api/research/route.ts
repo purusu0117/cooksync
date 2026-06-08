@@ -17,7 +17,18 @@ interface ResearchBody {
     cookTime?: number;
   };
   avoid?: string[];
+  round?: number;
 }
+
+// 再探索ごとに切り口を変えるためのヒント（縛りではなく方向性）
+const ANGLES = [
+  "王道・定番でハズさないもの",
+  "時短・簡単（フライパン1つ/15分前後）",
+  "さっぱり・ヘルシー（野菜多め/油控えめ）",
+  "がっつり・こってり（食べ応え重視）",
+  "エスニック・変わり種（普段選ばない角度）",
+  "和×洋など意外な組み合わせ・アレンジ",
+];
 
 interface Job {
   status: "running" | "done" | "error";
@@ -44,6 +55,8 @@ function buildPrompt(b: ResearchBody): string {
   const servings = b.servings && b.servings > 0 ? b.servings : 2;
   const filters = b.filters ?? {};
   const avoid = b.avoid ?? [];
+  const round = b.round && b.round > 0 ? b.round : 1;
+  const angle = ANGLES[(round - 1) % ANGLES.length];
   return [
     "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2〜3品調べ、結果をJSONだけで返してください。",
     wish ? `■ 作りたいもの: ${wish}` : "■ 作りたいもの: おまかせ（下の冷蔵庫の食材を活かせるもの）",
@@ -54,7 +67,11 @@ function buildPrompt(b: ResearchBody): string {
     filters.heaviness ? `■ 好み: ${filters.heaviness}` : "",
     filters.staple ? `■ 主食: ${filters.staple}` : "",
     filters.cookTime ? `■ 調理時間: ${filters.cookTime}分以内` : "",
-    avoid.length ? `■ 避ける（最近作った）: ${avoid.join("、")}` : "",
+    avoid.length ? `■ 避ける（最近作った・既に提案済み）: ${avoid.join("、")}` : "",
+    `■ 今回の切り口のヒント: ${angle}（縛りではなく方向性。ユーザー指定の条件は厳守）`,
+    round > 1
+      ? `■ 重要: これは${round}回目の再探索。前回までと“違うジャンル・調理法・味付け”の角度で、上の『避ける』に挙げた料理とは別物を必ず出す。似た料理の言い換えは禁止。`
+      : "",
     "",
     "要件:",
     "- 2〜3品、できれば方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
