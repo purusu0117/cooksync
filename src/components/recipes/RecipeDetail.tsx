@@ -55,6 +55,7 @@ export default function RecipeDetail({ id }: Props) {
   const [ratings, setRatings] = usePersistentList(ratingStore);
   const [note, setNote] = useState("");
   const [proofLoading, setProofLoading] = useState(false);
+  const [imgLoading, setImgLoading] = useState(false);
   const [showMade, setShowMade] = useState(false);
   const [madeChoices, setMadeChoices] = useState<Record<string, UseChoice>>({});
   const [undoData, setUndoData] = useState<{
@@ -182,6 +183,32 @@ export default function RecipeDetail({ id }: Props) {
     setMeals((prev) => prev.filter((m) => m.id !== undoData.mealId));
     setUndoData(null);
     setNote("取り消しました");
+  }
+
+  async function genImage() {
+    if (!recipe || imgLoading) return;
+    setImgLoading(true);
+    setNote("AIが写真を生成中…（30〜60秒）");
+    try {
+      const res = await fetch("/api/recipe-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recipe.id, name: recipe.name }),
+      });
+      const data = await res.json();
+      if (res.ok && data.image) {
+        setStored((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, image: data.image } : r)),
+        );
+        setNote("写真を生成しました ✨");
+      } else {
+        setNote("写真生成に失敗しました");
+      }
+    } catch {
+      setNote("写真生成に失敗しました");
+    } finally {
+      setImgLoading(false);
+    }
   }
 
   // 作った回数の手動編集（＋／−）
@@ -422,6 +449,18 @@ export default function RecipeDetail({ id }: Props) {
 
       {isStored && (
         <div className="mt-2 mb-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={genImage}
+            disabled={imgLoading}
+            className="w-full rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
+          >
+            {imgLoading
+              ? "AIが写真を生成中…"
+              : recipe.image
+                ? "🖼 写真をAIで再生成"
+                : "🖼 写真をAIで生成"}
+          </button>
           <button
             type="button"
             onClick={proofread}

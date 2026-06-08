@@ -234,6 +234,26 @@ export default function MealWizard() {
     setAiResults([]);
     setWish("");
     pickRecipe(recipe);
+    // 料理写真をHiggsFieldで生成し、完了したらレシピに反映（バックグラウンド）
+    void generateRecipeImage(recipe);
+  }
+
+  async function generateRecipeImage(recipe: Recipe) {
+    try {
+      const res = await fetch("/api/recipe-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recipe.id, name: recipe.name }),
+      });
+      const data = await res.json();
+      if (res.ok && data.image) {
+        setStoredRecipes((prev) =>
+          prev.map((r) => (r.id === recipe.id ? { ...r, image: data.image } : r)),
+        );
+      }
+    } catch {
+      /* 失敗時は絵文字のまま */
+    }
   }
 
   function finalize() {

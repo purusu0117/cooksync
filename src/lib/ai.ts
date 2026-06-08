@@ -19,6 +19,7 @@ function runClaude(
   prompt: string,
   allowWeb = true,
   system: string = SYSTEM_JSON,
+  tools?: string[],
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     // ⚠️ 日本語プロンプトを argv で渡すと Windows で文字化けする → stdin に UTF-8 で流す。
@@ -32,7 +33,11 @@ function runClaude(
       "--append-system-prompt",
       system,
     ];
-    if (allowWeb) args.push("--allowedTools", "WebSearch,WebFetch");
+    if (tools && tools.length > 0) {
+      args.push("--allowedTools", tools.join(","));
+    } else if (allowWeb) {
+      args.push("--allowedTools", "WebSearch,WebFetch");
+    }
 
     // Windowsの実体は claude.exe（~/.local/bin）。shell無しでPATH解決させる。
     const cmd = process.platform === "win32" ? "claude.exe" : "claude";
@@ -106,4 +111,27 @@ export async function askClaudeForJsonNoWeb<T>(prompt: string): Promise<T> {
   } catch {
     throw new Error(`JSON parse failed. raw=${text.slice(0, 600)}`);
   }
+}
+
+/** HiggsField(MCP)で料理写真を1枚生成し、最終画像URLを返す（ローカルのMax/HiggsField枠） */
+export async function askClaudeImageUrl(dish: string): Promise<string> {
+  const prompt = [
+    `料理「${dish}」の、美味しそうな実写の料理写真を1枚、higgsfieldツールで生成し、最終画像URLだけをJSONで返してください。`,
+    "手順:",
+    '① mcp__higgsfield__generate_image を model="nano_banana_pro", aspect_ratio="4:3", resolution="1k", prompt="appetizing photo of ' +
+      dish +
+      ', Japanese home cooking, natural soft light, professional food photography, clean background, high detail" で呼ぶ。',
+    "② 返ってきた job を mcp__higgsfield__job_status で status が completed になるまで待つ。",
+    "③ 完了したら results.rawUrl（.png のURL）を取得する。",
+    '出力は次のJSONだけ（前後に文章なし）: {"url":"<rawUrl>"}',
+  ].join("\n");
+  const text = await runClaude(prompt, false, SYSTEM_JSON, [
+    "mcp__higgsfield__generate_image",
+    "mcp__higgsfield__job_status",
+  ]);
+  const obj = extractJson<{ url?: string }>(text);
+  if (!obj.url || !/^https?:\/\//.test(obj.url)) {
+    throw new Error(`no image url. raw=${text.slice(0, 300)}`);
+  }
+  return obj.url;
 }

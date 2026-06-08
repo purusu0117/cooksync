@@ -16,7 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { bucketOf, type Category } from "@/lib/food";
-import { fridgeStore, shoppingStore } from "@/lib/storage";
+import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 
 const CATEGORY_ICON: Record<Category, LucideIcon> = {
@@ -40,8 +40,14 @@ export default function HomeDashboard() {
   const recipes = useAllRecipes();
   const [fridge] = usePersistentList(fridgeStore);
   const [shopping] = usePersistentList(shoppingStore);
+  const [ratings] = usePersistentList(ratingStore);
 
-  const recommended = recipes.slice(0, 6);
+  const starsOf = (id: string) =>
+    ratings.find((r) => r.recipeId === id)?.stars ?? 0;
+  // 高評価を優先（同点は元の順）
+  const recommended = [...recipes]
+    .sort((a, b) => starsOf(b.id) - starsOf(a.id))
+    .slice(0, 6);
   const todo = shopping.filter((s) => !s.checked);
   const shortage = todo.slice(0, 4).map((s) => s.name);
 
