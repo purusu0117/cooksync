@@ -115,9 +115,7 @@ export default function ShoppingList() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader
-        kicker="Shopping"
         title="買い物リスト"
-        tagline="献立の不足食材もここに自動追加。買ったらチェック→「冷蔵庫へ入れる」で在庫に移動（カテゴリ・期限は自動）。"
       />
 
       <form onSubmit={add} className="mb-5 flex gap-2">

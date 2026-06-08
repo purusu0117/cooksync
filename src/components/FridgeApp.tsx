@@ -59,9 +59,7 @@ export default function FridgeApp() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader
-        kicker="Fridge"
         title="冷蔵庫"
-        tagline="賞味期限を 🔴🟡🟢 で見える化。期限が近い順に並びます。"
       />
 
       <MaintenancePanel onAddToFridge={addItem} />

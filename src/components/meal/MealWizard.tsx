@@ -350,9 +350,7 @@ export default function MealWizard() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader
-        kicker="Meal"
         title="献立を決める"
-        tagline="冷蔵庫の期限を踏まえて、人気レシピから提案します。"
       />
 
       {/* 優先消費バナー */}

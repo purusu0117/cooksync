@@ -29,10 +29,7 @@ export default function RecipeList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
-      <PageHeader
-        title="レシピ"
-        tagline="作って良かった実在レシピ。献立提案の母集団になります。"
-      />
+      <PageHeader title="レシピ" />
 
       <div className="mb-3 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
         {(
