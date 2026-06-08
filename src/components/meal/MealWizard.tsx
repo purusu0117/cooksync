@@ -17,7 +17,7 @@ import {
   type RecipeTags,
   type StapleType,
 } from "@/lib/recipe";
-import { fridgeStore, mealStore, shoppingStore } from "@/lib/storage";
+import { fridgeStore, mealStore, shoppingStore, recipeStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { rankCandidates } from "@/lib/ranking";
 import {
@@ -74,6 +74,7 @@ export default function MealWizard() {
   const recipes = useAllRecipes();
   const [recent, setRecent] = usePersistentList(mealStore);
   const [, setShopping] = usePersistentList(shoppingStore);
+  const [, setStoredRecipes] = usePersistentList(recipeStore);
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -81,6 +82,10 @@ export default function MealWizard() {
   const [picks, setPicks] = useState<Pick[]>([]);
   const [slotIndex, setSlotIndex] = useState(0);
   const [missing, setMissing] = useState<MissingChoice[]>([]);
+
+  const [wish, setWish] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const priority = useMemo(
     () => sortByExpiry(fridge).filter((f) => bucketOf(f.expiresOn) === "priority"),
@@ -149,6 +154,65 @@ export default function MealWizard() {
       }
     }
     setMissing(choices);
+  }
+
+  async function aiSearch() {
+    if (aiLoading) return;
+    setAiError("");
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wish: wish.trim(),
+          fridge: fridge.map((f) => f.name),
+          expiring: priority.map((p) => p.name),
+          filters,
+          avoid: [
+            ...recent.map((r) => r.recipeName),
+            ...picks.map((p) => p.recipe.name),
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.recipe) {
+        throw new Error(data.error || "レシピが取得できませんでした");
+      }
+      const r = data.recipe;
+      const ct: 15 | 30 | 60 =
+        typeof r.cookTime === "number" && r.cookTime <= 15
+          ? 15
+          : typeof r.cookTime === "number" && r.cookTime <= 30
+            ? 30
+            : 60;
+      const recipe: Recipe = {
+        id: `ai-${crypto.randomUUID().slice(0, 8)}`,
+        name: r.name ?? "AIレシピ",
+        emoji: r.emoji ?? "🍽",
+        kcal: typeof r.kcal === "number" ? r.kcal : undefined,
+        catch: r.catch ?? "",
+        servings: typeof r.servings === "number" ? r.servings : 1,
+        ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+        steps: Array.isArray(r.steps) ? r.steps : [],
+        leftoverStorage: Array.isArray(r.leftoverStorage)
+          ? r.leftoverStorage
+          : [],
+        sources: Array.isArray(r.sources) ? r.sources : [],
+        tags: {
+          cuisine: r.cuisine,
+          cookTime: ct,
+        },
+        createdAt: Date.now(),
+      };
+      setStoredRecipes((prev) => [recipe, ...prev]);
+      setWish("");
+      pickRecipe(recipe);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI検索に失敗しました");
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function finalize() {
@@ -330,6 +394,38 @@ export default function MealWizard() {
             </span>{" "}
             を選ぶ
           </p>
+          {/* AIで探す */}
+          <div className="mb-4 rounded-2xl border border-brand/30 bg-brand-soft/50 p-3">
+            <p className="mb-2 text-xs text-ink-soft">
+              🔎 食べたい物を入力すると、AIがWebから人気レシピを探して不足食材も計算します。
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={wish}
+                onChange={(e) => setWish(e.target.value)}
+                disabled={aiLoading}
+                placeholder="例：油淋鶏 / さっぱり和食 / パスタ"
+                className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft disabled:opacity-60"
+              />
+              <button
+                onClick={aiSearch}
+                disabled={aiLoading}
+                className="shrink-0 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
+              >
+                {aiLoading ? "探索中…" : "AIで探す"}
+              </button>
+            </div>
+            {aiLoading && (
+              <p className="mt-2 animate-pulse text-xs text-brand-dark">
+                AIがレシピをWeb検索中…（最大1〜2分）。そのままお待ちください。
+              </p>
+            )}
+            {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
+          </div>
+
+          <p className="mb-2 text-xs font-semibold text-ink-soft">
+            または、おすすめから選ぶ
+          </p>
           <ul className="flex flex-col gap-3">
             {ranked.slice(0, 4).map((r) => (
               <li key={r.recipe.id}>
@@ -364,9 +460,6 @@ export default function MealWizard() {
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-center text-xs text-ink-soft/70">
-            🔎 AIで新しいレシピを探す機能は次の段階（ローカルClaude Code連携）で追加予定
-          </p>
         </section>
       )}
 
