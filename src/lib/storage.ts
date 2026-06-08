@@ -5,6 +5,7 @@ import { type FoodItem, type FridgeItem, zoneForCategory } from "./food";
 import type { ShoppingItem } from "./shopping";
 import type { Recipe } from "./recipe";
 import type { MealEntry } from "./mealplan";
+import type { Account } from "./account";
 
 export interface Store<T> {
   load(): T[];
@@ -81,6 +82,8 @@ export const shoppingStore = localStore<ShoppingItem>(
 );
 export const recipeStore = localStore<Recipe>("fridge-app:recipes:v1");
 export const mealStore = localStore<MealEntry>("fridge-app:meals:v1");
+// アカウントは0〜1件のリストとして保持（usePersistentListで扱う）
+export const accountStore = localStore<Account>("cooksync:account:v1");
 
 // 後方互換（旧 FridgeApp が import していた API）
 export function loadItems(): FridgeItem[] {

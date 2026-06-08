@@ -9,19 +9,19 @@
 */
 
 @theme {
-  --color-paper: #f1f3ef; /* 薄い背景 */
+  --color-paper: #f0ece1; /* 温かいクリーム背景 */
   --color-surface: #ffffff; /* カード */
-  --color-ink: #26302a; /* 本文 */
-  --color-ink-soft: #7c857f; /* 補助 */
-  --color-line: #e8ebe4; /* 罫線 */
+  --color-ink: #2b2a22; /* 本文（温かい黒） */
+  --color-ink-soft: #837c6f; /* 補助 */
+  --color-line: #e6e0d2; /* 罫線 */
 
   --color-brand: #2f9e60; /* フレッシュ緑：ボタン/バッジ/アクティブ */
   --color-brand-dark: #1f6e42; /* 濃緑：ロゴ/見出し/hover */
   --color-brand-soft: #e8f4ec; /* 淡緑：chip/淡背景 */
 
-  --color-accent: #ef8a4d; /* オレンジ：不足アラート */
-  --color-accent-dark: #d76f2c;
-  --color-accent-soft: #fdeede;
+  --color-accent: #e2914f; /* オレンジ：不足アラート */
+  --color-accent-dark: #c06a2a;
+  --color-accent-soft: #f6ddc1; /* peach：不足カード背景 */
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { RecipeIngredient } from "@/lib/recipe";
 import { useAllRecipes } from "@/lib/useStore";
 
@@ -39,11 +40,28 @@ export default function RecipeDetail({ id }: Props) {
         ← レシピ一覧
       </Link>
 
-      <header className="mt-3 mb-5">
+      {recipe.image && (
+        <div className="relative mt-3 h-52 w-full overflow-hidden rounded-2xl">
+          <Image
+            src={recipe.image}
+            alt={recipe.name}
+            fill
+            sizes="(max-width: 768px) 100vw, 672px"
+            className="object-cover"
+          />
+        </div>
+      )}
+
+      <header className="mt-4 mb-5">
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-ink">
           <span aria-hidden>{recipe.emoji}</span>
           {recipe.name}
         </h1>
+        <p className="mt-1.5 text-xs font-medium text-brand-dark">
+          {recipe.tags.cookTime ? `⏱ ${recipe.tags.cookTime}分` : ""}
+          {recipe.kcal ? ` / ${recipe.kcal}kcal` : ""}
+          {recipe.servings ? `　${recipe.servings}人分` : ""}
+        </p>
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
         </p>

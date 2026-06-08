@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useAllRecipes } from "@/lib/useStore";
 import PageHeader from "@/components/PageHeader";
 
@@ -28,29 +29,33 @@ export default function RecipeList() {
               href={`/recipes/${r.id}`}
               className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div
-                className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
-                  CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
-                }`}
-              >
-                <span aria-hidden>{r.emoji}</span>
-              </div>
+              {r.image ? (
+                <div className="relative h-28 w-full">
+                  <Image
+                    src={r.image}
+                    alt={r.name}
+                    fill
+                    sizes="(max-width: 640px) 50vw, 320px"
+                    className="object-cover"
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
+                    CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
+                  }`}
+                >
+                  <span aria-hidden>{r.emoji}</span>
+                </div>
+              )}
               <div className="flex flex-1 flex-col p-3">
                 <p className="line-clamp-2 text-sm font-semibold text-ink">
                   {r.name}
                 </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {r.tags.cookTime && (
-                    <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-dark">
-                      ⏱ {r.tags.cookTime}分
-                    </span>
-                  )}
-                  {r.tags.cuisine && (
-                    <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                      {r.tags.cuisine}
-                    </span>
-                  )}
-                </div>
+                <p className="mt-1.5 text-xs font-medium text-brand-dark">
+                  {r.tags.cookTime ? `⏱ ${r.tags.cookTime}分` : ""}
+                  {r.kcal ? ` / ${r.kcal}kcal` : ""}
+                </p>
               </div>
             </Link>
           </li>

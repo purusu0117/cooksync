@@ -9,6 +9,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "napolitan",
     name: "喫茶店風ナポリタン",
     emoji: "🍝",
+    image: "/recipes/napolitan.png",
+    kcal: 600,
     catch: "ケチャップを先に炒めて酸味を飛ばすのが、喫茶店のあの濃厚まろやか味の決め手",
     servings: 1,
     ingredients: [
@@ -66,6 +68,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "yurinchi",
     name: "油淋鶏（揚げ焼き）",
     emoji: "🍗",
+    image: "/recipes/yurinchi.png",
+    kcal: 550,
     catch: "揚げずにフライパンで揚げ焼き。カリッと鶏に、ねぎ香味だれをたっぷり",
     servings: 1,
     ingredients: [
@@ -122,6 +126,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "acqua-pazza",
     name: "アクアパッツァ",
     emoji: "🐟",
+    image: "/recipes/acqua-pazza.png",
+    kcal: 320,
     catch: "魚介の旨みを白ワインと水だけで引き出す、フライパン1つの本格イタリアン",
     servings: 2,
     ingredients: [
@@ -172,6 +178,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "shogayaki",
     name: "豚の生姜焼き",
     emoji: "🐖",
+    image: "/recipes/shogayaki.png",
+    kcal: 480,
     catch: "すりおろし生姜のたれを絡めるだけ。ご飯がすすむ王道おかず",
     servings: 1,
     ingredients: [
@@ -216,6 +224,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "yamitsuki-chicken-rice",
     name: "やみつき鶏のっけごはん",
     emoji: "🍚",
+    image: "/recipes/yamitsuki-chicken-rice.png",
+    kcal: 700,
     catch: "焼いた鶏をご飯にのせ、にんにく醤油だれをかけるだけのスタミナ丼",
     servings: 1,
     ingredients: [
@@ -258,6 +268,8 @@ export const SEED_RECIPES: Recipe[] = [
     id: "tomato-cheese-risotto",
     name: "トマトチーズリゾット",
     emoji: "🧀",
+    image: "/recipes/tomato-cheese-risotto.png",
+    kcal: 450,
     catch: "炊いたご飯で作る簡単リゾット。トマト缶とチーズで濃厚に",
     servings: 1,
     ingredients: [

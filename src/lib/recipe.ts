@@ -42,6 +42,8 @@ export interface Recipe {
   id: string;
   name: string;
   emoji: string;
+  image?: string; // 料理写真（/public 配下のパス or URL）
+  kcal?: number; // 目安カロリー
   catch: string; // 1行キャッチ
   servings: number;
   ingredients: RecipeIngredient[];

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   Search,
   User,
@@ -12,7 +13,7 @@ import {
   CupSoda,
   Apple,
   ChevronRight,
-  Sparkles,
+  Leaf,
   type LucideIcon,
 } from "lucide-react";
 import { APP_NAME } from "@/lib/brand";
@@ -50,9 +51,9 @@ export default function HomeDashboard() {
     <div className="mx-auto w-full max-w-2xl px-4 pt-5">
       {/* トップ：ロゴ＋アバター */}
       <div className="mb-5 flex items-center justify-between">
-        <span className="wordmark flex items-center gap-1 text-2xl font-bold text-brand-dark">
+        <span className="wordmark flex items-center gap-1.5 text-2xl font-bold text-brand-dark">
+          <Leaf size={20} className="text-brand" />
           {APP_NAME}
-          <Sparkles size={18} className="text-brand" />
         </span>
         <Link
           href="/mypage"
@@ -82,22 +83,33 @@ export default function HomeDashboard() {
               href={`/recipes/${r.id}`}
               className="w-44 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div
-                className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
-                  CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
-                }`}
-              >
-                <span aria-hidden>{r.emoji}</span>
-              </div>
+              {r.image ? (
+                <div className="relative h-28 w-full">
+                  <Image
+                    src={r.image}
+                    alt={r.name}
+                    fill
+                    sizes="176px"
+                    className="object-cover"
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
+                    CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
+                  }`}
+                >
+                  <span aria-hidden>{r.emoji}</span>
+                </div>
+              )}
               <div className="p-3">
                 <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-ink">
                   {r.name}
                 </p>
-                {r.tags.cookTime && (
-                  <span className="mt-1.5 inline-block rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-dark">
-                    ⏱ {r.tags.cookTime}分
-                  </span>
-                )}
+                <p className="mt-1 text-xs font-medium text-brand-dark">
+                  {r.tags.cookTime ? `⏱ ${r.tags.cookTime}分` : ""}
+                  {r.kcal ? ` / ${r.kcal}kcal` : ""}
+                </p>
               </div>
             </Link>
           ))}
@@ -141,8 +153,8 @@ export default function HomeDashboard() {
       {/* 不足→買い物リストに追加（オレンジ） */}
       <section className="mb-7">
         <h2 className="mb-2.5 text-base font-bold text-brand-dark">買い物リストに追加</h2>
-        <div className="flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft p-4">
-          <p className="flex-1 text-sm font-bold leading-relaxed text-accent-dark">
+        <div className="rounded-2xl border border-accent/30 bg-accent-soft p-4">
+          <p className="text-sm font-bold leading-relaxed text-accent-dark">
             {shortage.length > 0 ? (
               <>不足：{shortage.join("、")}</>
             ) : (
@@ -153,9 +165,9 @@ export default function HomeDashboard() {
           </p>
           <Link
             href="/shopping"
-            className="shrink-0 rounded-full bg-brand px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-95"
+            className="mt-3 block rounded-full bg-brand py-2.5 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
           >
-            買い物リスト
+            買い物リストに追加
           </Link>
         </div>
       </section>
