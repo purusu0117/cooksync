@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { APP_NAME } from "@/lib/brand";
+import {
+  Home,
+  BookOpen,
+  Refrigerator,
+  ShoppingCart,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 
-const TABS = [
-  { href: "/", label: "冷蔵庫" },
-  { href: "/meal", label: "献立" },
-  { href: "/shopping", label: "買い物" },
-  { href: "/recipes", label: "レシピ" },
+const TABS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/", label: "ホーム", icon: Home },
+  { href: "/recipes", label: "レシピ", icon: BookOpen },
+  { href: "/fridge", label: "冷蔵庫", icon: Refrigerator },
+  { href: "/shopping", label: "買い物リスト", icon: ShoppingCart },
+  { href: "/mypage", label: "マイページ", icon: User },
 ];
 
 export default function Nav() {
@@ -20,34 +28,29 @@ export default function Nav() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-paper/80 backdrop-blur-md">
-      <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 py-3.5">
-        <Link href="/" className="group flex items-baseline gap-0.5">
-          <span className="wordmark text-xl font-bold tracking-wide text-ink">
-            {APP_NAME}
-          </span>
-          <span className="text-xl leading-none text-accent">.</span>
-        </Link>
-
-        <nav className="flex items-center gap-0.5">
-          {TABS.map((t) => {
-            const active = isActive(t.href);
-            return (
-              <Link
-                key={t.href}
-                href={t.href}
-                className={`rounded-full px-3 py-1.5 text-[13px] font-medium tracking-wide transition ${
-                  active
-                    ? "bg-ink text-paper"
-                    : "text-ink-soft hover:bg-brand-soft hover:text-ink"
-                }`}
-              >
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)]">
+        {TABS.map((t) => {
+          const active = isActive(t.href);
+          const Icon = t.icon;
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition ${
+                active ? "text-brand-dark" : "text-ink-soft hover:text-brand"
+              }`}
+            >
+              <Icon
+                size={22}
+                strokeWidth={active ? 2.4 : 1.8}
+                className="transition"
+              />
+              <span className="leading-none">{t.label}</span>
+            </Link>
+          );
+        })}
       </div>
-    </header>
+    </nav>
   );
 }

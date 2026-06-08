@@ -1,21 +1,17 @@
 interface Props {
-  kicker: string;
+  kicker?: string; // 互換のため受け取るが現デザインでは未使用
   title: string;
   tagline?: string;
 }
 
-export default function PageHeader({ kicker, title, tagline }: Props) {
+export default function PageHeader({ title, tagline }: Props) {
   return (
-    <header className="mb-7">
-      <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-ink-soft">
-        {kicker}
-      </p>
-      <h1 className="mt-1.5 text-3xl font-bold tracking-tight text-ink">
+    <header className="mb-6">
+      <h1 className="text-2xl font-bold tracking-tight text-brand-dark">
         {title}
       </h1>
-      <div className="mt-2.5 h-px w-10 bg-accent" />
       {tagline && (
-        <p className="mt-3 text-sm leading-relaxed text-ink-soft">{tagline}</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{tagline}</p>
       )}
     </header>
   );

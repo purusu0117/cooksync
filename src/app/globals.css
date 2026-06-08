@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 /*
-  デザイン：和モダン・エディトリアル
-  - 見出しは明朝（Shippori Mincho）、本文は Zen 角ゴ。日本語が美しく出る。
-  - クローム（ナビ/ボタン/アクティブ）は墨インクのモノトーンに寄せ、
-    “色”は鮮度の 🔴🟡🟢 と、わずかな朱（差し色）だけに持たせる＝静かで洗練。
-  - 温かい和紙の地色＋極薄テクスチャで奥行き。
+  CookSync — フレッシュ＆フレンドリー（モックアップ準拠）
+  - 緑プライマリ（濃緑＝ロゴ/見出し、フレッシュ緑＝ボタン/バッジ）
+  - 白カード × ごく薄い背景、丸角大きめ、柔らかい影
+  - 不足アラートはオレンジ（食欲＆注意）
+  - ロゴ＝Quicksand（丸い幾何サンセリフ）、日本語＝Zen角ゴ
 */
 
 @theme {
-  --color-paper: #f3efe7; /* 和紙の地 */
-  --color-surface: #fcfaf5; /* カード面 */
-  --color-ink: #211e19; /* 墨 */
-  --color-ink-soft: #756e62; /* 薄墨 */
-  --color-line: #e3dccd; /* 罫線 */
+  --color-paper: #f1f3ef; /* 薄い背景 */
+  --color-surface: #ffffff; /* カード */
+  --color-ink: #26302a; /* 本文 */
+  --color-ink-soft: #7c857f; /* 補助 */
+  --color-line: #e8ebe4; /* 罫線 */
 
-  /* クロームのプライマリ＝墨（旧brand。全CTA/アクティブがここを参照） */
-  --color-brand: #211e19;
-  --color-brand-dark: #000000;
-  --color-brand-soft: #eae3d6; /* 押下/淡背景：温かいグレージュ */
+  --color-brand: #2f9e60; /* フレッシュ緑：ボタン/バッジ/アクティブ */
+  --color-brand-dark: #1f6e42; /* 濃緑：ロゴ/見出し/hover */
+  --color-brand-soft: #e8f4ec; /* 淡緑：chip/淡背景 */
 
-  /* 差し色＝朱（ロゴの点・★買い足し等、ごく控えめに） */
-  --color-accent: #c8472e;
+  --color-accent: #ef8a4d; /* オレンジ：不足アラート */
+  --color-accent-dark: #d76f2c;
+  --color-accent-soft: #fdeede;
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);
@@ -33,34 +33,31 @@ html {
 
 body {
   background-color: var(--color-paper);
-  /* 極薄の和紙グレイン（墨のドット） */
-  background-image: radial-gradient(rgba(33, 30, 25, 0.035) 1px, transparent 1px);
-  background-size: 24px 24px;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
-  font-feature-settings: "palt"; /* 日本語の詰め */
+  font-feature-settings: "palt";
   -webkit-font-smoothing: antialiased;
 }
 
-/* 見出しは明朝で。Tailwind の font-bold 等はそのまま効く（要素セレクタは弱いので上書きされる） */
-h1,
-h2,
-h3,
-.font-display {
-  font-family: var(--font-display), serif;
-  letter-spacing: 0.01em;
+/* ロゴ等の欧文ワードマーク */
+.wordmark {
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: -0.01em;
 }
 
-/* ロゴ等で使う、字間を詰めた明朝 */
-.wordmark {
-  font-family: var(--font-display), serif;
-  letter-spacing: 0.04em;
+/* 横スクロール帯（スクロールバー非表示） */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translateY(5px) scale(0.985);
+    transform: translateY(6px) scale(0.985);
   }
   to {
     opacity: 1;

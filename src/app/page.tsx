@@ -1,5 +1,5 @@
-import FridgeApp from "@/components/FridgeApp";
+import HomeDashboard from "@/components/home/HomeDashboard";
 
 export default function Home() {
-  return <FridgeApp />;
+  return <HomeDashboard />;
 }

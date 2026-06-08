@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
-import { Shippori_Mincho, Zen_Kaku_Gothic_New } from "next/font/google";
+import { Quicksand, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
-// 見出し＝明朝（和モダン・エディトリアル）／本文＝Zen角ゴ（洗練ゴシック）
-const display = Shippori_Mincho({
-  weight: ["500", "700", "800"],
+// ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝Zen角ゴ
+const display = Quicksand({
   subsets: ["latin"],
   display: "swap",
-  preload: false,
   variable: "--font-display",
 });
 
@@ -38,8 +36,8 @@ export default function RootLayout({
       className={`${display.variable} ${sans.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
+        <main className="flex-1 pb-24">{children}</main>
         <Nav />
-        <main className="flex-1">{children}</main>
       </body>
     </html>
   );
