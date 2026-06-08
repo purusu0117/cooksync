@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from "react";
 import type { Store } from "./storage";
 import { SEED_RECIPES } from "./seedRecipes";
+import { IMPORTED_RECIPES } from "./seedRecipesImported";
 import { recipeStore } from "./storage";
 import type { Recipe } from "./recipe";
 
@@ -71,5 +72,6 @@ export function usePersistentList<T>(
 export function useAllRecipes(): Recipe[] {
   const [stored] = usePersistentList(recipeStore);
   const storedIds = new Set(stored.map((r) => r.id));
-  return [...stored, ...SEED_RECIPES.filter((r) => !storedIds.has(r.id))];
+  const seeds = [...SEED_RECIPES, ...IMPORTED_RECIPES];
+  return [...stored, ...seeds.filter((r) => !storedIds.has(r.id))];
 }
