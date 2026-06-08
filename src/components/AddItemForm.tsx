@@ -8,6 +8,7 @@ import {
   todayISO,
   zoneForCategory,
 } from "@/lib/food";
+import { guessItem } from "@/lib/guess";
 
 interface Props {
   onAdd: (item: FridgeItem) => void;
@@ -22,25 +23,52 @@ export default function AddItemForm({ onAdd }: Props) {
   const [category, setCategory] = useState<Category>("野菜");
   const [purchasedOn, setPurchasedOn] = useState(todayISO());
   const [expiresOn, setExpiresOn] = useState("");
+  // 自動推定を手入力で上書きしたかどうか
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [expiryTouched, setExpiryTouched] = useState(false);
+  const [autofilled, setAutofilled] = useState(false);
+
+  // 食材名が確定したら、カテゴリと期限を推定して未編集の欄に流し込む
+  function autofillFromName() {
+    if (!name.trim()) return;
+    const g = guessItem(name.trim(), purchasedOn);
+    let did = false;
+    if (!categoryTouched) {
+      setCategory(g.category);
+      did = true;
+    }
+    if (!expiryTouched) {
+      setExpiresOn(g.expiresOn);
+      did = true;
+    }
+    setAutofilled(did);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !expiresOn) return;
+    const finalName = name.trim();
+    if (!finalName) return;
+    // 期限が空なら推定で補完
+    const finalExpiry =
+      expiresOn || guessItem(finalName, purchasedOn).expiresOn;
 
     onAdd({
       id: crypto.randomUUID(),
-      name: name.trim(),
+      name: finalName,
       quantity: quantity.trim(),
       category,
       zone: zoneForCategory(category),
       purchasedOn,
-      expiresOn,
+      expiresOn: finalExpiry,
       createdAt: Date.now(),
     });
 
     setName("");
     setQuantity("");
     setExpiresOn("");
+    setCategoryTouched(false);
+    setExpiryTouched(false);
+    setAutofilled(false);
   }
 
   return (
@@ -48,24 +76,24 @@ export default function AddItemForm({ onAdd }: Props) {
       onSubmit={handleSubmit}
       className="rounded-3xl border border-line bg-surface p-4 shadow-sm"
     >
+      <p className="mb-3 text-xs text-ink-soft">
+        🤖 食材名を入れると<strong>カテゴリと賞味期限を自動推定</strong>します（あくまで目安。下の欄でいつでも修正できます）。
+      </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2">
-          <span className="mb-1 block text-xs font-medium text-ink-soft">
-            食材名
-          </span>
+          <span className="mb-1 block text-xs font-medium text-ink-soft">食材名</span>
           <input
             className={fieldClass}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="例：にんじん"
+            onBlur={autofillFromName}
+            placeholder="例：鶏もも肉（入力後にカテゴリ・期限が埋まります）"
             required
           />
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-ink-soft">
-            数量
-          </span>
+          <span className="mb-1 block text-xs font-medium text-ink-soft">数量</span>
           <input
             className={fieldClass}
             value={quantity}
@@ -76,12 +104,15 @@ export default function AddItemForm({ onAdd }: Props) {
 
         <label>
           <span className="mb-1 block text-xs font-medium text-ink-soft">
-            カテゴリ
+            カテゴリ{!categoryTouched && autofilled && <span className="ml-1 text-brand">（自動）</span>}
           </span>
           <select
             className={fieldClass}
             value={category}
-            onChange={(e) => setCategory(e.target.value as Category)}
+            onChange={(e) => {
+              setCategory(e.target.value as Category);
+              setCategoryTouched(true);
+            }}
           >
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -92,9 +123,7 @@ export default function AddItemForm({ onAdd }: Props) {
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-ink-soft">
-            購入日
-          </span>
+          <span className="mb-1 block text-xs font-medium text-ink-soft">購入日</span>
           <input
             type="date"
             className={fieldClass}
@@ -105,14 +134,16 @@ export default function AddItemForm({ onAdd }: Props) {
 
         <label>
           <span className="mb-1 block text-xs font-medium text-ink-soft">
-            賞味・消費期限
+            賞味・消費期限{!expiryTouched && autofilled && <span className="ml-1 text-brand">（自動）</span>}
           </span>
           <input
             type="date"
             className={fieldClass}
             value={expiresOn}
-            onChange={(e) => setExpiresOn(e.target.value)}
-            required
+            onChange={(e) => {
+              setExpiresOn(e.target.value);
+              setExpiryTouched(true);
+            }}
           />
         </label>
       </div>
@@ -120,7 +151,7 @@ export default function AddItemForm({ onAdd }: Props) {
       <button
         type="submit"
         className="mt-4 w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-soft"
-        disabled={!name.trim() || !expiresOn}
+        disabled={!name.trim()}
       >
         ＋ 冷蔵庫に追加
       </button>

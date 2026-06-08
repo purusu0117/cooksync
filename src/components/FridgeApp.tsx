@@ -15,6 +15,7 @@ import {
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import AddItemForm from "./AddItemForm";
+import BulkAddForm from "./BulkAddForm";
 import FoodCard from "./FoodCard";
 import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
@@ -22,6 +23,7 @@ import MaintenancePanel from "./MaintenancePanel";
 export default function FridgeApp() {
   const [items, setItems] = usePersistentList(fridgeStore);
   const [editing, setEditing] = useState<FridgeItem | null>(null);
+  const [mode, setMode] = useState<"single" | "bulk">("single");
 
   const sorted = useMemo(() => sortByExpiry(items), [items]);
   const counts = useMemo(() => {
@@ -47,6 +49,9 @@ export default function FridgeApp() {
   }
   function updateItem(updated: FridgeItem) {
     setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+  }
+  function addMany(newItems: FridgeItem[]) {
+    setItems((prev) => [...prev, ...newItems]);
   }
 
   return (
@@ -90,7 +95,31 @@ export default function FridgeApp() {
       )}
 
       <div className="mb-6">
-        <AddItemForm onAdd={addItem} />
+        <div className="mb-2 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("single")}
+            className={`rounded-full px-3 py-1 font-medium transition ${
+              mode === "single" ? "bg-brand text-white" : "text-ink-soft"
+            }`}
+          >
+            単品で追加
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("bulk")}
+            className={`rounded-full px-3 py-1 font-medium transition ${
+              mode === "bulk" ? "bg-brand text-white" : "text-ink-soft"
+            }`}
+          >
+            📋 まとめて追加
+          </button>
+        </div>
+        {mode === "single" ? (
+          <AddItemForm onAdd={addItem} />
+        ) : (
+          <BulkAddForm onAddMany={addMany} />
+        )}
       </div>
 
       {sorted.length === 0 ? (
