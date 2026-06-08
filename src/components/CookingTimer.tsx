@@ -12,6 +12,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
+import { enablePush } from "@/lib/pushClient";
+
+// サーバー側に完了時刻を予約／解除（アプリを閉じていても終了時刻ちょうどに通知）
+function scheduleServerTimer(id: string, endAt: number, label: string) {
+  void fetch("/api/timer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, endAt, label }),
+  }).catch(() => {});
+}
+function cancelServerTimer(id: string) {
+  void fetch("/api/timer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, cancel: true }),
+  }).catch(() => {});
+}
 
 interface TimerItem {
   id: string;
@@ -189,6 +206,7 @@ export default function CookingTimer({
 
   function addTimer(min: number) {
     ensureAudioAndPermission();
+    void enablePush(); // 離脱中もサーバーから通知できるよう購読を確保
     const start = clockNow();
     setNow(start);
     const item: TimerItem = {
@@ -200,29 +218,41 @@ export default function CookingTimer({
       pausedLeft: min * 60,
     };
     setTimers((prev) => [...prev, item]);
+    scheduleServerTimer(item.id, item.endAt, item.label); // 完了時刻を予約
   }
   function togglePause(id: string) {
     const nowMs = clockNow();
-    setTimers((prev) =>
-      prev.map((t) => {
-        if (t.id !== id || isDoneAt(t, nowMs)) return t;
-        if (t.paused) {
-          // 再開：残り秒から終了時刻を引き直す
-          return { ...t, paused: false, endAt: nowMs + t.pausedLeft * 1000 };
-        }
-        // 一時停止：今の残り秒を保存
-        return { ...t, paused: true, pausedLeft: secLeft(t, nowMs) };
-      }),
-    );
+    const t = timers.find((x) => x.id === id);
+    if (!t || isDoneAt(t, nowMs)) return;
+    if (t.paused) {
+      // 再開：残り秒から終了時刻を引き直し、サーバー予約も入れ直す
+      const endAt = nowMs + t.pausedLeft * 1000;
+      setTimers((prev) =>
+        prev.map((x) => (x.id === id ? { ...x, paused: false, endAt } : x)),
+      );
+      scheduleServerTimer(id, endAt, t.label);
+    } else {
+      // 一時停止：残り秒を保存し、サーバー予約を解除
+      setTimers((prev) =>
+        prev.map((x) =>
+          x.id === id ? { ...x, paused: true, pausedLeft: secLeft(x, nowMs) } : x,
+        ),
+      );
+      cancelServerTimer(id);
+    }
   }
   function removeTimer(id: string) {
     rung.current.delete(id);
+    cancelServerTimer(id);
     setTimers((prev) => prev.filter((t) => t.id !== id));
   }
   function stopAlarm() {
     const nowMs = clockNow();
     timers.forEach((t) => {
-      if (isDoneAt(t, nowMs)) rung.current.delete(t.id);
+      if (isDoneAt(t, nowMs)) {
+        rung.current.delete(t.id);
+        cancelServerTimer(t.id);
+      }
     });
     setTimers((prev) => prev.filter((t) => !isDoneAt(t, nowMs)));
   }
