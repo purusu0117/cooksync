@@ -17,7 +17,13 @@ import {
   type RecipeTags,
   type StapleType,
 } from "@/lib/recipe";
-import { fridgeStore, mealStore, shoppingStore, recipeStore } from "@/lib/storage";
+import {
+  fridgeStore,
+  mealStore,
+  shoppingStore,
+  recipeStore,
+  ratingStore,
+} from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { rankCandidates } from "@/lib/ranking";
 import {
@@ -75,6 +81,7 @@ export default function MealWizard() {
   const [recent, setRecent] = usePersistentList(mealStore);
   const [, setShopping] = usePersistentList(shoppingStore);
   const [, setStoredRecipes] = usePersistentList(recipeStore);
+  const [ratings] = usePersistentList(ratingStore);
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -108,10 +115,18 @@ export default function MealWizard() {
         recipeName: p.recipe.name,
       })),
     ];
-    return rankCandidates(recipes, fridge, pseudoRecent, filters).filter(
-      (r) => r.score > -500,
-    );
-  }, [recipes, fridge, recent, picks, filters]);
+    const ratingOf = (rid: string) =>
+      ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
+    return rankCandidates(
+      recipes,
+      fridge,
+      pseudoRecent,
+      filters,
+      undefined,
+      undefined,
+      ratingOf,
+    ).filter((r) => r.score > -500);
+  }, [recipes, fridge, recent, picks, filters, ratings]);
 
   function toggleFilter<K extends keyof RecipeTags>(key: K, val: RecipeTags[K]) {
     setFilters((f) => ({ ...f, [key]: f[key] === val ? undefined : val }));

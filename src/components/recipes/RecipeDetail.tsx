@@ -284,13 +284,13 @@ export default function RecipeDetail({ id }: Props) {
             ＋
           </button>
         </div>
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs text-ink-soft">評価</span>
-          <StarRating value={stars} onChange={setStars} size={22} />
-        </div>
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
         </p>
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <span className="text-sm font-bold text-ink">⭐ このレシピを評価</span>
+          <StarRating value={stars} onChange={setStars} size={30} />
+        </div>
       </header>
 
       <div className="mb-2 flex gap-2">

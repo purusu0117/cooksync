@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
@@ -17,8 +18,14 @@ const CUISINE_GRADIENT: Record<string, string> = {
 export default function RecipeList() {
   const recipes = useAllRecipes();
   const [ratings] = usePersistentList(ratingStore);
+  const [sort, setSort] = useState<"default" | "rating">("default");
   const starsOf = (rid: string) =>
     ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
+
+  const sorted =
+    sort === "rating"
+      ? [...recipes].sort((a, b) => starsOf(b.id) - starsOf(a.id))
+      : recipes;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
@@ -27,8 +34,28 @@ export default function RecipeList() {
         tagline="作って良かった実在レシピ。献立提案の母集団になります。"
       />
 
+      <div className="mb-3 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
+        {(
+          [
+            ["default", "おすすめ順"],
+            ["rating", "評価が高い順"],
+          ] as ["default" | "rating", string][]
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setSort(v)}
+            className={`rounded-full px-3 py-1 font-medium transition ${
+              sort === v ? "bg-brand text-white" : "text-ink-soft"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <ul className="grid grid-cols-2 gap-3">
-        {recipes.map((r) => (
+        {sorted.map((r) => (
           <li key={r.id}>
             <Link
               href={`/recipes/${r.id}`}

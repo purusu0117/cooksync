@@ -23,6 +23,7 @@ const BONUS_CAP = 24; // 期限ボーナスが味を支配しないよう上限
 const FILTER_BONUS = 6; // 方向性フィルタ1項目一致につき
 const FEW_BUY_BONUS = 5; // 買い足し0〜1点なら
 const RECENT_PENALTY = 1000; // 連日回避：実質除外
+const RATING_BONUS = 5; // ★1つにつき（5つで+25。味を支配しすぎない範囲）
 
 export function rankCandidates(
   candidates: Recipe[],
@@ -31,6 +32,7 @@ export function rankCandidates(
   filters: RecipeTags = {},
   today: string = todayISO(),
   matches: (a: string, b: string) => boolean = ingredientMatches,
+  ratingOf: (recipeId: string) => number = () => 0,
 ): RankedRecipe[] {
   const priorityNames = fridge
     .filter((f) => bucketOf(f.expiresOn, today) === "priority")
@@ -90,6 +92,13 @@ export function rankCandidates(
     if (missingNames.length <= 1) {
       score += FEW_BUY_BONUS;
       reasons.push("買い足しがほぼ不要");
+    }
+
+    // 高評価を優先
+    const stars = ratingOf(recipe.id);
+    if (stars > 0) {
+      score += stars * RATING_BONUS;
+      reasons.push(`評価★${stars}`);
     }
 
     // 連日回避
