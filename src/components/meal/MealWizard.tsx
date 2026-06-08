@@ -33,6 +33,7 @@ import {
   type MealTiming,
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
+import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import PageHeader from "@/components/PageHeader";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
@@ -246,6 +247,8 @@ export default function MealWizard() {
     setAiError("");
     setAiResults([]);
     setAiLoading(true);
+    // 完了通知の許可を確保（初回はダイアログ。アプリを離れても通知が届く）
+    void enablePush();
     try {
       const res = await fetch("/api/research", {
         method: "POST",
@@ -295,6 +298,7 @@ export default function MealWizard() {
     };
     // 初回はマウント後（effect本体での同期setStateを避ける）
     const t = setTimeout(resume, 0);
+    void ensurePushIfGranted();
     const onVis = () => {
       if (document.visibilityState === "visible") resume();
     };

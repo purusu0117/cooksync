@@ -1,4 +1,5 @@
 import { askClaudeForJson } from "@/lib/ai";
+import { sendPush } from "@/lib/pushServer";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -87,10 +88,17 @@ export async function POST(request: Request) {
     // 非同期で実行（await しない＝即レスポンス、スマホが離れても継続）
     void askClaudeForJson<{ recipes?: unknown[] }>(prompt)
       .then((data) => {
-        jobs.set(jobId, {
-          status: "done",
-          recipes: Array.isArray(data.recipes) ? data.recipes : [],
-          createdAt: Date.now(),
+        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+        jobs.set(jobId, { status: "done", recipes, createdAt: Date.now() });
+        // アプリを離れていても通知（Web Push）
+        const names = recipes
+          .map((r) => (r as { name?: string }).name)
+          .filter(Boolean)
+          .join(" / ");
+        void sendPush({
+          title: "🍳 レシピが見つかりました",
+          body: names || "候補ができました。タップして確認",
+          url: "/meal",
         });
       })
       .catch((e) => {

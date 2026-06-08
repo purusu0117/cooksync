@@ -1,11 +1,14 @@
 "use client";
 
-// 調理タイマー（複数同時）。完了に気づけるよう：
+// 調理タイマー（複数同時）。
+// ★終了時刻(endAt)ベース＝実際の壁時計で計算するので秒単位で正確。
+//   アプリを離れている間はJSが止まるため鳴らないが、戻った瞬間に正しい残り時間を表示し、
+//   既に終わっていれば即アラームする（visibilitychangeで復帰検知）。
 //  - 止めるまで鳴り続けるアラーム（Web Audio）
 //  - スクロールしても見える固定の完了バナー
-//  - OS通知（Notifications API・許可時）＝OS側の音/バイブ
+//  - OS通知（Notifications API・許可時）
 //  - 実行中は画面スリープ防止（Wake Lock・対応端末）
-// ※ iOSはバイブAPI(navigator.vibrate)非対応。通知はホーム画面追加したPWA(16.4+)で有効。
+// ※ iOSはバイブAPI非対応。アプリを離れている間の通知が要る場合はネイティブ化が必要。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
@@ -14,13 +17,15 @@ interface TimerItem {
   id: string;
   label: string;
   total: number;
-  secondsLeft: number;
+  endAt: number; // 終了時刻(ms)。一時停止中は pausedLeft を使う
   paused: boolean;
-  done: boolean;
+  pausedLeft: number; // 一時停止時点の残り秒
 }
 
 type WakeNavigator = Navigator & {
-  wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+  wakeLock?: {
+    request: (type: "screen") => Promise<{ release: () => Promise<void> }>;
+  };
 };
 
 function fmt(sec: number): string {
@@ -29,12 +34,25 @@ function fmt(sec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// イベントハンドラ内で現在時刻を取る（lintのpurity誤検知を避けるためのラッパ）
+const clockNow = (): number => Date.now();
+
+function secLeft(t: TimerItem, now: number): number {
+  if (t.paused) return t.pausedLeft;
+  if (now <= 0) return t.total;
+  return Math.max(0, Math.ceil((t.endAt - now) / 1000));
+}
+function isDoneAt(t: TimerItem, now: number): boolean {
+  return !t.paused && now > 0 && now >= t.endAt;
+}
+
 export default function CookingTimer({
   suggestions = [],
 }: {
   suggestions?: number[];
 }) {
   const [timers, setTimers] = useState<TimerItem[]>([]);
+  const [now, setNow] = useState(0);
   const audioRef = useRef<AudioContext | null>(null);
   const rung = useRef<Set<string>>(new Set());
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
@@ -44,17 +62,15 @@ export default function CookingTimer({
     .sort((a, b) => a - b)
     .slice(0, 8);
 
-  const hasActive = timers.some(
-    (t) => !t.paused && !t.done && t.secondsLeft > 0,
-  );
-  const doneTimers = timers.filter((t) => t.done);
+  const hasActive = timers.some((t) => !t.paused && t.endAt > now);
+  const doneTimers = timers.filter((t) => isDoneAt(t, now));
   const anyDone = doneTimers.length > 0;
 
   const beep = useCallback(() => {
     try {
-      (navigator as Navigator & { vibrate?: (p: number[]) => boolean }).vibrate?.(
-        [400, 200, 400],
-      );
+      (
+        navigator as Navigator & { vibrate?: (p: number[]) => boolean }
+      ).vibrate?.([400, 200, 400]);
     } catch {
       /* iOSは非対応 */
     }
@@ -75,26 +91,28 @@ export default function CookingTimer({
     });
   }, []);
 
-  // 1秒ごとに全タイマーを進める（実行中がある間だけ）
+  // 壁時計を刻む（タイマーがある間）。復帰時(visibilitychange)にも即更新＝正確。
   useEffect(() => {
-    if (!hasActive) return;
-    const iv = setInterval(() => {
-      setTimers((prev) =>
-        prev.map((t) => {
-          if (t.paused || t.done || t.secondsLeft <= 0) return t;
-          const s = t.secondsLeft - 1;
-          return s <= 0
-            ? { ...t, secondsLeft: 0, done: true }
-            : { ...t, secondsLeft: s };
-        }),
-      );
-    }, 1000);
-    return () => clearInterval(iv);
-  }, [hasActive]);
+    if (timers.length === 0) return;
+    const update = () => setNow(Date.now());
+    const t0 = setTimeout(update, 0);
+    const iv = setInterval(update, 500);
+    const onVis = () => {
+      if (document.visibilityState === "visible") update();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearTimeout(t0);
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [timers.length]);
 
   // 新たに完了 → OS通知（1回だけ）
   useEffect(() => {
-    const newly = timers.filter((t) => t.done && !rung.current.has(t.id));
+    const newly = timers.filter(
+      (t) => isDoneAt(t, now) && !rung.current.has(t.id),
+    );
     if (newly.length === 0) return;
     newly.forEach((t) => rung.current.add(t.id));
     try {
@@ -110,7 +128,7 @@ export default function CookingTimer({
     } catch {
       /* noop */
     }
-  }, [timers]);
+  }, [now, timers]);
 
   // 完了が1つでもある間は鳴らし続ける＋タブタイトル点滅
   useEffect(() => {
@@ -171,23 +189,30 @@ export default function CookingTimer({
 
   function addTimer(min: number) {
     ensureAudioAndPermission();
-    setTimers((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        label: `${min}分`,
-        total: min * 60,
-        secondsLeft: min * 60,
-        paused: false,
-        done: false,
-      },
-    ]);
+    const start = clockNow();
+    setNow(start);
+    const item: TimerItem = {
+      id: crypto.randomUUID(),
+      label: `${min}分`,
+      total: min * 60,
+      endAt: start + min * 60 * 1000,
+      paused: false,
+      pausedLeft: min * 60,
+    };
+    setTimers((prev) => [...prev, item]);
   }
   function togglePause(id: string) {
+    const nowMs = clockNow();
     setTimers((prev) =>
-      prev.map((t) =>
-        t.id === id && !t.done ? { ...t, paused: !t.paused } : t,
-      ),
+      prev.map((t) => {
+        if (t.id !== id || isDoneAt(t, nowMs)) return t;
+        if (t.paused) {
+          // 再開：残り秒から終了時刻を引き直す
+          return { ...t, paused: false, endAt: nowMs + t.pausedLeft * 1000 };
+        }
+        // 一時停止：今の残り秒を保存
+        return { ...t, paused: true, pausedLeft: secLeft(t, nowMs) };
+      }),
     );
   }
   function removeTimer(id: string) {
@@ -195,8 +220,11 @@ export default function CookingTimer({
     setTimers((prev) => prev.filter((t) => t.id !== id));
   }
   function stopAlarm() {
-    doneTimers.forEach((t) => rung.current.delete(t.id));
-    setTimers((prev) => prev.filter((t) => !t.done));
+    const nowMs = clockNow();
+    timers.forEach((t) => {
+      if (isDoneAt(t, nowMs)) rung.current.delete(t.id);
+    });
+    setTimers((prev) => prev.filter((t) => !isDoneAt(t, nowMs)));
   }
 
   return (
@@ -224,45 +252,48 @@ export default function CookingTimer({
 
       {timers.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
-          {timers.map((t) => (
-            <li
-              key={t.id}
-              className={`flex items-center gap-3 rounded-xl px-4 py-2.5 ${
-                t.done ? "bg-accent-soft" : "bg-paper"
-              }`}
-            >
-              <span className="text-xs font-medium text-ink-soft">
-                {t.label}
-              </span>
-              <span
-                className={`font-mono text-xl font-bold tabular-nums ${
-                  t.done ? "text-accent-dark" : "text-ink"
+          {timers.map((t) => {
+            const done = isDoneAt(t, now);
+            return (
+              <li
+                key={t.id}
+                className={`flex items-center gap-3 rounded-xl px-4 py-2.5 ${
+                  done ? "bg-accent-soft" : "bg-paper"
                 }`}
               >
-                {t.done ? "⏰ 完了！" : fmt(t.secondsLeft)}
-              </span>
-              {!t.done && (
+                <span className="text-xs font-medium text-ink-soft">
+                  {t.label}
+                </span>
+                <span
+                  className={`font-mono text-xl font-bold tabular-nums ${
+                    done ? "text-accent-dark" : "text-ink"
+                  }`}
+                >
+                  {done ? "⏰ 完了！" : fmt(secLeft(t, now))}
+                </span>
+                {!done && (
+                  <button
+                    type="button"
+                    onClick={() => togglePause(t.id)}
+                    className="ml-auto grid h-8 w-8 place-items-center rounded-full bg-brand text-white"
+                    aria-label={t.paused ? "再開" : "一時停止"}
+                  >
+                    {t.paused ? <Play size={14} /> : <Pause size={14} />}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => togglePause(t.id)}
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-full bg-brand text-white"
-                  aria-label={t.paused ? "再開" : "一時停止"}
+                  onClick={() => removeTimer(t.id)}
+                  className={`grid h-8 w-8 place-items-center rounded-full border border-line text-ink-soft ${
+                    done ? "ml-auto" : ""
+                  }`}
+                  aria-label="削除"
                 >
-                  {t.paused ? <Play size={14} /> : <Pause size={14} />}
+                  <X size={14} />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => removeTimer(t.id)}
-                className={`grid h-8 w-8 place-items-center rounded-full border border-line text-ink-soft ${
-                  t.done ? "ml-auto" : ""
-                }`}
-                aria-label="削除"
-              >
-                <X size={14} />
-              </button>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -274,9 +305,7 @@ export default function CookingTimer({
               ⏰
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-accent-dark">
-                タイマー完了！
-              </p>
+              <p className="text-sm font-bold text-accent-dark">タイマー完了！</p>
               <p className="truncate text-xs text-ink-soft">
                 {doneTimers.map((t) => t.label).join("・")} が鳴っています
               </p>
