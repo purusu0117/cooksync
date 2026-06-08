@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Quicksand, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
@@ -23,6 +23,16 @@ export const metadata: Metadata = {
   title: `${APP_NAME}｜${APP_TAGLINE}`,
   description:
     "冷蔵庫の在庫と賞味期限を見える化し、期限が近い食材から献立を提案、買い物リストまで一気通貫で管理する個人用キッチンアプリ。",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: APP_NAME },
+  icons: { icon: "/icon-512.png", apple: "/apple-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2f9e60",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

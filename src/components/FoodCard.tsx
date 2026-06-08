@@ -4,11 +4,11 @@ import {
   CATEGORY_EMOJI,
   daysUntil,
   estimateExpiry,
-  FRESHNESS,
   freshnessOf,
   todayISO,
   type FridgeItem,
 } from "@/lib/food";
+import { FreshnessBadge, FRESHNESS_UI } from "./freshness";
 
 interface Props {
   item: FridgeItem;
@@ -29,7 +29,8 @@ function halveQuantity(q: string): string {
 
 export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
   const left = daysUntil(item.expiresOn);
-  const style = FRESHNESS[freshnessOf(item.expiresOn)];
+  const freshness = freshnessOf(item.expiresOn);
+  const ui = FRESHNESS_UI[freshness];
 
   function handleCut() {
     const today = todayISO();
@@ -42,10 +43,13 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
 
   return (
     <li
-      className={`animate-pop-in rounded-2xl border ${style.border} bg-surface p-3 shadow-sm transition hover:shadow-md`}
+      className={`animate-pop-in rounded-2xl border border-l-4 border-line ${ui.accentBorder} bg-surface p-3 shadow-sm transition hover:shadow-md`}
     >
       <div className="flex items-center gap-3">
-        <span className="text-2xl" aria-hidden>
+        <span
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-paper text-xl"
+          aria-hidden
+        >
           {CATEGORY_EMOJI[item.category]}
         </span>
 
@@ -63,11 +67,7 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
           </p>
         </div>
 
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${style.badge}`}
-        >
-          {style.emoji} {style.label(left)}
-        </span>
+        <FreshnessBadge freshness={freshness} daysLeft={left} />
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">

@@ -15,6 +15,7 @@ import {
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { buildFridgeImport, FRIDGE_IMPORT_NAMES } from "@/lib/fridgeImport";
+import { BUCKET_UI } from "./freshness";
 import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
 import BulkAddForm from "./BulkAddForm";
@@ -75,16 +76,22 @@ export default function FridgeApp() {
       <MaintenancePanel onAddToFridge={addItem} />
 
       <div className="mb-5 grid grid-cols-3 gap-3">
-        {BUCKETS.map((b) => (
-          <div
-            key={b.key}
-            className="rounded-2xl border border-line bg-surface p-3 text-center shadow-sm"
-          >
-            <p className="text-lg">{b.emoji}</p>
-            <p className="text-2xl font-bold text-ink">{counts[b.key]}</p>
-            <p className="text-xs text-ink-soft">{b.label}</p>
-          </div>
-        ))}
+        {BUCKETS.map((b) => {
+          const u = BUCKET_UI[b.key];
+          const Icon = u.Icon;
+          return (
+            <div
+              key={b.key}
+              className="flex flex-col items-center rounded-2xl border border-line bg-surface p-3 text-center shadow-sm"
+            >
+              <span className={`grid h-8 w-8 place-items-center rounded-full ${u.tint}`}>
+                <Icon size={16} strokeWidth={2.4} />
+              </span>
+              <p className={`mt-1.5 text-2xl font-bold ${u.num}`}>{counts[b.key]}</p>
+              <p className="text-xs text-ink-soft">{u.label}</p>
+            </div>
+          );
+        })}
       </div>
 
       {priority.length > 0 && (
