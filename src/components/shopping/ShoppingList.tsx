@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { shoppingStore } from "@/lib/storage";
+import { shoppingStore, fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import type { ShoppingItem } from "@/lib/shopping";
+import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
+import { guessItem } from "@/lib/guess";
 import PageHeader from "@/components/PageHeader";
 
 const fieldClass =
@@ -11,6 +13,7 @@ const fieldClass =
 
 export default function ShoppingList() {
   const [items, setItems] = usePersistentList(shoppingStore);
+  const [, setFridge] = usePersistentList(fridgeStore);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -46,6 +49,28 @@ export default function ShoppingList() {
   }
   function remove(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id));
+  }
+  function clearChecked() {
+    setItems((prev) => prev.filter((i) => !i.checked));
+  }
+  function moveCheckedToFridge() {
+    if (done.length === 0) return;
+    const today = todayISO();
+    const newItems: FridgeItem[] = done.map((i) => {
+      const g = guessItem(i.name, today);
+      return {
+        id: crypto.randomUUID(),
+        name: i.name,
+        quantity: i.amount ?? "",
+        category: g.category,
+        zone: zoneForCategory(g.category),
+        purchasedOn: today,
+        expiresOn: g.expiresOn,
+        createdAt: Date.now(),
+      };
+    });
+    setFridge((prev) => [...prev, ...newItems]);
+    setItems((prev) => prev.filter((i) => !i.checked));
   }
 
   function row(i: ShoppingItem) {
@@ -92,7 +117,7 @@ export default function ShoppingList() {
       <PageHeader
         kicker="Shopping"
         title="買い物リスト"
-        tagline="献立から自動追加された不足食材もここに。買ったらチェック→冷蔵庫の「メンテナンス」から在庫へ移せます。"
+        tagline="献立の不足食材もここに自動追加。買ったらチェック→「冷蔵庫へ入れる」で在庫に移動（カテゴリ・期限は自動）。"
       />
 
       <form onSubmit={add} className="mb-5 flex gap-2">
@@ -126,9 +151,27 @@ export default function ShoppingList() {
           <ul className="flex flex-col gap-2">{todo.map(row)}</ul>
           {done.length > 0 && (
             <div>
-              <p className="mb-2 text-xs font-semibold text-ink-soft">
-                購入済み（{done.length}）
-              </p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-ink-soft">
+                  購入済み（{done.length}）
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={moveCheckedToFridge}
+                    className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-dark active:scale-95"
+                  >
+                    🧊 冷蔵庫へ入れる
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearChecked}
+                    className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-soft transition hover:bg-paper"
+                  >
+                    消す
+                  </button>
+                </div>
+              </div>
               <ul className="flex flex-col gap-2">{done.map(row)}</ul>
             </div>
           )}
