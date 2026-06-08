@@ -1,10 +1,14 @@
 "use client";
 
-// 調理タイマー（複数同時に走らせられる）。
-// 例：3分・4分・5分を同時にかけられる。終了でビープ(Web Audio)＋バイブ。
+// 調理タイマー（複数同時）。完了に気づけるよう：
+//  - 止めるまで鳴り続けるアラーム（Web Audio）
+//  - スクロールしても見える固定の完了バナー
+//  - OS通知（Notifications API・許可時）＝OS側の音/バイブ
+//  - 実行中は画面スリープ防止（Wake Lock・対応端末）
+// ※ iOSはバイブAPI(navigator.vibrate)非対応。通知はホーム画面追加したPWA(16.4+)で有効。
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Timer, X, Pause, Play, Plus } from "lucide-react";
+import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
 
 interface TimerItem {
   id: string;
@@ -14,6 +18,10 @@ interface TimerItem {
   paused: boolean;
   done: boolean;
 }
+
+type WakeNavigator = Navigator & {
+  wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+};
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -29,6 +37,7 @@ export default function CookingTimer({
   const [timers, setTimers] = useState<TimerItem[]>([]);
   const audioRef = useRef<AudioContext | null>(null);
   const rung = useRef<Set<string>>(new Set());
+  const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
 
   const presets = Array.from(new Set([3, 5, 10, ...suggestions]))
     .filter((n) => n > 0)
@@ -38,16 +47,20 @@ export default function CookingTimer({
   const hasActive = timers.some(
     (t) => !t.paused && !t.done && t.secondsLeft > 0,
   );
+  const doneTimers = timers.filter((t) => t.done);
+  const anyDone = doneTimers.length > 0;
 
-  const ring = useCallback(() => {
+  const beep = useCallback(() => {
     try {
-      navigator.vibrate?.([400, 200, 400, 200, 400]);
+      (navigator as Navigator & { vibrate?: (p: number[]) => boolean }).vibrate?.(
+        [400, 200, 400],
+      );
     } catch {
-      /* noop */
+      /* iOSは非対応 */
     }
     const ctx = audioRef.current;
     if (!ctx) return;
-    [0, 0.6, 1.2].forEach((delay) => {
+    [0, 0.5, 1.0].forEach((delay) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.frequency.value = 880;
@@ -55,14 +68,14 @@ export default function CookingTimer({
       gain.connect(ctx.destination);
       const t0 = ctx.currentTime + delay;
       gain.gain.setValueAtTime(0.001, t0);
-      gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.4);
       osc.start(t0);
       osc.stop(t0 + 0.45);
     });
   }, []);
 
-  // 1秒ごとに全タイマーを進める（実行中のものがある間だけ）
+  // 1秒ごとに全タイマーを進める（実行中がある間だけ）
   useEffect(() => {
     if (!hasActive) return;
     const iv = setInterval(() => {
@@ -79,16 +92,62 @@ export default function CookingTimer({
     return () => clearInterval(iv);
   }, [hasActive]);
 
-  // 新たに完了したタイマーを鳴らす（id単位で1回だけ）
+  // 新たに完了 → OS通知（1回だけ）
   useEffect(() => {
     const newly = timers.filter((t) => t.done && !rung.current.has(t.id));
-    if (newly.length > 0) {
-      newly.forEach((t) => rung.current.add(t.id));
-      ring();
+    if (newly.length === 0) return;
+    newly.forEach((t) => rung.current.add(t.id));
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        newly.forEach(
+          (t) =>
+            new Notification("⏰ CookSync タイマー", {
+              body: `${t.label}が完了しました`,
+              tag: t.id,
+            }),
+        );
+      }
+    } catch {
+      /* noop */
     }
-  }, [timers, ring]);
+  }, [timers]);
 
-  function ensureAudio() {
+  // 完了が1つでもある間は鳴らし続ける＋タブタイトル点滅
+  useEffect(() => {
+    if (!anyDone) return;
+    beep();
+    const iv = setInterval(beep, 1600);
+    const title = document.title;
+    document.title = "⏰ タイマー完了！";
+    return () => {
+      clearInterval(iv);
+      document.title = title;
+    };
+  }, [anyDone, beep]);
+
+  // 実行中は画面スリープ防止（対応端末のみ）
+  useEffect(() => {
+    if (!hasActive) return;
+    const nav = navigator as WakeNavigator;
+    const acquire = () => {
+      nav.wakeLock
+        ?.request("screen")
+        .then((w) => (wakeRef.current = w))
+        .catch(() => {});
+    };
+    acquire();
+    const onVis = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      wakeRef.current?.release().catch(() => {});
+      wakeRef.current = null;
+    };
+  }, [hasActive]);
+
+  function ensureAudioAndPermission() {
     try {
       if (!audioRef.current) {
         const Ctx =
@@ -101,10 +160,17 @@ export default function CookingTimer({
     } catch {
       /* 音が出せない端末は無視 */
     }
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        void Notification.requestPermission();
+      }
+    } catch {
+      /* noop */
+    }
   }
 
   function addTimer(min: number) {
-    ensureAudio();
+    ensureAudioAndPermission();
     setTimers((prev) => [
       ...prev,
       {
@@ -127,6 +193,10 @@ export default function CookingTimer({
   function removeTimer(id: string) {
     rung.current.delete(id);
     setTimers((prev) => prev.filter((t) => t.id !== id));
+  }
+  function stopAlarm() {
+    doneTimers.forEach((t) => rung.current.delete(t.id));
+    setTimers((prev) => prev.filter((t) => !t.done));
   }
 
   return (
@@ -194,6 +264,33 @@ export default function CookingTimer({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* スクロールしても見える固定の完了バナー（鳴り続ける） */}
+      {anyDone && (
+        <div className="fixed inset-x-0 bottom-24 z-40 px-4">
+          <div className="mx-auto flex max-w-2xl items-center gap-3 rounded-2xl border border-accent/40 bg-accent-soft p-4 shadow-lg">
+            <span className="animate-pulse text-2xl" aria-hidden>
+              ⏰
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-accent-dark">
+                タイマー完了！
+              </p>
+              <p className="truncate text-xs text-ink-soft">
+                {doneTimers.map((t) => t.label).join("・")} が鳴っています
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={stopAlarm}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-dark px-4 py-2 text-sm font-semibold text-white active:scale-95"
+            >
+              <BellOff size={15} />
+              止める
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
