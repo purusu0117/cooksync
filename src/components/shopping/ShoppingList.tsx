@@ -122,13 +122,13 @@ export default function ShoppingList() {
 
       <form onSubmit={add} className="mb-5 flex gap-2">
         <input
-          className={`${fieldClass} flex-1`}
+          className={`${fieldClass} min-w-0 flex-1`}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="買うもの（例：玉ねぎ）"
         />
         <input
-          className={`${fieldClass} w-28`}
+          className={`${fieldClass} w-16 shrink-0`}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="数量"
@@ -136,7 +136,7 @@ export default function ShoppingList() {
         <button
           type="submit"
           disabled={!name.trim()}
-          className="rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
+          className="shrink-0 whitespace-nowrap rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
         >
           追加
         </button>
