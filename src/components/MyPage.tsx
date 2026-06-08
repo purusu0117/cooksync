@@ -10,6 +10,7 @@ import {
   accountStore,
 } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
+import { recentMeals } from "@/lib/mealplan";
 import PageHeader from "./PageHeader";
 
 const fieldClass =
@@ -167,6 +168,12 @@ export default function MyPage() {
     { label: "買い物リスト", value: shopping.filter((s) => !s.checked).length },
     { label: "作った献立", value: meals.length },
   ];
+  const sortedMeals = recentMeals(meals, 36500); // 全件・新しい順
+  const avoidIds = new Set(recentMeals(meals, 2).map((e) => e.id)); // 直近2日＝提案で除外中
+
+  function removeMeal(mid: string) {
+    setMeals((prev) => prev.filter((m) => m.id !== mid));
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
@@ -198,6 +205,47 @@ export default function MyPage() {
             <p className="mt-0.5 text-[11px] text-ink-soft">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-bold text-ink">🍳 最近作ったもの</h2>
+        <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
+          「提案で除外中」は直近2日に作ったため、献立提案で避けられています。間違いは × で削除できます。
+        </p>
+        {sortedMeals.length === 0 ? (
+          <p className="rounded-xl bg-paper p-3 text-sm text-ink-soft">
+            まだ記録がありません。レシピの「🍳 作った」で記録されます。
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {sortedMeals.slice(0, 30).map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 rounded-xl bg-paper px-3 py-2"
+              >
+                <span className="shrink-0 text-xs tabular-nums text-ink-soft">
+                  {m.date.slice(5).replace("-", "/")}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                  {m.recipeName}
+                </span>
+                {avoidIds.has(m.id) && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                    提案で除外中
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeMeal(m.id)}
+                  aria-label="削除"
+                  className="shrink-0 rounded-lg px-2 py-1 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
