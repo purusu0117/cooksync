@@ -40,5 +40,6 @@ const RAW: RawRecipe[] = [
 const BASE = 1717800000000;
 export const IMPORTED_RECIPES: Recipe[] = RAW.map((r, i) => ({
   ...r,
+  image: `/recipes/${r.id}.png`,
   createdAt: BASE + i,
 }));
