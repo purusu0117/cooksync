@@ -1,92 +1,130 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  type FoodItem,
-  type Freshness,
+  bucketOf,
+  BUCKETS,
+  daysUntil,
+  FRESHNESS,
   freshnessOf,
   sortByExpiry,
+  todayISO,
+  type FreshnessBucket,
+  type FridgeItem,
 } from "@/lib/food";
-import { loadItems, saveItems } from "@/lib/storage";
+import { fridgeStore } from "@/lib/storage";
+import { usePersistentList } from "@/lib/useStore";
 import AddItemForm from "./AddItemForm";
 import FoodCard from "./FoodCard";
-
-const SUMMARY: { key: Freshness; emoji: string; label: string }[] = [
-  { key: "expired", emoji: "🔴", label: "期限切れ" },
-  { key: "soon", emoji: "🟡", label: "期限が近い" },
-  { key: "fresh", emoji: "🟢", label: "余裕あり" },
-];
+import EditItemForm from "./EditItemForm";
+import MaintenancePanel from "./MaintenancePanel";
 
 export default function FridgeApp() {
-  const [items, setItems] = useState<FoodItem[]>([]);
-  const [mounted, setMounted] = useState(false);
-
-  // localStorage はクライアントでしか触れないので、マウント後に読み込む
-  useEffect(() => {
-    setItems(loadItems());
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted) saveItems(items);
-  }, [items, mounted]);
+  const [items, setItems] = usePersistentList(fridgeStore);
+  const [editing, setEditing] = useState<FridgeItem | null>(null);
 
   const sorted = useMemo(() => sortByExpiry(items), [items]);
   const counts = useMemo(() => {
-    const c: Record<Freshness, number> = { expired: 0, soon: 0, fresh: 0 };
-    for (const it of items) c[freshnessOf(it.expiresOn)] += 1;
+    const c: Record<FreshnessBucket, number> = {
+      priority: 0,
+      soon: 0,
+      fresh: 0,
+    };
+    for (const it of items) c[bucketOf(it.expiresOn)] += 1;
     return c;
   }, [items]);
 
-  function addItem(item: FoodItem) {
+  const priority = useMemo(
+    () => sorted.filter((it) => bucketOf(it.expiresOn) === "priority"),
+    [sorted],
+  );
+
+  function addItem(item: FridgeItem) {
     setItems((prev) => [...prev, item]);
   }
-
   function deleteItem(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id));
+  }
+  function updateItem(updated: FridgeItem) {
+    setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
   }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-zinc-900">🧊 冷蔵庫メモ</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          賞味期限を🔴🟡🟢で見える化。期限が近い順に並びます。
+        <h1 className="text-2xl font-bold tracking-tight text-ink">🧊 冷蔵庫</h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          賞味期限を 🔴🟡🟢 で見える化。期限が近い順に並びます。
         </p>
       </header>
 
-      {/* 状態サマリー */}
-      <div className="mb-6 grid grid-cols-3 gap-3">
-        {SUMMARY.map((s) => (
+      <MaintenancePanel onAddToFridge={addItem} />
+
+      <div className="mb-5 grid grid-cols-3 gap-3">
+        {BUCKETS.map((b) => (
           <div
-            key={s.key}
-            className="rounded-xl border border-zinc-200 bg-white p-3 text-center shadow-sm"
+            key={b.key}
+            className="rounded-2xl border border-line bg-surface p-3 text-center shadow-sm"
           >
-            <p className="text-lg">{s.emoji}</p>
-            <p className="text-2xl font-bold text-zinc-900">
-              {mounted ? counts[s.key] : "–"}
-            </p>
-            <p className="text-xs text-zinc-500">{s.label}</p>
+            <p className="text-lg">{b.emoji}</p>
+            <p className="text-2xl font-bold text-ink">{counts[b.key]}</p>
+            <p className="text-xs text-ink-soft">{b.label}</p>
           </div>
         ))}
       </div>
+
+      {priority.length > 0 && (
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50/70 p-3">
+          <p className="mb-1 text-xs font-bold text-red-700">
+            🔴 今日の優先消費食材
+          </p>
+          <p className="text-sm text-red-900">
+            {priority
+              .map(
+                (p) =>
+                  `${p.name}（${FRESHNESS[freshnessOf(p.expiresOn)].label(daysUntil(p.expiresOn))}）`,
+              )
+              .join("　/　")}
+          </p>
+        </div>
+      )}
 
       <div className="mb-6">
         <AddItemForm onAdd={addItem} />
       </div>
 
-      {/* 食材リスト */}
-      {!mounted ? null : sorted.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 bg-white/50 py-12 text-center text-sm text-zinc-400">
+      {sorted.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-line bg-surface/60 py-12 text-center text-sm text-ink-soft">
           まだ食材がありません。上のフォームから追加してみましょう。
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
           {sorted.map((item) => (
-            <FoodCard key={item.id} item={item} onDelete={deleteItem} />
+            <FoodCard
+              key={item.id}
+              item={item}
+              onDelete={deleteItem}
+              onUpdate={updateItem}
+              onEdit={setEditing}
+            />
           ))}
         </ul>
       )}
+
+      {editing && (
+        <EditItemForm
+          item={editing}
+          onSave={(it) => {
+            updateItem(it);
+            setEditing(null);
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+
+      <p className="mt-8 text-center text-xs text-ink-soft/70">
+        データはこの端末にだけ保存されます（個人用・localStorage）。今日は {todayISO()}。
+      </p>
     </div>
   );
 }

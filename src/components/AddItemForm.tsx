@@ -4,16 +4,17 @@ import { useState } from "react";
 import {
   CATEGORIES,
   type Category,
-  type FoodItem,
+  type FridgeItem,
   todayISO,
+  zoneForCategory,
 } from "@/lib/food";
 
 interface Props {
-  onAdd: (item: FoodItem) => void;
+  onAdd: (item: FridgeItem) => void;
 }
 
 const fieldClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+  "w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
 
 export default function AddItemForm({ onAdd }: Props) {
   const [name, setName] = useState("");
@@ -31,12 +32,12 @@ export default function AddItemForm({ onAdd }: Props) {
       name: name.trim(),
       quantity: quantity.trim(),
       category,
+      zone: zoneForCategory(category),
       purchasedOn,
       expiresOn,
       createdAt: Date.now(),
     });
 
-    // 次の入力に備えてリセット（カテゴリと購入日は据え置き）
     setName("");
     setQuantity("");
     setExpiresOn("");
@@ -45,11 +46,11 @@ export default function AddItemForm({ onAdd }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
+      className="rounded-3xl border border-line bg-surface p-4 shadow-sm"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2">
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-ink-soft">
             食材名
           </span>
           <input
@@ -62,7 +63,7 @@ export default function AddItemForm({ onAdd }: Props) {
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-ink-soft">
             数量
           </span>
           <input
@@ -74,7 +75,7 @@ export default function AddItemForm({ onAdd }: Props) {
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-ink-soft">
             カテゴリ
           </span>
           <select
@@ -91,7 +92,7 @@ export default function AddItemForm({ onAdd }: Props) {
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-ink-soft">
             購入日
           </span>
           <input
@@ -103,7 +104,7 @@ export default function AddItemForm({ onAdd }: Props) {
         </label>
 
         <label>
-          <span className="mb-1 block text-xs font-medium text-zinc-600">
+          <span className="mb-1 block text-xs font-medium text-ink-soft">
             賞味・消費期限
           </span>
           <input
@@ -118,10 +119,10 @@ export default function AddItemForm({ onAdd }: Props) {
 
       <button
         type="submit"
-        className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+        className="mt-4 w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-soft"
         disabled={!name.trim() || !expiresOn}
       >
-        ＋ 追加する
+        ＋ 冷蔵庫に追加
       </button>
     </form>
   );
