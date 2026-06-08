@@ -168,6 +168,36 @@ export default function RecipeDetail({ id }: Props) {
     setNote("取り消しました");
   }
 
+  // 作った回数の手動編集（＋／−）
+  function incMade() {
+    if (!recipe) return;
+    setMeals((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        date: todayISO(),
+        slot: "夜",
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+      } satisfies MealEntry,
+    ]);
+  }
+  function decMade() {
+    setMeals((prev) => {
+      let removed = false;
+      const out: MealEntry[] = [];
+      // 末尾（最新）から1件だけ削除
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (!removed && prev[i].recipeId === id) {
+          removed = true;
+          continue;
+        }
+        out.unshift(prev[i]);
+      }
+      return out;
+    });
+  }
+
   if (recipe === null) {
     return (
       <div className="mx-auto w-full max-w-2xl px-4 py-12 text-center">
@@ -214,8 +244,30 @@ export default function RecipeDetail({ id }: Props) {
           {recipe.tags.cookTime ? `⏱ ${recipe.tags.cookTime}分` : ""}
           {recipe.kcal ? ` / ${recipe.kcal}kcal` : ""}
           {recipe.servings ? `　${recipe.servings}人分` : ""}
-          {madeCount > 0 ? `　🍳 ${madeCount}回作った` : ""}
         </p>
+        <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
+          <span>🍳 作った回数</span>
+          <button
+            type="button"
+            onClick={decMade}
+            disabled={madeCount === 0}
+            className="grid h-6 w-6 place-items-center rounded-full border border-line text-ink-soft transition hover:bg-paper disabled:opacity-40"
+            aria-label="1回減らす"
+          >
+            −
+          </button>
+          <span className="min-w-[2ch] text-center text-sm font-bold text-ink">
+            {madeCount}
+          </span>
+          <button
+            type="button"
+            onClick={incMade}
+            className="grid h-6 w-6 place-items-center rounded-full border border-line text-ink-soft transition hover:bg-paper"
+            aria-label="1回増やす"
+          >
+            ＋
+          </button>
+        </div>
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
         </p>

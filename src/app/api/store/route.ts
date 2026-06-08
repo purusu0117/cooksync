@@ -18,6 +18,23 @@ async function readAll(): Promise<Record<string, unknown>> {
   }
 }
 
+// 同一プロセス内で read-modify-write を直列化（同時PUTでキーが欠落するのを防ぐ）
+let writeLock: Promise<unknown> = Promise.resolve();
+
+async function setKey(key: string, value: unknown) {
+  const op = writeLock.catch(() => {}).then(async () => {
+    await fs.mkdir(DIR, { recursive: true });
+    const all = await readAll();
+    all[key] = value;
+    // 原子的書き込み：一時ファイルに書いてから rename（途中切断での破損を防ぐ）
+    const tmp = `${FILE}.${key.replace(/[^a-z0-9]/gi, "")}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(all), "utf8");
+    await fs.rename(tmp, FILE);
+  });
+  writeLock = op;
+  await op;
+}
+
 export async function GET() {
   return Response.json(await readAll());
 }
@@ -31,10 +48,7 @@ export async function PUT(request: Request) {
     if (typeof key !== "string") {
       return Response.json({ error: "key required" }, { status: 400 });
     }
-    await fs.mkdir(DIR, { recursive: true });
-    const all = await readAll();
-    all[key] = value;
-    await fs.writeFile(FILE, JSON.stringify(all), "utf8");
+    await setKey(key, value);
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json(

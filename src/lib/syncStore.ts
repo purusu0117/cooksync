@@ -1,8 +1,12 @@
 "use client";
 
 // サーバー(/api/store)をデータ源にする外部ストア。端末間で同期される。
-// 初回ハイドレート時、サーバーが空でローカル(localStorage)に既存データがあれば
-// それをサーバーへ移行（＝今までPCに溜めたデータを引き継ぐ）。
+//
+// 【データ消失を防ぐ設計】
+//  - 初回ロード(GET)が「成功」するまで hydrated にしない。失敗時は空で確定させない。
+//  - hydrated になるまで書き込みを保留（空状態を保存してしまう事故を防ぐ）。
+//  - 書き込み(PUT)は直列化して、サーバー側 read-modify-write の競合を防ぐ。
+//  - サーバーが本当に空でローカル(localStorage)に既存データがあれば移行する。
 
 import { useSyncExternalStore } from "react";
 import {
@@ -26,50 +30,67 @@ const listeners = new Set<() => void>();
 const EMPTY: readonly never[] = [];
 
 let hydrated = false;
-let hydrating = false;
+let hydratePromise: Promise<void> | null = null;
 
 function notify() {
   listeners.forEach((l) => l());
 }
 
-async function putKey(key: string, value: unknown[]) {
-  try {
-    await fetch("/api/store", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, value }),
+// PUT を直列化（前の書き込みが終わってから次を実行）＝サーバー競合回避
+let writeChain: Promise<unknown> = Promise.resolve();
+function queuePut(key: string, value: unknown[]) {
+  writeChain = writeChain
+    .catch(() => {})
+    .then(() =>
+      fetch("/api/store", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      }),
+    )
+    .catch(() => {
+      /* オフライン等。メモリは保持され、次回操作で再送される */
     });
-  } catch {
-    /* オフライン時はメモリのみ。次回書き込みで再送される */
-  }
+  return writeChain;
 }
 
-async function hydrate() {
-  if (hydrated || hydrating || typeof window === "undefined") return;
-  hydrating = true;
-  try {
-    const res = await fetch("/api/store");
-    const server: Record<string, unknown> = res.ok ? await res.json() : {};
-    for (const store of ALL_STORES) {
-      const sv = server[store.key];
-      if (Array.isArray(sv) && sv.length > 0) {
-        mem.set(store.key, sv);
+async function doHydrate() {
+  const res = await fetch("/api/store");
+  if (!res.ok) throw new Error(`store GET ${res.status}`);
+  const server = (await res.json()) as Record<string, unknown>;
+  for (const store of ALL_STORES) {
+    const sv = server[store.key];
+    if (Array.isArray(sv) && sv.length > 0) {
+      mem.set(store.key, sv);
+    } else {
+      // サーバーが空 → ローカルの既存データがあれば移行
+      const local = store.load();
+      if (local.length > 0) {
+        mem.set(store.key, local);
+        void queuePut(store.key, local);
       } else {
-        // サーバーが空 → ローカルの既存データを移行
-        const local = store.load();
-        if (local.length > 0) {
-          mem.set(store.key, local);
-          void putKey(store.key, local);
-        } else {
-          mem.set(store.key, Array.isArray(sv) ? sv : []);
-        }
+        mem.set(store.key, Array.isArray(sv) ? sv : []);
       }
     }
-    hydrated = true;
-    notify();
-  } finally {
-    hydrating = false;
   }
+  hydrated = true; // ★成功時のみ確定
+  notify();
+}
+
+// 実行中の hydrate Promise を共有し、完了を待てるようにする。
+// 失敗時は hydratePromise を null に戻して再試行可能にする（hydrated は false のまま）。
+function hydrate(): Promise<void> {
+  if (hydrated || typeof window === "undefined") return Promise.resolve();
+  if (!hydratePromise) {
+    hydratePromise = doHydrate()
+      .catch(() => {
+        /* 失敗：空で確定しない。次回再試行 */
+      })
+      .finally(() => {
+        hydratePromise = null;
+      });
+  }
+  return hydratePromise;
 }
 
 export function useServerList<T>(
@@ -87,7 +108,7 @@ export function useServerList<T>(
     () => EMPTY as unknown as T[],
   );
 
-  function setData(updater: T[] | ((prev: T[]) => T[])) {
+  function applyWrite(updater: T[] | ((prev: T[]) => T[])) {
     const prev = (mem.get(key) as T[]) ?? [];
     const next =
       typeof updater === "function"
@@ -95,7 +116,19 @@ export function useServerList<T>(
         : updater;
     mem.set(key, next);
     notify();
-    void putKey(key, next as unknown[]);
+    void queuePut(key, next as unknown[]);
+  }
+
+  function setData(updater: T[] | ((prev: T[]) => T[])) {
+    if (!hydrated) {
+      // まだ読み込めていない時に書くと「空」を保存してしまう恐れ。
+      // ロード完了を待ってから適用する（失敗時は安全のため破棄）。
+      void hydrate().then(() => {
+        if (hydrated) applyWrite(updater);
+      });
+      return;
+    }
+    applyWrite(updater);
   }
 
   return [data, setData];
@@ -105,7 +138,7 @@ export function useServerList<T>(
 export async function clearAllServer() {
   for (const store of ALL_STORES) {
     mem.set(store.key, []);
-    await putKey(store.key, []);
+    await queuePut(store.key, []);
   }
   notify();
 }
