@@ -14,6 +14,7 @@ import {
 } from "@/lib/food";
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
+import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
 import BulkAddForm from "./BulkAddForm";
 import FoodCard from "./FoodCard";
@@ -56,12 +57,11 @@ export default function FridgeApp() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">🧊 冷蔵庫</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          賞味期限を 🔴🟡🟢 で見える化。期限が近い順に並びます。
-        </p>
-      </header>
+      <PageHeader
+        kicker="Fridge"
+        title="冷蔵庫"
+        tagline="賞味期限を 🔴🟡🟢 で見える化。期限が近い順に並びます。"
+      />
 
       <MaintenancePanel onAddToFridge={addItem} />
 

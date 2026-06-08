@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAllRecipes } from "@/lib/useStore";
+import PageHeader from "@/components/PageHeader";
 
 const CUISINE_TAG: Record<string, string> = {
   和: "bg-amber-100 text-amber-700",
@@ -15,12 +16,11 @@ export default function RecipeList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">🍴 レシピ</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          作って良かった実在レシピ。献立提案の母集団になります。
-        </p>
-      </header>
+      <PageHeader
+        kicker="Recipes"
+        title="レシピ"
+        tagline="作って良かった実在レシピ。献立提案の母集団になります。"
+      />
 
       {(
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">

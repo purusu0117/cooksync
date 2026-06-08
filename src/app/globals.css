@@ -1,26 +1,30 @@
 @import "tailwindcss";
 
 /*
-  デザイン方針：台所の「作業台×市場の新鮮さ」。
-  - 背景は温かみのある紙色（cream-serif の量産AIっぽさは避け、クリーンなサンセリフで）
-  - インクは温かいニアブラック
-  - ブランド色は葉物グリーン（🔴🟡🟢の意味色とは別系統で衝突させない）
-  - 余白広め・角丸大きめ・微妙なドットテクスチャで生活感
+  デザイン：和モダン・エディトリアル
+  - 見出しは明朝（Shippori Mincho）、本文は Zen 角ゴ。日本語が美しく出る。
+  - クローム（ナビ/ボタン/アクティブ）は墨インクのモノトーンに寄せ、
+    “色”は鮮度の 🔴🟡🟢 と、わずかな朱（差し色）だけに持たせる＝静かで洗練。
+  - 温かい和紙の地色＋極薄テクスチャで奥行き。
 */
 
 @theme {
-  --color-paper: #faf7f1;
-  --color-surface: #ffffff;
-  --color-ink: #201e1a;
-  --color-ink-soft: #6f6a60;
-  --color-line: #ece6da;
-  --color-brand: #2f7d57;
-  --color-brand-dark: #1f5e40;
-  --color-brand-soft: #e6f1ea;
-  --color-accent: #d9772f;
+  --color-paper: #f3efe7; /* 和紙の地 */
+  --color-surface: #fcfaf5; /* カード面 */
+  --color-ink: #211e19; /* 墨 */
+  --color-ink-soft: #756e62; /* 薄墨 */
+  --color-line: #e3dccd; /* 罫線 */
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* クロームのプライマリ＝墨（旧brand。全CTA/アクティブがここを参照） */
+  --color-brand: #211e19;
+  --color-brand-dark: #000000;
+  --color-brand-soft: #eae3d6; /* 押下/淡背景：温かいグレージュ */
+
+  /* 差し色＝朱（ロゴの点・★買い足し等、ごく控えめに） */
+  --color-accent: #c8472e;
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
 }
 
 html {
@@ -29,22 +33,34 @@ html {
 
 body {
   background-color: var(--color-paper);
-  /* ごく薄いドットで紙の質感 */
-  background-image: radial-gradient(
-    rgba(47, 125, 87, 0.06) 1px,
-    transparent 1px
-  );
-  background-size: 22px 22px;
+  /* 極薄の和紙グレイン（墨のドット） */
+  background-image: radial-gradient(rgba(33, 30, 25, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "palt"; /* 日本語の詰め */
   -webkit-font-smoothing: antialiased;
 }
 
-/* リンク/ボタンの押下マイクロインタラクション */
+/* 見出しは明朝で。Tailwind の font-bold 等はそのまま効く（要素セレクタは弱いので上書きされる） */
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.01em;
+}
+
+/* ロゴ等で使う、字間を詰めた明朝 */
+.wordmark {
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.04em;
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(5px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -53,5 +69,5 @@ body {
 }
 
 .animate-pop-in {
-  animation: pop-in 0.18s ease-out both;
+  animation: pop-in 0.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }

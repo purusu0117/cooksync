@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { shoppingStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import type { ShoppingItem } from "@/lib/shopping";
+import PageHeader from "@/components/PageHeader";
 
 const fieldClass =
   "rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
@@ -88,13 +89,11 @@ export default function ShoppingList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">🛒 買い物リスト</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          献立から自動追加された不足食材もここに並びます。買ったらチェック→冷蔵庫の
-          「メンテナンス」から在庫へ移せます。
-        </p>
-      </header>
+      <PageHeader
+        kicker="Shopping"
+        title="買い物リスト"
+        tagline="献立から自動追加された不足食材もここに。買ったらチェック→冷蔵庫の「メンテナンス」から在庫へ移せます。"
+      />
 
       <form onSubmit={add} className="mb-5 flex gap-2">
         <input

@@ -27,6 +27,7 @@ import {
   type MealTiming,
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
+import PageHeader from "@/components/PageHeader";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
 
@@ -220,12 +221,11 @@ export default function MealWizard() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">🍳 献立を決める</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          冷蔵庫の期限を踏まえて、人気レシピから提案します。
-        </p>
-      </header>
+      <PageHeader
+        kicker="Meal"
+        title="献立を決める"
+        tagline="冷蔵庫の期限を踏まえて、人気レシピから提案します。"
+      />
 
       {/* 優先消費バナー */}
       {priority.length > 0 && phase !== "done" && (
