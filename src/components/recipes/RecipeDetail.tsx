@@ -3,8 +3,12 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import type { RecipeIngredient } from "@/lib/recipe";
-import { recipeStore } from "@/lib/storage";
+import { useState } from "react";
+import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
+import { recipeStore, shoppingStore, mealStore, fridgeStore } from "@/lib/storage";
+import { todayISO } from "@/lib/food";
+import type { ShoppingItem } from "@/lib/shopping";
+import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 
 interface Props {
@@ -25,6 +29,10 @@ export default function RecipeDetail({ id }: Props) {
   const router = useRouter();
   const recipes = useAllRecipes();
   const [stored, setStored] = usePersistentList(recipeStore);
+  const [shopping, setShopping] = usePersistentList(shoppingStore);
+  const [, setMeals] = usePersistentList(mealStore);
+  const [fridge] = usePersistentList(fridgeStore);
+  const [note, setNote] = useState("");
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
 
@@ -32,6 +40,44 @@ export default function RecipeDetail({ id }: Props) {
     if (typeof window !== "undefined" && !window.confirm("このレシピを削除しますか？")) return;
     setStored((prev) => prev.filter((r) => r.id !== id));
     router.push("/recipes");
+  }
+
+  function addMissingToShopping() {
+    if (!recipe) return;
+    const toAdd = recipe.ingredients.filter((ing) => {
+      if (ing.basicSeasoning) return false;
+      const inFridge = fridge.some((f) => ingredientMatches(f.name, ing.name));
+      const inShopping = shopping.some((s) => s.name === ing.name);
+      return !inFridge && !inShopping;
+    });
+    if (toAdd.length === 0) {
+      setNote("不足はありません（在庫・リストに揃っています）");
+      return;
+    }
+    const items: ShoppingItem[] = toAdd.map((ing) => ({
+      id: crypto.randomUUID(),
+      name: ing.name,
+      amount: ing.amount,
+      checked: false,
+      addedAt: Date.now(),
+      note: `${recipe.name}用`,
+      fromRecipeId: recipe.id,
+    }));
+    setShopping((prev) => [...prev, ...items]);
+    setNote(`不足 ${toAdd.length} 件を買い物リストに追加しました`);
+  }
+
+  function markMade() {
+    if (!recipe) return;
+    const entry: MealEntry = {
+      id: crypto.randomUUID(),
+      date: todayISO(),
+      slot: "夜",
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+    };
+    setMeals((prev) => [...prev, entry]);
+    setNote("「作った」を記録しました 🍳");
   }
 
   if (recipe === null) {
@@ -77,6 +123,26 @@ export default function RecipeDetail({ id }: Props) {
           {recipe.catch}
         </p>
       </header>
+
+      <div className="mb-2 flex gap-2">
+        <button
+          type="button"
+          onClick={addMissingToShopping}
+          className="flex-1 rounded-xl border border-brand/40 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
+        >
+          🛒 不足を買い物へ
+        </button>
+        <button
+          type="button"
+          onClick={markMade}
+          className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95"
+        >
+          🍳 作った
+        </button>
+      </div>
+      {note && (
+        <p className="mb-5 text-center text-xs font-medium text-brand-dark">{note}</p>
+      )}
 
       {/* 材料 */}
       <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
