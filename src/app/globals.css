@@ -33,6 +33,25 @@ html {
 
 body {
   background-color: var(--color-paper);
+  /* 単色をやめ、緑とpeachのほのかな光で奥行きを出す（固定背景） */
+  background-image:
+    radial-gradient(
+      1100px 620px at 108% -8%,
+      color-mix(in srgb, var(--color-brand) 16%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      820px 520px at -12% 2%,
+      color-mix(in srgb, var(--color-accent) 14%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      760px 560px at 50% 116%,
+      color-mix(in srgb, var(--color-brand) 12%, transparent),
+      transparent 60%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-feature-settings: "palt";

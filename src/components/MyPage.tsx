@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 import {
   fridgeStore,
@@ -82,6 +83,14 @@ export default function MyPage() {
     return (
       <div className="mx-auto w-full max-w-md px-4 pt-8">
         <div className="mb-6 text-center">
+          <Image
+            src="/cooksync-mark.svg"
+            alt=""
+            width={64}
+            height={64}
+            priority
+            className="mx-auto mb-2"
+          />
           <p className="wordmark text-3xl font-bold text-brand-dark">{APP_NAME}</p>
           <p className="mt-1 text-sm text-ink-soft">{APP_TAGLINE}</p>
         </div>

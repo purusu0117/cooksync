@@ -13,7 +13,6 @@ import {
   CupSoda,
   Apple,
   ChevronRight,
-  Leaf,
   type LucideIcon,
 } from "lucide-react";
 import { APP_NAME } from "@/lib/brand";
@@ -52,7 +51,7 @@ export default function HomeDashboard() {
       {/* トップ：ロゴ＋アバター */}
       <div className="mb-5 flex items-center justify-between">
         <span className="wordmark flex items-center gap-1.5 text-2xl font-bold text-brand-dark">
-          <Leaf size={20} className="text-brand" />
+          <Image src="/cooksync-mark.svg" alt="" width={30} height={30} priority />
           {APP_NAME}
         </span>
         <Link
