@@ -14,7 +14,6 @@ import {
 } from "@/lib/food";
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
-import { buildFridgeImport, FRIDGE_IMPORT_NAMES } from "@/lib/fridgeImport";
 import { BUCKET_UI } from "./freshness";
 import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
@@ -56,14 +55,6 @@ export default function FridgeApp() {
   function addMany(newItems: FridgeItem[]) {
     setItems((prev) => [...prev, ...newItems]);
   }
-  function importNotion() {
-    const have = new Set(items.map((i) => i.name));
-    const toAdd = buildFridgeImport().filter((i) => !have.has(i.name));
-    if (toAdd.length) addMany(toAdd);
-  }
-  const importRemaining = FRIDGE_IMPORT_NAMES.filter(
-    (n) => !items.some((i) => i.name === n),
-  ).length;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
@@ -131,15 +122,6 @@ export default function FridgeApp() {
             📋 まとめて追加
           </button>
         </div>
-        {importRemaining > 0 && (
-          <button
-            type="button"
-            onClick={importNotion}
-            className="mb-2 ml-2 rounded-full border border-brand/40 bg-brand-soft px-3 py-1 text-xs font-medium text-brand-dark transition hover:bg-brand hover:text-white"
-          >
-            📥 Notionの冷蔵庫を取り込む（{importRemaining}件）
-          </button>
-        )}
         {mode === "single" ? (
           <AddItemForm onAdd={addItem} />
         ) : (

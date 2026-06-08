@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useAllRecipes, usePersistentList } from "@/lib/useStore";
-import { recipeStore } from "@/lib/storage";
-import { IMPORTED_RECIPES } from "@/lib/seedRecipesImported";
+import { useAllRecipes } from "@/lib/useStore";
 import PageHeader from "@/components/PageHeader";
 
 const CUISINE_GRADIENT: Record<string, string> = {
@@ -16,15 +14,6 @@ const CUISINE_GRADIENT: Record<string, string> = {
 
 export default function RecipeList() {
   const recipes = useAllRecipes();
-  const [stored, setStored] = usePersistentList(recipeStore);
-
-  const importRemaining = IMPORTED_RECIPES.filter(
-    (r) => !stored.some((s) => s.id === r.id),
-  );
-
-  function importNotion() {
-    if (importRemaining.length) setStored((prev) => [...importRemaining, ...prev]);
-  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
@@ -32,16 +21,6 @@ export default function RecipeList() {
         title="レシピ"
         tagline="作って良かった実在レシピ。献立提案の母集団になります。"
       />
-
-      {importRemaining.length > 0 && (
-        <button
-          type="button"
-          onClick={importNotion}
-          className="mb-4 w-full rounded-2xl border border-brand/40 bg-brand-soft px-4 py-3 text-sm font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
-        >
-          📥 Notionのレシピを取り込む（{importRemaining.length}件）
-        </button>
-      )}
 
       <ul className="grid grid-cols-2 gap-3">
         {recipes.map((r) => (
