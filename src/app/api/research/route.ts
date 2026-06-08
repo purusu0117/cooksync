@@ -8,13 +8,14 @@ interface ResearchBody {
   wish?: string;
   fridge?: string[];
   expiring?: string[];
+  servings?: number;
   filters?: {
     cuisine?: string;
     heaviness?: string;
     staple?: string;
     cookTime?: number;
   };
-  avoid?: string[]; // 直近に作った料理名（連日回避）
+  avoid?: string[];
 }
 
 export async function POST(request: Request) {
@@ -23,12 +24,14 @@ export async function POST(request: Request) {
     const wish = (body.wish ?? "").trim();
     const fridge = body.fridge ?? [];
     const expiring = body.expiring ?? [];
+    const servings = body.servings && body.servings > 0 ? body.servings : 2;
     const filters = body.filters ?? {};
     const avoid = body.avoid ?? [];
 
     const prompt = [
-      "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を1つ調べ、結果をJSONだけで返してください。",
+      "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2〜3品調べ、結果をJSONだけで返してください。",
       wish ? `■ 作りたいもの: ${wish}` : "■ 作りたいもの: おまかせ（下の冷蔵庫の食材を活かせるもの）",
+      `■ 人数: ${servings}人分（材料の分量はこの人数に合わせる）`,
       fridge.length ? `■ 冷蔵庫にある食材: ${fridge.join("、")}` : "",
       expiring.length ? `■ 特に使い切りたい（期限間近）: ${expiring.join("、")}` : "",
       filters.cuisine ? `■ ジャンル: ${filters.cuisine}` : "",
@@ -38,20 +41,21 @@ export async function POST(request: Request) {
       avoid.length ? `■ 避ける（最近作った）: ${avoid.join("、")}` : "",
       "",
       "要件:",
+      "- 2〜3品、できれば方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
       "- 実在のレシピを参照し、sources に つくれぽ数/再生数 等の人気の根拠(popularity)とURLを入れる。出典のない創作はしない。",
-      "- 材料は分量つき。家に無さそうな生鮮品は toBuy:true、塩こしょう等の基本調味料は basicSeasoning:true。",
+      `- 材料は ${servings}人分の分量。家に無さそうな生鮮品は toBuy:true、塩こしょう等の基本調味料は basicSeasoning:true。`,
       "- 手順(steps)は各ステップ本文(text)に分量も書き、tip（コツ）を添える。",
-      "- 余った材料の保存(leftoverStorage)も書く。",
-      "- 日本語で。emoji は料理に合う絵文字を1つ。",
+      "- 余った材料の保存(leftoverStorage)も書く。日本語で。emojiは料理に合う絵文字を1つ。",
       "",
-      "次のJSON形式『だけ』を出力（前後に文章やコードフェンスを付けない）:",
-      `{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]}`,
+      "次のJSON『だけ』を出力（前後に文章やコードフェンスを付けない）:",
+      `{"recipes":[{"name":string,"emoji":string,"catch":string,"servings":${servings},"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]}]}`,
     ]
       .filter(Boolean)
       .join("\n");
 
-    const recipe = await askClaudeForJson(prompt);
-    return Response.json({ recipe });
+    const data = await askClaudeForJson<{ recipes?: unknown[] }>(prompt);
+    const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+    return Response.json({ recipes });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "AI research failed" },

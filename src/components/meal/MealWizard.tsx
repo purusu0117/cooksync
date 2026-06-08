@@ -83,9 +83,11 @@ export default function MealWizard() {
   const [slotIndex, setSlotIndex] = useState(0);
   const [missing, setMissing] = useState<MissingChoice[]>([]);
 
+  const [servings, setServings] = useState(2);
   const [wish, setWish] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiResults, setAiResults] = useState<Recipe[]>([]);
 
   const priority = useMemo(
     () => sortByExpiry(fridge).filter((f) => bucketOf(f.expiresOn) === "priority"),
@@ -159,6 +161,7 @@ export default function MealWizard() {
   async function aiSearch() {
     if (aiLoading) return;
     setAiError("");
+    setAiResults([]);
     setAiLoading(true);
     try {
       const res = await fetch("/api/research", {
@@ -166,6 +169,7 @@ export default function MealWizard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wish: wish.trim(),
+          servings,
           fridge: fridge.map((f) => f.name),
           expiring: priority.map((p) => p.name),
           filters,
@@ -176,43 +180,43 @@ export default function MealWizard() {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.recipe) {
+      if (!res.ok || !Array.isArray(data.recipes) || data.recipes.length === 0) {
         throw new Error(data.error || "レシピが取得できませんでした");
       }
-      const r = data.recipe;
-      const ct: 15 | 30 | 60 =
-        typeof r.cookTime === "number" && r.cookTime <= 15
-          ? 15
-          : typeof r.cookTime === "number" && r.cookTime <= 30
-            ? 30
-            : 60;
-      const recipe: Recipe = {
-        id: `ai-${crypto.randomUUID().slice(0, 8)}`,
-        name: r.name ?? "AIレシピ",
-        emoji: r.emoji ?? "🍽",
-        kcal: typeof r.kcal === "number" ? r.kcal : undefined,
-        catch: r.catch ?? "",
-        servings: typeof r.servings === "number" ? r.servings : 1,
-        ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
-        steps: Array.isArray(r.steps) ? r.steps : [],
-        leftoverStorage: Array.isArray(r.leftoverStorage)
-          ? r.leftoverStorage
-          : [],
-        sources: Array.isArray(r.sources) ? r.sources : [],
-        tags: {
-          cuisine: r.cuisine,
-          cookTime: ct,
-        },
-        createdAt: Date.now(),
-      };
-      setStoredRecipes((prev) => [recipe, ...prev]);
-      setWish("");
-      pickRecipe(recipe);
+      const mapped: Recipe[] = data.recipes.map((r: Record<string, unknown>) => {
+        const name = typeof r.name === "string" ? r.name : "AIレシピ";
+        const cookTime = typeof r.cookTime === "number" ? r.cookTime : 30;
+        const ct: 15 | 30 | 60 = cookTime <= 15 ? 15 : cookTime <= 30 ? 30 : 60;
+        return {
+          id: `ai-${crypto.randomUUID().slice(0, 8)}`,
+          name,
+          emoji: typeof r.emoji === "string" ? r.emoji : "🍽",
+          kcal: typeof r.kcal === "number" ? r.kcal : undefined,
+          catch: typeof r.catch === "string" ? r.catch : "",
+          servings: typeof r.servings === "number" ? r.servings : servings,
+          ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+          steps: Array.isArray(r.steps) ? r.steps : [],
+          leftoverStorage: Array.isArray(r.leftoverStorage)
+            ? r.leftoverStorage
+            : [],
+          sources: Array.isArray(r.sources) ? r.sources : [],
+          tags: { cuisine: r.cuisine as Cuisine | undefined, cookTime: ct },
+          createdAt: Date.now(),
+        };
+      });
+      setAiResults(mapped);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "AI検索に失敗しました");
     } finally {
       setAiLoading(false);
     }
+  }
+
+  function pickAiRecipe(recipe: Recipe) {
+    setStoredRecipes((prev) => [recipe, ...prev]);
+    setAiResults([]);
+    setWish("");
+    pickRecipe(recipe);
   }
 
   function finalize() {
@@ -367,6 +371,20 @@ export default function MealWizard() {
                 </button>
               ))}
             </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-ink-soft">何人分？</p>
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setServings(n)}
+                    className={chip(servings === n)}
+                  >
+                    {n}人分
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="mt-5 flex gap-2">
             <button onClick={() => setPhase("timing")} className="flex-1 rounded-xl border border-line px-4 py-3 text-sm font-medium text-ink-soft transition hover:bg-paper">
@@ -422,6 +440,43 @@ export default function MealWizard() {
             )}
             {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
           </div>
+
+          {aiResults.length > 0 && (
+            <div className="mb-5">
+              <p className="mb-2 text-xs font-semibold text-brand-dark">
+                ✨ AIの提案（タップで決定・{servings}人分）
+              </p>
+              <ul className="flex flex-col gap-3">
+                {aiResults.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => pickAiRecipe(r)}
+                      className="flex w-full items-start gap-3 rounded-2xl border border-brand/40 bg-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <span className="text-2xl" aria-hidden>{r.emoji}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-ink">{r.name}</p>
+                        <p className="mt-0.5 text-xs text-ink-soft">{r.catch}</p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {r.sources[0] && (
+                            <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-dark">
+                              {r.sources[0].label}
+                              {r.sources[0].popularity ? `・${r.sources[0].popularity}` : ""}
+                            </span>
+                          )}
+                          {r.tags.cookTime && (
+                            <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                              ⏱{r.tags.cookTime}分
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <p className="mb-2 text-xs font-semibold text-ink-soft">
             または、おすすめから選ぶ

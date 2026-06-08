@@ -62,6 +62,14 @@ export function ingredientsToBuy(recipe: Recipe): RecipeIngredient[] {
   return recipe.ingredients.filter((i) => i.toBuy);
 }
 
+/** 料理名から画像を自動生成するURL（Pollinations＝キー不要）。AI/ユーザー追加レシピ用 */
+export function generatedImageUrl(name: string): string {
+  let seed = 0;
+  for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) % 100000;
+  const prompt = `${name}、プロの料理写真、おいしそう、自然光、food photography`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=600&height=450&nologo=true&seed=${seed}`;
+}
+
 /** 材料名をマッチング用に正規化（表記ゆれ・全角空白・括弧書きを吸収） */
 export function normalizeName(name: string): string {
   return name

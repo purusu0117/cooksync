@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { RecipeIngredient } from "@/lib/recipe";
-import { useAllRecipes } from "@/lib/useStore";
+import { recipeStore } from "@/lib/storage";
+import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 
 interface Props {
   id: string;
@@ -20,8 +22,17 @@ function groupIngredients(ings: RecipeIngredient[]): [string, RecipeIngredient[]
 }
 
 export default function RecipeDetail({ id }: Props) {
+  const router = useRouter();
   const recipes = useAllRecipes();
+  const [stored, setStored] = usePersistentList(recipeStore);
   const recipe = recipes.find((r) => r.id === id) ?? null;
+  const isStored = stored.some((r) => r.id === id);
+
+  function handleDelete() {
+    if (typeof window !== "undefined" && !window.confirm("このレシピを削除しますか？")) return;
+    setStored((prev) => prev.filter((r) => r.id !== id));
+    router.push("/recipes");
+  }
 
   if (recipe === null) {
     return (
@@ -158,6 +169,18 @@ export default function RecipeDetail({ id }: Props) {
             ))}
           </ul>
         </section>
+      )}
+
+      {isStored && (
+        <div className="mt-2 mb-4">
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="w-full rounded-xl border border-red-200 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+          >
+            このレシピを削除
+          </button>
+        </div>
       )}
     </div>
   );
