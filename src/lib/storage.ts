@@ -85,6 +85,13 @@ export const mealStore = localStore<MealEntry>("fridge-app:meals:v1");
 // アカウントは0〜1件のリストとして保持（usePersistentListで扱う）
 export const accountStore = localStore<Account>("cooksync:account:v1");
 
+// レシピの星評価（recipeId→stars 1〜5）。レシピ本体と別ストアで保持。
+export interface RatingEntry {
+  recipeId: string;
+  stars: number;
+}
+export const ratingStore = localStore<RatingEntry>("cooksync:ratings:v1");
+
 // 後方互換（旧 FridgeApp が import していた API）
 export function loadItems(): FridgeItem[] {
   return fridgeStore.load();

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useAllRecipes } from "@/lib/useStore";
+import { useAllRecipes, usePersistentList } from "@/lib/useStore";
+import { ratingStore } from "@/lib/storage";
 import PageHeader from "@/components/PageHeader";
+import StarRating from "@/components/StarRating";
 
 const CUISINE_GRADIENT: Record<string, string> = {
   和: "from-emerald-100 to-lime-50",
@@ -14,6 +16,9 @@ const CUISINE_GRADIENT: Record<string, string> = {
 
 export default function RecipeList() {
   const recipes = useAllRecipes();
+  const [ratings] = usePersistentList(ratingStore);
+  const starsOf = (rid: string) =>
+    ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
@@ -56,6 +61,11 @@ export default function RecipeList() {
                   {r.tags.cookTime ? `⏱ ${r.tags.cookTime}分` : ""}
                   {r.kcal ? ` / ${r.kcal}kcal` : ""}
                 </p>
+                {starsOf(r.id) > 0 && (
+                  <div className="mt-1">
+                    <StarRating value={starsOf(r.id)} size={13} />
+                  </div>
+                )}
               </div>
             </Link>
           </li>

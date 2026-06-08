@@ -5,12 +5,19 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
-import { recipeStore, shoppingStore, mealStore, fridgeStore } from "@/lib/storage";
+import {
+  recipeStore,
+  shoppingStore,
+  mealStore,
+  fridgeStore,
+  ratingStore,
+} from "@/lib/storage";
 import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import CookingTimer from "@/components/CookingTimer";
+import StarRating from "@/components/StarRating";
 
 interface Props {
   id: string;
@@ -45,6 +52,7 @@ export default function RecipeDetail({ id }: Props) {
   const [shopping, setShopping] = usePersistentList(shoppingStore);
   const [meals, setMeals] = usePersistentList(mealStore);
   const [fridge, setFridge] = usePersistentList(fridgeStore);
+  const [ratings, setRatings] = usePersistentList(ratingStore);
   const [note, setNote] = useState("");
   const [proofLoading, setProofLoading] = useState(false);
   const [showMade, setShowMade] = useState(false);
@@ -56,6 +64,14 @@ export default function RecipeDetail({ id }: Props) {
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
   const madeCount = meals.filter((m) => m.recipeId === id).length;
+  const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
+
+  function setStars(n: number) {
+    setRatings((prev) => {
+      const others = prev.filter((r) => r.recipeId !== id);
+      return n > 0 ? [...others, { recipeId: id, stars: n }] : others;
+    });
+  }
 
   function handleDelete() {
     if (typeof window !== "undefined" && !window.confirm("このレシピを削除しますか？")) return;
@@ -267,6 +283,10 @@ export default function RecipeDetail({ id }: Props) {
           >
             ＋
           </button>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs text-ink-soft">評価</span>
+          <StarRating value={stars} onChange={setStars} size={22} />
         </div>
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
