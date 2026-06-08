@@ -15,7 +15,6 @@ import {
   ChevronRight,
   type LucideIcon,
 } from "lucide-react";
-import { APP_NAME } from "@/lib/brand";
 import { bucketOf, type Category } from "@/lib/food";
 import { fridgeStore, shoppingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
@@ -50,10 +49,14 @@ export default function HomeDashboard() {
     <div className="mx-auto w-full max-w-2xl px-4 pt-5">
       {/* トップ：ロゴ＋アバター */}
       <div className="mb-5 flex items-center justify-between">
-        <span className="wordmark flex items-center gap-1.5 text-2xl font-bold text-brand-dark">
-          <Image src="/cooksync-mark.svg" alt="" width={30} height={30} priority />
-          {APP_NAME}
-        </span>
+        <Image
+          src="/cooksync-logo.svg"
+          alt="CookSync"
+          width={160}
+          height={91}
+          priority
+          className="-my-4 h-auto w-[150px]"
+        />
         <Link
           href="/mypage"
           aria-label="マイページ"

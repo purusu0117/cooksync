@@ -46,6 +46,7 @@ export default function RootLayout({
       className={`${display.variable} ${sans.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
+        <div className="app-bg" aria-hidden />
         <main className="flex-1 pb-24">{children}</main>
         <Nav />
       </body>

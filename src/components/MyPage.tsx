@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
+import { APP_TAGLINE } from "@/lib/brand";
 import {
   fridgeStore,
   shoppingStore,
@@ -84,14 +84,13 @@ export default function MyPage() {
       <div className="mx-auto w-full max-w-md px-4 pt-8">
         <div className="mb-6 text-center">
           <Image
-            src="/cooksync-mark.svg"
-            alt=""
-            width={64}
-            height={64}
+            src="/cooksync-logo.svg"
+            alt="CookSync"
+            width={260}
+            height={149}
             priority
-            className="mx-auto mb-2"
+            className="mx-auto -my-2 h-auto w-[220px]"
           />
-          <p className="wordmark text-3xl font-bold text-brand-dark">{APP_NAME}</p>
           <p className="mt-1 text-sm text-ink-soft">{APP_TAGLINE}</p>
         </div>
 

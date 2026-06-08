@@ -32,7 +32,8 @@ html {
 }
 
 body {
-  background-color: var(--color-paper);
+  /* 背景は最背面の固定レイヤー(.app-bg)で描く。body自体は透明にして覆わない。 */
+  background-color: transparent;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-feature-settings: "palt";
@@ -40,32 +41,31 @@ body {
 }
 
 /*
-  背景レイヤーは固定の擬似要素で描く。
-  body に background-attachment:fixed を付けると iOS Safari で描画されず
-  単色に見えてしまうため、position:fixed の ::before で確実に表示する。
+  固定の最背面レイヤー。layout.tsx に <div class="app-bg" /> を最初に置く。
+  body/::before に background-attachment:fixed を使うと iOS で描画されない＆
+  body の不透明背景が上に被るため、独立した fixed 要素で確実に表示する。
 */
-body::before {
-  content: "";
+.app-bg {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: -10;
   pointer-events: none;
   background-color: var(--color-paper);
   background-image:
     radial-gradient(
-      1100px 640px at 108% -8%,
-      color-mix(in srgb, var(--color-brand) 26%, transparent),
+      1100px 640px at 108% -6%,
+      color-mix(in srgb, var(--color-brand) 30%, transparent),
       transparent 62%
     ),
     radial-gradient(
       900px 560px at -12% 4%,
-      color-mix(in srgb, var(--color-accent) 22%, transparent),
+      color-mix(in srgb, var(--color-accent) 26%, transparent),
       transparent 58%
     ),
     radial-gradient(
-      820px 600px at 50% 118%,
-      color-mix(in srgb, var(--color-brand) 20%, transparent),
-      transparent 62%
+      860px 620px at 50% 120%,
+      color-mix(in srgb, var(--color-brand) 24%, transparent),
+      transparent 64%
     ),
     url("/cooksync-bg.png");
   background-size: auto, auto, auto, cover;
