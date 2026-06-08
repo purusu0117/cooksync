@@ -28,8 +28,7 @@ export default function MyPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
+  function handleRegister() {
     if (!name.trim() || !email.trim() || !password) {
       setError("すべての項目を入力してください。");
       return;
@@ -47,8 +46,7 @@ export default function MyPage() {
     setPassword("");
   }
 
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  function handleLogin() {
     if (!account) {
       setError("アカウントがありません。新規登録してください。");
       return;
@@ -60,6 +58,11 @@ export default function MyPage() {
     setAccs([{ ...account, loggedIn: true }]);
     setError("");
     setPassword("");
+  }
+
+  function submitAuth() {
+    if (mode === "register") handleRegister();
+    else handleLogin();
   }
 
   function logout() {
@@ -85,6 +88,7 @@ export default function MyPage() {
 
         <div className="mb-4 grid grid-cols-2 rounded-full border border-line bg-surface p-0.5 text-sm">
           <button
+            type="button"
             onClick={() => {
               setMode("register");
               setError("");
@@ -96,6 +100,7 @@ export default function MyPage() {
             新規登録
           </button>
           <button
+            type="button"
             onClick={() => {
               setMode("login");
               setError("");
@@ -109,7 +114,10 @@ export default function MyPage() {
         </div>
 
         <form
-          onSubmit={mode === "register" ? handleRegister : handleLogin}
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitAuth();
+          }}
           className="flex flex-col gap-3 rounded-3xl border border-line bg-surface p-5 shadow-sm"
         >
           {mode === "register" && (
@@ -130,8 +138,9 @@ export default function MyPage() {
           {error && <p className="text-xs text-red-600">{error}</p>}
 
           <button
-            type="submit"
-            className="mt-1 rounded-xl bg-brand py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+            type="button"
+            onClick={submitAuth}
+            className="mt-1 touch-manipulation rounded-xl bg-brand py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
           >
             {mode === "register" ? "アカウントを作成" : "ログイン"}
           </button>
