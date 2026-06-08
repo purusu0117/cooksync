@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
 import { recipeStore, shoppingStore, mealStore, fridgeStore } from "@/lib/storage";
-import { todayISO } from "@/lib/food";
+import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
@@ -14,6 +14,18 @@ import CookingTimer from "@/components/CookingTimer";
 
 interface Props {
   id: string;
+}
+
+type UseChoice = "use" | "half" | "keep";
+
+/** 数量の先頭の数値を半分にする（できなければ「（半分）」を付す） */
+function halveQty(q: string): string {
+  const m = q.match(/^(\d+(?:\.\d+)?)/);
+  if (m) {
+    const half = Number(m[1]) / 2;
+    return q.replace(m[1], String(half));
+  }
+  return q ? `${q}（半分）` : "半分";
 }
 
 function groupIngredients(ings: RecipeIngredient[]): [string, RecipeIngredient[]][] {
@@ -32,9 +44,15 @@ export default function RecipeDetail({ id }: Props) {
   const [stored, setStored] = usePersistentList(recipeStore);
   const [shopping, setShopping] = usePersistentList(shoppingStore);
   const [meals, setMeals] = usePersistentList(mealStore);
-  const [fridge] = usePersistentList(fridgeStore);
+  const [fridge, setFridge] = usePersistentList(fridgeStore);
   const [note, setNote] = useState("");
   const [proofLoading, setProofLoading] = useState(false);
+  const [showMade, setShowMade] = useState(false);
+  const [madeChoices, setMadeChoices] = useState<Record<string, UseChoice>>({});
+  const [undoData, setUndoData] = useState<{
+    snapshot: FridgeItem[];
+    mealId: string;
+  } | null>(null);
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
   const madeCount = meals.filter((m) => m.recipeId === id).length;
@@ -96,17 +114,58 @@ export default function RecipeDetail({ id }: Props) {
     }
   }
 
-  function markMade() {
+  // 「作った」の対象＝レシピに使う非調味料の食材で、冷蔵庫にあるもの
+  function matchedFridge(): FridgeItem[] {
+    if (!recipe) return [];
+    return fridge.filter((f) =>
+      recipe.ingredients.some(
+        (ing) => !ing.basicSeasoning && ingredientMatches(f.name, ing.name),
+      ),
+    );
+  }
+
+  function openMade() {
     if (!recipe) return;
-    const entry: MealEntry = {
-      id: crypto.randomUUID(),
-      date: todayISO(),
-      slot: "夜",
-      recipeId: recipe.id,
-      recipeName: recipe.name,
-    };
-    setMeals((prev) => [...prev, entry]);
-    setNote("「作った」を記録しました 🍳");
+    const init: Record<string, UseChoice> = {};
+    matchedFridge().forEach((f) => (init[f.id] = "use"));
+    setMadeChoices(init);
+    setShowMade(true);
+  }
+
+  function confirmMade() {
+    if (!recipe) return;
+    const snapshot = fridge;
+    const mealId = crypto.randomUUID();
+    const next = fridge
+      .map((f) => {
+        const c = madeChoices[f.id];
+        if (c === "use") return null; // 使い切った → 削除
+        if (c === "half") return { ...f, quantity: halveQty(f.quantity) };
+        return f; // keep / 対象外
+      })
+      .filter((f): f is FridgeItem => f !== null);
+    setFridge(next);
+    setMeals((prev) => [
+      ...prev,
+      {
+        id: mealId,
+        date: todayISO(),
+        slot: "夜",
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+      } satisfies MealEntry,
+    ]);
+    setUndoData({ snapshot, mealId });
+    setShowMade(false);
+    setNote("✅ 「作った」を記録し、冷蔵庫を更新しました");
+  }
+
+  function undoMade() {
+    if (!undoData) return;
+    setFridge(undoData.snapshot);
+    setMeals((prev) => prev.filter((m) => m.id !== undoData.mealId));
+    setUndoData(null);
+    setNote("取り消しました");
   }
 
   if (recipe === null) {
@@ -172,14 +231,25 @@ export default function RecipeDetail({ id }: Props) {
         </button>
         <button
           type="button"
-          onClick={markMade}
+          onClick={openMade}
           className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95"
         >
           🍳 作った
         </button>
       </div>
       {note && (
-        <p className="mb-5 text-center text-xs font-medium text-brand-dark">{note}</p>
+        <p className="mb-5 text-center text-xs font-medium text-brand-dark">
+          {note}
+          {undoData && (
+            <button
+              type="button"
+              onClick={undoMade}
+              className="ml-2 font-semibold text-accent-dark underline"
+            >
+              取り消す
+            </button>
+          )}
+        </p>
       )}
 
       {/* 材料 */}
@@ -295,6 +365,86 @@ export default function RecipeDetail({ id }: Props) {
           >
             このレシピを削除
           </button>
+        </div>
+      )}
+
+      {/* 「作った」確認モーダル（誤タップ防止＋使った食材を更新） */}
+      {showMade && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onClick={() => setShowMade(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl bg-surface p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-ink">
+              🍳 {recipe.name} を作った
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+              使った冷蔵庫の食材を更新します（あとで「取り消す」で元に戻せます）。
+            </p>
+
+            {matchedFridge().length === 0 ? (
+              <p className="mt-4 rounded-xl bg-paper p-3 text-sm text-ink-soft">
+                この料理に使う食材は冷蔵庫に見つかりませんでした。記録だけ行います。
+              </p>
+            ) : (
+              <ul className="mt-4 flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
+                {matchedFridge().map((f) => (
+                  <li key={f.id} className="rounded-xl bg-paper p-3">
+                    <div className="mb-1.5 flex items-baseline gap-2">
+                      <span className="font-medium text-ink">{f.name}</span>
+                      {f.quantity && (
+                        <span className="text-xs text-ink-soft">{f.quantity}</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(
+                        [
+                          ["use", "使い切った"],
+                          ["half", "半分使った"],
+                          ["keep", "残す"],
+                        ] as [UseChoice, string][]
+                      ).map(([v, label]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
+                            setMadeChoices((p) => ({ ...p, [f.id]: v }))
+                          }
+                          className={`rounded-lg py-1.5 text-xs font-medium transition ${
+                            madeChoices[f.id] === v
+                              ? "bg-brand text-white"
+                              : "bg-surface text-ink-soft ring-1 ring-line"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMade(false)}
+                className="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-soft"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={confirmMade}
+                className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white active:scale-95"
+              >
+                記録する
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
