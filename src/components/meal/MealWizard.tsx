@@ -447,13 +447,13 @@ export default function MealWizard() {
                 value={wish}
                 onChange={(e) => setWish(e.target.value)}
                 disabled={aiLoading}
-                placeholder="例：油淋鶏 / さっぱり和食 / パスタ"
-                className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft disabled:opacity-60"
+                placeholder="例：油淋鶏 / さっぱり和食"
+                className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft disabled:opacity-60"
               />
               <button
                 onClick={aiSearch}
                 disabled={aiLoading}
-                className="shrink-0 rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
+                className="shrink-0 whitespace-nowrap rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
               >
                 {aiLoading ? "探索中…" : "AIで探す"}
               </button>
