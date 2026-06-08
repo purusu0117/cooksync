@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   bucketOf,
   daysUntil,
@@ -36,6 +36,9 @@ import type { ShoppingItem } from "@/lib/shopping";
 import PageHeader from "@/components/PageHeader";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
+
+// 進行中のAIリサーチjobIdの保存先（アプリ離脱→再訪でも結果を回収するため）
+const JOB_KEY = "cooksync:aiJob";
 
 interface Pick {
   date: string;
@@ -95,6 +98,7 @@ export default function MealWizard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [comment, setComment] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
 
@@ -175,6 +179,68 @@ export default function MealWizard() {
     setMissing(choices);
   }
 
+  // 生のレシピJSON → Recipe[] に整形
+  function mapRaw(raw: Record<string, unknown>[]): Recipe[] {
+    return raw.map((r) => {
+      const name = typeof r.name === "string" ? r.name : "AIレシピ";
+      const cookTime = typeof r.cookTime === "number" ? r.cookTime : 30;
+      const ct: 15 | 30 | 60 = cookTime <= 15 ? 15 : cookTime <= 30 ? 30 : 60;
+      return {
+        id: `ai-${crypto.randomUUID().slice(0, 8)}`,
+        name,
+        emoji: typeof r.emoji === "string" ? r.emoji : "🍽",
+        kcal: typeof r.kcal === "number" ? r.kcal : undefined,
+        catch: typeof r.catch === "string" ? r.catch : "",
+        servings: typeof r.servings === "number" ? r.servings : servings,
+        ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+        steps: Array.isArray(r.steps) ? r.steps : [],
+        leftoverStorage: Array.isArray(r.leftoverStorage)
+          ? r.leftoverStorage
+          : [],
+        sources: Array.isArray(r.sources) ? r.sources : [],
+        tags: { cuisine: r.cuisine as Cuisine | undefined, cookTime: ct },
+        createdAt: Date.now(),
+      };
+    });
+  }
+
+  function clearJob() {
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = null;
+    }
+    try {
+      localStorage.removeItem(JOB_KEY);
+    } catch {
+      /* noop */
+    }
+  }
+
+  // ジョブを定期確認（アプリを離れている間もサーバーは処理を継続）
+  async function pollJob(jobId: string) {
+    try {
+      const res = await fetch(`/api/research?jobId=${jobId}`);
+      const data = await res.json();
+      if (data.status === "done") {
+        const mapped = mapRaw(Array.isArray(data.recipes) ? data.recipes : []);
+        clearJob();
+        setAiLoading(false);
+        if (mapped.length === 0) setAiError("レシピが取得できませんでした");
+        else setAiResults(mapped);
+        return;
+      }
+      if (data.status === "error" || data.status === "missing") {
+        clearJob();
+        setAiLoading(false);
+        setAiError(data.error || "レシピが取得できませんでした");
+        return;
+      }
+      pollRef.current = setTimeout(() => pollJob(jobId), 3000);
+    } catch {
+      pollRef.current = setTimeout(() => pollJob(jobId), 4000);
+    }
+  }
+
   async function aiSearch() {
     if (aiLoading) return;
     setAiError("");
@@ -197,37 +263,49 @@ export default function MealWizard() {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !Array.isArray(data.recipes) || data.recipes.length === 0) {
-        throw new Error(data.error || "レシピが取得できませんでした");
+      if (!res.ok || !data.jobId) {
+        throw new Error(data.error || "開始に失敗しました");
       }
-      const mapped: Recipe[] = data.recipes.map((r: Record<string, unknown>) => {
-        const name = typeof r.name === "string" ? r.name : "AIレシピ";
-        const cookTime = typeof r.cookTime === "number" ? r.cookTime : 30;
-        const ct: 15 | 30 | 60 = cookTime <= 15 ? 15 : cookTime <= 30 ? 30 : 60;
-        return {
-          id: `ai-${crypto.randomUUID().slice(0, 8)}`,
-          name,
-          emoji: typeof r.emoji === "string" ? r.emoji : "🍽",
-          kcal: typeof r.kcal === "number" ? r.kcal : undefined,
-          catch: typeof r.catch === "string" ? r.catch : "",
-          servings: typeof r.servings === "number" ? r.servings : servings,
-          ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
-          steps: Array.isArray(r.steps) ? r.steps : [],
-          leftoverStorage: Array.isArray(r.leftoverStorage)
-            ? r.leftoverStorage
-            : [],
-          sources: Array.isArray(r.sources) ? r.sources : [],
-          tags: { cuisine: r.cuisine as Cuisine | undefined, cookTime: ct },
-          createdAt: Date.now(),
-        };
-      });
-      setAiResults(mapped);
+      try {
+        localStorage.setItem(JOB_KEY, data.jobId);
+      } catch {
+        /* noop */
+      }
+      pollJob(data.jobId);
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : "AI検索に失敗しました");
-    } finally {
       setAiLoading(false);
+      setAiError(e instanceof Error ? e.message : "AI検索に失敗しました");
     }
   }
+
+  // 復帰時：未完了ジョブがあればポーリング再開（離脱→再訪でも結果を受け取れる）
+  useEffect(() => {
+    const resume = () => {
+      if (pollRef.current) return;
+      let p = "";
+      try {
+        p = localStorage.getItem(JOB_KEY) || "";
+      } catch {
+        /* noop */
+      }
+      if (p) {
+        setAiLoading(true);
+        pollJob(p);
+      }
+    };
+    // 初回はマウント後（effect本体での同期setStateを避ける）
+    const t = setTimeout(resume, 0);
+    const onVis = () => {
+      if (document.visibilityState === "visible") resume();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVis);
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function pickAiRecipe(recipe: Recipe) {
     setStoredRecipes((prev) => [recipe, ...prev]);
@@ -493,7 +571,7 @@ export default function MealWizard() {
             </div>
             {aiLoading && (
               <p className="mt-2 animate-pulse text-xs text-brand-dark">
-                AIがレシピをWeb検索中…（最大1〜2分）。そのままお待ちください。
+                AIがレシピをWeb検索中…（最大1〜2分）。アプリを閉じても裏で続きます。戻ると結果が出ます。
               </p>
             )}
             {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
