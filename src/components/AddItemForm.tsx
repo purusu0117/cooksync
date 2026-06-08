@@ -44,8 +44,7 @@ export default function AddItemForm({ onAdd }: Props) {
     setAutofilled(did);
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function add() {
     const finalName = name.trim();
     if (!finalName) return;
     // 期限が空なら推定で補完
@@ -73,7 +72,10 @@ export default function AddItemForm({ onAdd }: Props) {
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={(e) => {
+        e.preventDefault();
+        add();
+      }}
       className="rounded-3xl border border-line bg-surface p-4 shadow-sm"
     >
       <p className="mb-3 text-xs text-ink-soft">
@@ -126,7 +128,7 @@ export default function AddItemForm({ onAdd }: Props) {
           <span className="mb-1 block text-xs font-medium text-ink-soft">購入日</span>
           <input
             type="date"
-            className={fieldClass}
+            className={`${fieldClass} min-w-0 appearance-none`}
             value={purchasedOn}
             onChange={(e) => setPurchasedOn(e.target.value)}
           />
@@ -138,7 +140,7 @@ export default function AddItemForm({ onAdd }: Props) {
           </span>
           <input
             type="date"
-            className={fieldClass}
+            className={`${fieldClass} min-w-0 appearance-none`}
             value={expiresOn}
             onChange={(e) => {
               setExpiresOn(e.target.value);
@@ -149,7 +151,8 @@ export default function AddItemForm({ onAdd }: Props) {
       </div>
 
       <button
-        type="submit"
+        type="button"
+        onClick={add}
         className="mt-4 w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-line disabled:text-ink-soft"
         disabled={!name.trim()}
       >
