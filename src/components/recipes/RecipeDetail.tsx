@@ -10,6 +10,7 @@ import { todayISO } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
+import CookingTimer from "@/components/CookingTimer";
 
 interface Props {
   id: string;
@@ -33,6 +34,7 @@ export default function RecipeDetail({ id }: Props) {
   const [meals, setMeals] = usePersistentList(mealStore);
   const [fridge] = usePersistentList(fridgeStore);
   const [note, setNote] = useState("");
+  const [proofLoading, setProofLoading] = useState(false);
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
   const madeCount = meals.filter((m) => m.recipeId === id).length;
@@ -68,6 +70,32 @@ export default function RecipeDetail({ id }: Props) {
     setNote(`不足 ${toAdd.length} 件を買い物リストに追加しました`);
   }
 
+  async function proofread() {
+    if (!recipe || proofLoading) return;
+    setProofLoading(true);
+    setNote("AIが手順を整えています…（20〜40秒）");
+    try {
+      const res = await fetch("/api/proofread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipe.name, steps: recipe.steps }),
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.steps) && data.steps.length > 0) {
+        setStored((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, steps: data.steps } : r)),
+        );
+        setNote("AIが手順を整えました ✨");
+      } else {
+        setNote("整形に失敗しました");
+      }
+    } catch {
+      setNote("整形に失敗しました");
+    } finally {
+      setProofLoading(false);
+    }
+  }
+
   function markMade() {
     if (!recipe) return;
     const entry: MealEntry = {
@@ -91,6 +119,14 @@ export default function RecipeDetail({ id }: Props) {
       </div>
     );
   }
+
+  const timerSuggestions = Array.from(
+    new Set(
+      recipe.steps.flatMap((s) =>
+        Array.from(s.text.matchAll(/(\d+)\s*分/g)).map((m) => Number(m[1])),
+      ),
+    ),
+  ).filter((n) => n > 0 && n <= 120);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
@@ -176,6 +212,9 @@ export default function RecipeDetail({ id }: Props) {
       {/* 行程 */}
       <section className="mb-6">
         <h2 className="mb-3 text-sm font-bold text-ink">🍳 行程</h2>
+        <div className="mb-3">
+          <CookingTimer suggestions={timerSuggestions} />
+        </div>
         <ol className="flex flex-col gap-3">
           {recipe.steps.map((s, idx) => (
             <li key={idx} className="rounded-2xl border border-line bg-surface p-4">
@@ -240,7 +279,15 @@ export default function RecipeDetail({ id }: Props) {
       )}
 
       {isStored && (
-        <div className="mt-2 mb-4">
+        <div className="mt-2 mb-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={proofread}
+            disabled={proofLoading}
+            className="w-full rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
+          >
+            {proofLoading ? "AIが整えています…" : "✨ AIで手順を読みやすく整える"}
+          </button>
           <button
             type="button"
             onClick={handleDelete}

@@ -97,3 +97,13 @@ export async function askClaudeForJson<T>(prompt: string): Promise<T> {
     throw new Error(`JSON parse failed. raw=${text.slice(0, 600)}`);
   }
 }
+
+/** Web無しでJSONを得る（校正など、検索不要の整形タスク用） */
+export async function askClaudeForJsonNoWeb<T>(prompt: string): Promise<T> {
+  const text = await runClaude(prompt, false, SYSTEM_JSON);
+  try {
+    return extractJson<T>(text);
+  } catch {
+    throw new Error(`JSON parse failed. raw=${text.slice(0, 600)}`);
+  }
+}
