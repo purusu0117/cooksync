@@ -23,8 +23,7 @@ export default function EditItemForm({ item, onSave, onCancel }: Props) {
   const [category, setCategory] = useState<Category>(item.category);
   const [expiresOn, setExpiresOn] = useState(item.expiresOn);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function save() {
     if (!name.trim() || !expiresOn) return;
     onSave({
       ...item,
@@ -37,10 +36,13 @@ export default function EditItemForm({ item, onSave, onCancel }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-ink/30 p-4 sm:items-center">
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/30 p-4 sm:items-center">
       <form
-        onSubmit={handleSubmit}
-        className="animate-pop-in w-full max-w-md rounded-3xl border border-line bg-surface p-5 shadow-xl"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+        className="animate-pop-in max-h-[88vh] w-full max-w-md overflow-y-auto rounded-3xl border border-line bg-surface p-5 shadow-xl"
       >
         <h2 className="mb-3 text-base font-bold text-ink">食材を編集</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -70,7 +72,7 @@ export default function EditItemForm({ item, onSave, onCancel }: Props) {
             <span className="mb-1 block text-xs font-medium text-ink-soft">賞味・消費期限</span>
             <input
               type="date"
-              className={fieldClass}
+              className={`${fieldClass} min-w-0 appearance-none`}
               value={expiresOn}
               onChange={(e) => setExpiresOn(e.target.value)}
               required
@@ -86,7 +88,8 @@ export default function EditItemForm({ item, onSave, onCancel }: Props) {
             キャンセル
           </button>
           <button
-            type="submit"
+            type="button"
+            onClick={save}
             className="flex-1 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99]"
           >
             保存
