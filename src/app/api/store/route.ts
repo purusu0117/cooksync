@@ -1,36 +1,38 @@
-// 個人ローカルアプリのデータ保存先＝PC上の単一JSONファイル（.data/store.json）。
-// PCもスマホも（Tailscale経由で）このPCのサーバーを読み書きするので、端末間で同期される。
-// 認証はTailnet（Tailscale）を安全境界とする＝アプリ内認証は付けない簡易構成。
+// データ保存先。
+//  - ローカル（大翔のPC）：単一JSONファイル .data/store.json（Tailscaleが安全境界）。
+//  - 公開（Vercel）：Upstash Redis（環境変数 UPSTASH_REDIS_REST_URL があれば自動でこちら）。
+//    ディスク不可のVercelでも永続化＋ユーザーごとに分離（キー `cooksync:u:<uid>` のhash）。
 //
-// === DEPLOY SEAM (B) ===  公開時はここをDBに差し替える（詳細: DEPLOY.md）
-//   - readAll/setKey を Postgres等の read/write に。キーは `userId:storeKey` でユーザー分離。
-//   - 認証を本物(Auth.js/Supabase)に。Vercelはディスク不可なのでJSONファイルは使えない。
+// === DEPLOY SEAM (B) ===
+//   公開のユーザー識別は簡易（クライアントが localStorage の uid を送る）＝6人テスト向けMVP。
+//   本格運用では Auth.js/Supabase 等のサーバー認証に置き換える。
 
 import { promises as fs } from "fs";
 import path from "path";
+import { Redis } from "@upstash/redis";
 
 export const dynamic = "force-dynamic";
+
+const USE_REDIS = !!process.env.UPSTASH_REDIS_REST_URL;
+const redis = USE_REDIS ? Redis.fromEnv() : null;
 
 const DIR = path.join(process.cwd(), ".data");
 const FILE = path.join(DIR, "store.json");
 
-async function readAll(): Promise<Record<string, unknown>> {
+// ---- ローカル(ファイル) ----
+async function fileReadAll(): Promise<Record<string, unknown>> {
   try {
     return JSON.parse(await fs.readFile(FILE, "utf8"));
   } catch {
     return {};
   }
 }
-
-// 同一プロセス内で read-modify-write を直列化（同時PUTでキーが欠落するのを防ぐ）
 let writeLock: Promise<unknown> = Promise.resolve();
-
-async function setKey(key: string, value: unknown) {
+async function fileSetKey(key: string, value: unknown) {
   const op = writeLock.catch(() => {}).then(async () => {
     await fs.mkdir(DIR, { recursive: true });
-    const all = await readAll();
+    const all = await fileReadAll();
     all[key] = value;
-    // 原子的書き込み：一時ファイルに書いてから rename（途中切断での破損を防ぐ）
     const tmp = `${FILE}.${key.replace(/[^a-z0-9]/gi, "")}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(all), "utf8");
     await fs.rename(tmp, FILE);
@@ -39,20 +41,59 @@ async function setKey(key: string, value: unknown) {
   await op;
 }
 
-export async function GET() {
-  return Response.json(await readAll());
+// ---- 公開(Redis) ユーザーごと hash: cooksync:u:<uid> ----
+function userKey(uid: string): string {
+  const safe = uid.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "anon";
+  return `cooksync:u:${safe}`;
+}
+function uidFrom(request: Request): string {
+  return new URL(request.url).searchParams.get("u") || "anon";
+}
+
+async function readAllFor(request: Request): Promise<Record<string, unknown>> {
+  if (redis) {
+    const h = await redis.hgetall<Record<string, unknown>>(userKey(uidFrom(request)));
+    if (!h) return {};
+    // Upstashは値をJSONとして返す（文字列なら自前parse）
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(h)) {
+      out[k] = typeof v === "string" ? safeParse(v) : v;
+    }
+    return out;
+  }
+  return fileReadAll();
+}
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
+async function setKeyFor(uid: string, key: string, value: unknown) {
+  if (redis) {
+    await redis.hset(userKey(uid), { [key]: JSON.stringify(value) });
+    return;
+  }
+  await fileSetKey(key, value);
+}
+
+export async function GET(request: Request) {
+  return Response.json(await readAllFor(request));
 }
 
 export async function PUT(request: Request) {
   try {
-    const { key, value } = (await request.json()) as {
+    const body = (await request.json()) as {
       key?: string;
       value?: unknown;
+      u?: string;
     };
-    if (typeof key !== "string") {
+    if (typeof body.key !== "string") {
       return Response.json({ error: "key required" }, { status: 400 });
     }
-    await setKey(key, value);
+    await setKeyFor(body.u || "anon", body.key, body.value);
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json(

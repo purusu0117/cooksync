@@ -40,6 +40,21 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+// ユーザーID（公開時のデータ分離用。この端末に固定。本格認証は後日）。
+function uid(): string {
+  if (typeof window === "undefined") return "anon";
+  try {
+    let id = window.localStorage.getItem("cooksync:uid");
+    if (!id) {
+      id = crypto.randomUUID();
+      window.localStorage.setItem("cooksync:uid", id);
+    }
+    return id;
+  } catch {
+    return "anon";
+  }
+}
+
 // PUT を直列化（前の書き込みが終わってから次を実行）＝サーバー競合回避
 let writeChain: Promise<unknown> = Promise.resolve();
 function queuePut(key: string, value: unknown[]) {
@@ -49,7 +64,7 @@ function queuePut(key: string, value: unknown[]) {
       fetch("/api/store", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, value }),
+        body: JSON.stringify({ key, value, u: uid() }),
       }),
     )
     .catch(() => {
@@ -59,7 +74,7 @@ function queuePut(key: string, value: unknown[]) {
 }
 
 async function doHydrate() {
-  const res = await fetch("/api/store");
+  const res = await fetch(`/api/store?u=${encodeURIComponent(uid())}`);
   if (!res.ok) throw new Error(`store GET ${res.status}`);
   const server = (await res.json()) as Record<string, unknown>;
   for (const store of ALL_STORES) {
