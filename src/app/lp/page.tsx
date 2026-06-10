@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import AppIcon, { type IconName } from "@/components/AppIcon";
+import { Flame, Clock, Leaf } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "CookSync｜冷蔵庫から献立まで、ぜんぶ半自動。",
@@ -9,44 +10,58 @@ export const metadata: Metadata = {
     "賞味期限が近い食材からAIが献立を提案。写真で在庫登録、買い物リストも在庫管理も半自動。フードロスを減らし、毎日の献立に悩まないキッチンアプリ。",
 };
 
-const STEPS: { icon: IconName; title: string; desc: string }[] = [
-  { icon: "fridge", title: "冷蔵庫の在庫", desc: "写真を撮るだけで登録。期限は自動推定。" },
-  { icon: "meal", title: "AIが献立提案", desc: "期限が近い食材から、人気レシピを提案。" },
-  { icon: "shopping", title: "買い物リスト", desc: "足りない食材だけ自動でリスト化。" },
-  { icon: "fridge", title: "在庫へ自動反映", desc: "買ったらタップ一つで冷蔵庫へ。" },
-  { icon: "check", title: "作ったら自動で減る", desc: "使った食材を在庫から自動で消費。" },
+const STEPS: { icon: IconName; title: string; desc: string; tint: string }[] = [
+  { icon: "fridge", title: "冷蔵庫の在庫", desc: "写真を撮るだけで登録。期限は自動推定。", tint: "bg-brand-soft" },
+  { icon: "meal", title: "AIが献立提案", desc: "期限が近い食材から、人気レシピを提案。", tint: "bg-accent-soft" },
+  { icon: "shopping", title: "買い物リスト", desc: "足りない食材だけ自動でリスト化。", tint: "bg-sky-100" },
+  { icon: "fridge", title: "在庫へ自動反映", desc: "買ったらタップ一つで冷蔵庫へ。", tint: "bg-brand-soft" },
+  { icon: "check", title: "作ったら自動で減る", desc: "使った食材を在庫から自動で消費。", tint: "bg-amber-100" },
 ];
 
-const FEATURES: { icon: IconName; title: string; desc: string }[] = [
+interface Feature {
+  icon?: IconName;
+  freshness?: boolean; // 期限の特長＝実アプリの炎/時計/葉アイコンで表現
+  title: string;
+  desc: string;
+  tint: string;
+}
+
+const FEATURES: Feature[] = [
   {
     icon: "camera",
     title: "写真で登録、入力ゼロ",
     desc: "冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、賞味期限とカテゴリを自動で推定します。",
+    tint: "bg-sky-100",
   },
   {
-    icon: "signal",
+    freshness: true,
     title: "賞味期限を見える化",
     desc: "期限が近い順に並び、今日使うべき食材がひと目で。食材を使い切ってフードロスを減らせます。",
+    tint: "bg-paper",
   },
   {
     icon: "meal",
     title: "AIが実在レシピを提案",
     desc: "期限が近い食材を活かす人気レシピを、つくれぽ数・再生数など“人気の根拠”つきで提案。3案は使う食材を分散。",
+    tint: "bg-accent-soft",
   },
   {
     icon: "loop",
     title: "買い物も在庫も自動連携",
     desc: "不足は買い物リストへ→買ったら在庫へ→作ったら減る。在庫→献立→買い物→在庫がぐるっと半自動で回ります。",
+    tint: "bg-brand-soft",
   },
   {
     icon: "star",
     title: "好みを学習",
     desc: "星評価で提案が自分仕様に。直近に作った料理は自動で避けるので、献立がマンネリ化しません。",
+    tint: "bg-amber-100",
   },
   {
     icon: "timer",
     title: "調理タイマー＆通知",
     desc: "複数同時にかけられ、アプリを離れていても完了を通知。レシピの写真もAIが自動生成します。",
+    tint: "bg-rose-100",
   },
 ];
 
@@ -124,8 +139,12 @@ export default function LandingPage() {
               key={i}
               className="relative rounded-2xl border border-line bg-surface p-5 text-center shadow-sm"
             >
-              <AppIcon name={s.icon} size={44} className="mx-auto" />
-              <p className="mt-2 text-sm font-bold text-ink">{s.title}</p>
+              <span
+                className={`mx-auto grid h-20 w-20 place-items-center rounded-full ${s.tint}`}
+              >
+                <AppIcon name={s.icon} size={52} />
+              </span>
+              <p className="mt-3 text-sm font-bold text-ink">{s.title}</p>
               <p className="mt-1 text-xs leading-relaxed text-ink-soft">{s.desc}</p>
               {i < STEPS.length - 1 && (
                 <span className="pointer-events-none absolute -right-3 top-1/2 hidden -translate-y-1/2 text-xl text-brand sm:block">
@@ -149,7 +168,19 @@ export default function LandingPage() {
                 key={i}
                 className="rounded-2xl border border-line bg-surface p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <AppIcon name={f.icon} size={40} />
+                <span
+                  className={`grid h-16 w-16 place-items-center rounded-2xl ${f.tint}`}
+                >
+                  {f.freshness ? (
+                    <span className="flex items-center gap-0.5">
+                      <Flame size={16} className="text-red-500" strokeWidth={2.4} />
+                      <Clock size={16} className="text-amber-500" strokeWidth={2.4} />
+                      <Leaf size={16} className="text-brand" strokeWidth={2.4} />
+                    </span>
+                  ) : (
+                    f.icon && <AppIcon name={f.icon} size={44} />
+                  )}
+                </span>
                 <h3 className="mt-3 text-base font-bold text-ink">{f.title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
                   {f.desc}

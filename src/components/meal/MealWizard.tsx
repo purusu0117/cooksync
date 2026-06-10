@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Flame } from "lucide-react";
 import {
   bucketOf,
   daysUntil,
@@ -477,6 +478,7 @@ export default function MealWizard() {
       <PageHeader
         title="献立を決める"
         icon="/icons/meal.png"
+        tint="bg-accent-soft"
       />
 
       {/* 写真生成のステータス（追加したAIレシピの写真） */}
@@ -490,7 +492,7 @@ export default function MealWizard() {
       {priority.length > 0 && phase !== "done" && (
         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50/70 p-3">
           <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-bold text-red-700">
-            <AppIcon name="signal" size={16} />
+            <Flame size={15} strokeWidth={2.4} />
             今日の優先消費食材
           </p>
           <p className="text-sm text-red-900">

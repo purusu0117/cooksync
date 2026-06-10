@@ -5,14 +5,28 @@ interface Props {
   title: string;
   tagline?: string;
   icon?: string; // 透過アイコンのパス（例: /icons/fridge.png）
+  tint?: string; // アイコンタイルの背景色（Tailwindクラス）。色分けで単調さを回避
 }
 
-export default function PageHeader({ title, tagline, icon }: Props) {
+export default function PageHeader({
+  title,
+  tagline,
+  icon,
+  tint = "bg-brand-soft",
+}: Props) {
   return (
-    <header className="mb-6 flex items-center gap-3">
+    <header className="mb-6 flex items-center gap-3.5">
       {icon && (
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-soft">
-          <Image src={icon} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+        <span
+          className={`grid h-16 w-16 shrink-0 place-items-center rounded-3xl shadow-sm ${tint}`}
+        >
+          <Image
+            src={icon}
+            alt=""
+            width={48}
+            height={48}
+            className="h-12 w-12 object-contain"
+          />
         </span>
       )}
       <div className="min-w-0">
