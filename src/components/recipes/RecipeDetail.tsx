@@ -16,6 +16,7 @@ import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
+import { startGenerating, stopGenerating, useIsGenerating } from "@/lib/imageGen";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 
@@ -67,6 +68,7 @@ export default function RecipeDetail({ id }: Props) {
   // 「作った回数」は🍳作ったボタンで記録した分だけ（献立に入れただけ=made:falseは数えない）
   const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
   const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
+  const generating = useIsGenerating(id);
 
   function setStars(n: number) {
     setRatings((prev) => {
@@ -204,6 +206,7 @@ export default function RecipeDetail({ id }: Props) {
   async function genImage() {
     if (!recipe || imgLoading) return;
     setImgLoading(true);
+    startGenerating(recipe.id);
     setNote("AIが写真を生成中…（30〜60秒）");
     try {
       const res = await fetch("/api/recipe-image", {
@@ -224,6 +227,7 @@ export default function RecipeDetail({ id }: Props) {
       setNote("写真生成に失敗しました");
     } finally {
       setImgLoading(false);
+      if (recipe) stopGenerating(recipe.id);
     }
   }
 
@@ -283,15 +287,23 @@ export default function RecipeDetail({ id }: Props) {
         ← レシピ一覧
       </Link>
 
-      {recipe.image && (
-        <div className="relative mt-3 h-52 w-full overflow-hidden rounded-2xl">
-          <Image
-            src={recipe.image}
-            alt={recipe.name}
-            fill
-            sizes="(max-width: 768px) 100vw, 672px"
-            className="object-cover"
-          />
+      {(recipe.image || generating) && (
+        <div className="relative mt-3 h-52 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-brand-soft to-emerald-50">
+          {recipe.image && (
+            <Image
+              src={recipe.image}
+              alt={recipe.name}
+              fill
+              sizes="(max-width: 768px) 100vw, 672px"
+              className="object-cover"
+            />
+          )}
+          {generating && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/40 text-white">
+              <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              <span className="text-xs font-medium">AIが写真を生成中…</span>
+            </div>
+          )}
         </div>
       )}
 

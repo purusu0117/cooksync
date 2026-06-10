@@ -34,6 +34,7 @@ import {
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
+import { startGenerating, stopGenerating } from "@/lib/imageGen";
 import PageHeader from "@/components/PageHeader";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
@@ -345,31 +346,36 @@ export default function MealWizard() {
 
   async function generateRecipeImage(recipe: Recipe) {
     setImgStatus(`🖼 「${recipe.name}」の写真を生成中…（30〜60秒・後から反映）`);
-    // 一時的な失敗に備えて最大2回試行
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const res = await fetch("/api/recipe-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: recipe.id, name: recipe.name }),
-        });
-        const data = await res.json();
-        if (res.ok && data.image) {
-          setStoredRecipes((prev) =>
-            prev.map((r) =>
-              r.id === recipe.id ? { ...r, image: data.image } : r,
-            ),
-          );
-          setImgStatus(`🖼 「${recipe.name}」の写真ができました ✨`);
-          return;
+    startGenerating(recipe.id);
+    try {
+      // 一時的な失敗に備えて最大2回試行
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const res = await fetch("/api/recipe-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: recipe.id, name: recipe.name }),
+          });
+          const data = await res.json();
+          if (res.ok && data.image) {
+            setStoredRecipes((prev) =>
+              prev.map((r) =>
+                r.id === recipe.id ? { ...r, image: data.image } : r,
+              ),
+            );
+            setImgStatus(`🖼 「${recipe.name}」の写真ができました ✨`);
+            return;
+          }
+        } catch {
+          /* 次の試行へ */
         }
-      } catch {
-        /* 次の試行へ */
       }
+      setImgStatus(
+        `写真の自動生成に失敗しました。レシピ詳細の「🖼 写真をAIで再生成」で作り直せます。`,
+      );
+    } finally {
+      stopGenerating(recipe.id);
     }
-    setImgStatus(
-      `写真の自動生成に失敗しました。レシピ詳細の「🖼 写真をAIで再生成」で作り直せます。`,
-    );
   }
 
   function finalize() {

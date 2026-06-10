@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { ratingStore } from "@/lib/storage";
+import { useGeneratingIds } from "@/lib/imageGen";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 
@@ -19,6 +20,7 @@ export default function RecipeList() {
   const recipes = useAllRecipes();
   const [ratings] = usePersistentList(ratingStore);
   const [sort, setSort] = useState<"default" | "rating">("default");
+  const genIds = useGeneratingIds();
   const starsOf = (rid: string) =>
     ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
 
@@ -58,8 +60,8 @@ export default function RecipeList() {
               href={`/recipes/${r.id}`}
               className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              {r.image ? (
-                <div className="relative h-28 w-full">
+              <div className="relative h-28 w-full">
+                {r.image ? (
                   <Image
                     src={r.image}
                     alt={r.name}
@@ -67,16 +69,22 @@ export default function RecipeList() {
                     sizes="(max-width: 640px) 50vw, 320px"
                     className="object-cover"
                   />
-                </div>
-              ) : (
-                <div
-                  className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
-                    CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
-                  }`}
-                >
-                  <span aria-hidden>{r.emoji}</span>
-                </div>
-              )}
+                ) : (
+                  <div
+                    className={`grid h-full place-items-center bg-gradient-to-br text-5xl ${
+                      CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
+                    }`}
+                  >
+                    <span aria-hidden>{r.emoji}</span>
+                  </div>
+                )}
+                {genIds.includes(r.id) && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-ink/45 text-white">
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    <span className="text-[10px] font-medium">写真を生成中…</span>
+                  </div>
+                )}
+              </div>
               <div className="flex flex-1 flex-col p-3">
                 <p className="line-clamp-2 text-sm font-semibold text-ink">
                   {r.name}
