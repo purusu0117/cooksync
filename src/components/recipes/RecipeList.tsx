@@ -31,7 +31,7 @@ export default function RecipeList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
-      <PageHeader title="レシピ" />
+      <PageHeader title="レシピ" icon="/icons/recipe.png" />
 
       <div className="mb-3 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
         {(

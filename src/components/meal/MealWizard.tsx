@@ -475,6 +475,7 @@ export default function MealWizard() {
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader
         title="献立を決める"
+        icon="/icons/meal.png"
       />
 
       {/* 写真生成のステータス（追加したAIレシピの写真） */}

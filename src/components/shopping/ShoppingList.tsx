@@ -114,9 +114,7 @@ export default function ShoppingList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader
-        title="買い物リスト"
-      />
+      <PageHeader title="買い物リスト" icon="/icons/shopping.png" />
 
       <form onSubmit={add} className="mb-5 flex gap-2">
         <input

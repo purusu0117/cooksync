@@ -59,9 +59,7 @@ export default function FridgeApp() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader
-        title="冷蔵庫"
-      />
+      <PageHeader title="冷蔵庫" icon="/icons/fridge.png" />
 
       <MaintenancePanel onAddToFridge={addItem} />
 
