@@ -13,8 +13,15 @@ import { Redis } from "@upstash/redis";
 
 export const dynamic = "force-dynamic";
 
-const USE_REDIS = !!process.env.UPSTASH_REDIS_REST_URL;
-const redis = USE_REDIS ? Redis.fromEnv() : null;
+// Upstash/Vercelは環境変数名が複数パターン（UPSTASH_REDIS_REST_* / KV_REST_API_*）。両対応。
+const REDIS_URL =
+  process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const REDIS_TOKEN =
+  process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+const redis =
+  REDIS_URL && REDIS_TOKEN
+    ? new Redis({ url: REDIS_URL, token: REDIS_TOKEN })
+    : null;
 
 const DIR = path.join(process.cwd(), ".data");
 const FILE = path.join(DIR, "store.json");
