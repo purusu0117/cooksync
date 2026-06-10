@@ -7,6 +7,9 @@ export function GET() {
     app: "cooksync",
     // 公開時の設定状況をひと目で確認（鍵の中身は出さない）
     aiProvider: process.env.ANTHROPIC_API_KEY ? "api" : "local",
-    db: process.env.DATABASE_URL ? "configured" : "local-json",
+    db:
+      process.env.UPSTASH_REDIS_REST_URL || process.env.DATABASE_URL
+        ? "configured"
+        : "local-json",
   });
 }
