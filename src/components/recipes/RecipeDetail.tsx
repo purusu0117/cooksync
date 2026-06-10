@@ -132,20 +132,34 @@ export default function RecipeDetail({ id }: Props) {
     }
   }
 
-  // 「作った」の対象＝レシピに使う非調味料の食材で、冷蔵庫にあるもの
+  // 「作った」の対象＝レシピに使う食材で、冷蔵庫にあるもの（調味料含む）
   function matchedFridge(): FridgeItem[] {
     if (!recipe) return [];
     return fridge.filter((f) =>
-      recipe.ingredients.some(
-        (ing) => !ing.basicSeasoning && ingredientMatches(f.name, ing.name),
-      ),
+      recipe.ingredients.some((ing) => ingredientMatches(f.name, ing.name)),
     );
+  }
+
+  // その冷蔵庫アイテムが「調味料系」か（一致する材料が全て basicSeasoning）
+  function isSeasoningItem(f: FridgeItem): boolean {
+    if (!recipe) return false;
+    const matched = recipe.ingredients.filter((ing) =>
+      ingredientMatches(f.name, ing.name),
+    );
+    return matched.length > 0 && matched.every((ing) => ing.basicSeasoning);
+  }
+
+  // レシピが使う基本調味料の名前（常備＝在庫は減らさないが、記録として表示）
+  function usedSeasonings(): string[] {
+    if (!recipe) return [];
+    return recipe.ingredients.filter((ing) => ing.basicSeasoning).map((i) => i.name);
   }
 
   function openMade() {
     if (!recipe) return;
     const init: Record<string, UseChoice> = {};
-    matchedFridge().forEach((f) => (init[f.id] = "use"));
+    // 調味料は既定で「残す」（初期設定の常備を消さない）、それ以外は「使い切った」
+    matchedFridge().forEach((f) => (init[f.id] = isSeasoningItem(f) ? "keep" : "use"));
     setMadeChoices(init);
     setShowMade(true);
   }
@@ -512,6 +526,11 @@ export default function RecipeDetail({ id }: Props) {
                       {f.quantity && (
                         <span className="text-xs text-ink-soft">{f.quantity}</span>
                       )}
+                      {isSeasoningItem(f) && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          調味料
+                        </span>
+                      )}
                     </div>
                     <div className="grid grid-cols-3 gap-1.5">
                       {(
@@ -540,6 +559,17 @@ export default function RecipeDetail({ id }: Props) {
                   </li>
                 ))}
               </ul>
+            )}
+
+            {usedSeasonings().length > 0 && (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <p className="text-[11px] font-semibold text-amber-800">
+                  🧂 使った調味料（常備のため在庫はそのまま）
+                </p>
+                <p className="mt-0.5 text-xs text-ink">
+                  {usedSeasonings().join("・")}
+                </p>
+              </div>
             )}
 
             <div className="mt-5 flex gap-2">
