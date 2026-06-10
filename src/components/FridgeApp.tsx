@@ -18,6 +18,7 @@ import { BUCKET_UI } from "./freshness";
 import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
 import BulkAddForm from "./BulkAddForm";
+import PhotoAddForm from "./PhotoAddForm";
 import FoodCard from "./FoodCard";
 import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
@@ -25,7 +26,7 @@ import MaintenancePanel from "./MaintenancePanel";
 export default function FridgeApp() {
   const [items, setItems] = usePersistentList(fridgeStore);
   const [editing, setEditing] = useState<FridgeItem | null>(null);
-  const [mode, setMode] = useState<"single" | "bulk">("single");
+  const [mode, setMode] = useState<"single" | "bulk" | "photo">("single");
 
   const sorted = useMemo(() => sortByExpiry(items), [items]);
   const counts = useMemo(() => {
@@ -119,11 +120,22 @@ export default function FridgeApp() {
           >
             📋 まとめて追加
           </button>
+          <button
+            type="button"
+            onClick={() => setMode("photo")}
+            className={`rounded-full px-3 py-1 font-medium transition ${
+              mode === "photo" ? "bg-brand text-white" : "text-ink-soft"
+            }`}
+          >
+            📷 写真で追加
+          </button>
         </div>
         {mode === "single" ? (
           <AddItemForm onAdd={addItem} />
-        ) : (
+        ) : mode === "bulk" ? (
           <BulkAddForm onAddMany={addMany} />
+        ) : (
+          <PhotoAddForm onAddMany={addMany} />
         )}
       </div>
 

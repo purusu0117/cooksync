@@ -14,6 +14,9 @@ const SYSTEM_JSON =
 const SYSTEM_TEXT =
   "You are a friendly Japanese home-cooking assistant inside an app. Answer concisely in Japanese plain text only (no markdown, no code). Never edit files or do any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
 
+const SYSTEM_VISION =
+  "You are a food-recognition API. Use the Read tool to view the given local image file, then output ONLY the requested JSON object (no prose, no code fences). Never edit files. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
+
 /** claude CLI を起動し、--output-format json の result テキストを返す */
 function runClaude(
   prompt: string,
@@ -158,6 +161,24 @@ export function parseRecipesTolerant(text: string): unknown[] {
 export async function askClaudeRecipes(prompt: string): Promise<unknown[]> {
   const text = await runClaude(prompt, true);
   return parseRecipesTolerant(text);
+}
+
+/** 画像ファイルを見て、写っている食材名（日本語）の配列を返す（冷蔵庫の写真入力用） */
+export async function askClaudeVisionItems(imagePath: string): Promise<string[]> {
+  const prompt = [
+    "次の画像ファイルを Read ツールで開いて、写っている食材だけを日本語の一般名でリスト化してください。",
+    "・包装や見た目から具体的な名前にする（例：豚こま肉、玉ねぎ、牛乳、卵、絹豆腐、にんじん）。",
+    "・食器・人・背景・調理済みの完成料理は無視し、“食材/食品そのもの”を挙げる。",
+    "・同じ食材は1つにまとめる。数量や賞味期限は不要。",
+    `ファイル: ${imagePath}`,
+    '出力はJSONだけ: {"items":["…","…"]}',
+  ].join("\n");
+  const text = await runClaude(prompt, false, SYSTEM_VISION, ["Read"]);
+  const obj = extractJson<{ items?: unknown }>(text);
+  const items = Array.isArray(obj.items) ? obj.items : [];
+  return items
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    .map((s) => s.trim());
 }
 
 /** Web無しでJSONを得る（校正など、検索不要の整形タスク用） */
