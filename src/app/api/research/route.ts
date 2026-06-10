@@ -20,6 +20,7 @@ interface ResearchBody {
   };
   avoid?: string[];
   round?: number;
+  u?: string;
 }
 
 // 再探索ごとに切り口を変えるためのヒント（縛りではなく方向性）
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ResearchBody;
     const prompt = buildPrompt(body);
+    const uid = body.u || "anon";
     const jobId = globalThis.crypto.randomUUID();
     await setJob(jobId, { status: "running", createdAt: Date.now() });
 
@@ -121,7 +123,7 @@ export async function POST(request: Request) {
           .filter(Boolean)
           .join(" / ");
         // 通知は任意（VAPID未設定なら失敗しても結果には影響させない）
-        await sendPush({
+        await sendPush(uid, {
           title: "🍳 レシピが見つかりました",
           body: names || "候補ができました。タップして確認",
           url: "/meal",

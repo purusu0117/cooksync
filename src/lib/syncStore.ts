@@ -41,7 +41,7 @@ function notify() {
 }
 
 // ユーザーID（公開時のデータ分離用。この端末に固定。本格認証は後日）。
-function uid(): string {
+export function getUid(): string {
   if (typeof window === "undefined") return "anon";
   try {
     let id = window.localStorage.getItem("cooksync:uid");
@@ -64,7 +64,7 @@ function queuePut(key: string, value: unknown[]) {
       fetch("/api/store", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, value, u: uid() }),
+        body: JSON.stringify({ key, value, u: getUid() }),
       }),
     )
     .catch(() => {
@@ -74,7 +74,7 @@ function queuePut(key: string, value: unknown[]) {
 }
 
 async function doHydrate() {
-  const res = await fetch(`/api/store?u=${encodeURIComponent(uid())}`);
+  const res = await fetch(`/api/store?u=${encodeURIComponent(getUid())}`);
   if (!res.ok) throw new Error(`store GET ${res.status}`);
   const server = (await res.json()) as Record<string, unknown>;
   for (const store of ALL_STORES) {

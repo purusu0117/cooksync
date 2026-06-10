@@ -13,13 +13,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
 import { enablePush } from "@/lib/pushClient";
+import { getUid } from "@/lib/syncStore";
 
 // サーバー側に完了時刻を予約／解除（アプリを閉じていても終了時刻ちょうどに通知）
 function scheduleServerTimer(id: string, endAt: number, label: string) {
   void fetch("/api/timer", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, endAt, label }),
+    body: JSON.stringify({ id, endAt, label, u: getUid() }),
   }).catch(() => {});
 }
 function cancelServerTimer(id: string) {

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 interface SubBody {
   endpoint?: string;
   keys?: { p256dh?: string; auth?: string };
+  u?: string;
 }
 
 export async function POST(request: Request) {
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
     if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
       return Response.json({ error: "invalid subscription" }, { status: 400 });
     }
-    await addSubscription({
+    await addSubscription(sub.u || "anon", {
       endpoint: sub.endpoint,
       keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
     });

@@ -8,6 +8,7 @@ interface Body {
   endAt?: number; // 終了時刻(ms)。設定で予約、cancel:true で解除
   label?: string;
   cancel?: boolean;
+  u?: string;
 }
 
 // サーバープロセス内に予約を保持（id→setTimeoutハンドル）
@@ -15,8 +16,9 @@ const scheduled = new Map<string, ReturnType<typeof setTimeout>>();
 
 export async function POST(request: Request) {
   try {
-    const { id, endAt, label, cancel } = (await request.json()) as Body;
+    const { id, endAt, label, cancel, u } = (await request.json()) as Body;
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
+    const uid = u || "anon";
 
     // 既存予約があれば必ず解除（再設定・一時停止・削除に対応）
     const existing = scheduled.get(id);
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
     const delay = Math.max(0, endAt - Date.now());
     const handle = setTimeout(() => {
       scheduled.delete(id);
-      void sendPush({
+      void sendPush(uid, {
         title: "⏰ タイマー完了",
         body: `${label || "タイマー"}が完了しました`,
         url: "/",

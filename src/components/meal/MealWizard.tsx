@@ -35,6 +35,7 @@ import {
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
+import { getUid } from "@/lib/syncStore";
 import { startGenerating, stopGenerating } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
@@ -285,6 +286,7 @@ export default function MealWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          u: getUid(),
           wish: wish.trim(),
           servings,
           round,

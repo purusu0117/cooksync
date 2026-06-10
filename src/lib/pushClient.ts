@@ -3,6 +3,8 @@
 // クライアント：Service Worker登録＋プッシュ購読。
 // ※ iOSは「ホーム画面に追加したPWA」かつ通知許可済みのときのみ届く（Safariタブ不可）。
 
+import { getUid } from "@/lib/syncStore";
+
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -39,10 +41,14 @@ export async function enablePush(): Promise<boolean> {
         applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
       });
     }
+    const subJson = sub.toJSON() as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
     await fetch("/api/push/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sub),
+      body: JSON.stringify({ ...subJson, u: getUid() }),
     });
     return true;
   } catch {
