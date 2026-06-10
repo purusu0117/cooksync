@@ -100,6 +100,8 @@ export default function MealWizard() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
+  const [aiPreview, setAiPreview] = useState<Recipe | null>(null); // 候補の詳細プレビュー（未確定）
+  const [imgStatus, setImgStatus] = useState(""); // 写真生成の状況表示
   const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
   const [searchRound, setSearchRound] = useState(0); // 探索回数（角度を変える）
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,6 +148,8 @@ export default function MealWizard() {
     setPicks([]);
     setSlotIndex(0);
     setAiResults([]);
+    setAiPreview(null);
+    setImgStatus("");
     setAiSeen([]);
     setSearchRound(0);
     setPhase("pick");
@@ -329,31 +333,43 @@ export default function MealWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 「このレシピを作る」確定：レシピリストへ追加し、写真生成を開始して次へ
   function pickAiRecipe(recipe: Recipe) {
     setStoredRecipes((prev) => [recipe, ...prev]);
     setAiResults([]);
+    setAiPreview(null);
     setWish("");
-    pickRecipe(recipe);
-    // 料理写真をHiggsFieldで生成し、完了したらレシピに反映（バックグラウンド）
     void generateRecipeImage(recipe);
+    pickRecipe(recipe);
   }
 
   async function generateRecipeImage(recipe: Recipe) {
-    try {
-      const res = await fetch("/api/recipe-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: recipe.id, name: recipe.name }),
-      });
-      const data = await res.json();
-      if (res.ok && data.image) {
-        setStoredRecipes((prev) =>
-          prev.map((r) => (r.id === recipe.id ? { ...r, image: data.image } : r)),
-        );
+    setImgStatus(`🖼 「${recipe.name}」の写真を生成中…（30〜60秒・後から反映）`);
+    // 一時的な失敗に備えて最大2回試行
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch("/api/recipe-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: recipe.id, name: recipe.name }),
+        });
+        const data = await res.json();
+        if (res.ok && data.image) {
+          setStoredRecipes((prev) =>
+            prev.map((r) =>
+              r.id === recipe.id ? { ...r, image: data.image } : r,
+            ),
+          );
+          setImgStatus(`🖼 「${recipe.name}」の写真ができました ✨`);
+          return;
+        }
+      } catch {
+        /* 次の試行へ */
       }
-    } catch {
-      /* 失敗時は絵文字のまま */
     }
+    setImgStatus(
+      `写真の自動生成に失敗しました。レシピ詳細の「🖼 写真をAIで再生成」で作り直せます。`,
+    );
   }
 
   function finalize() {
@@ -452,6 +468,13 @@ export default function MealWizard() {
       <PageHeader
         title="献立を決める"
       />
+
+      {/* 写真生成のステータス（追加したAIレシピの写真） */}
+      {imgStatus && (
+        <p className="mb-3 rounded-xl bg-brand-soft/60 px-3 py-2 text-xs font-medium text-brand-dark">
+          {imgStatus}
+        </p>
+      )}
 
       {/* 優先消費バナー */}
       {priority.length > 0 && phase !== "done" && (
@@ -644,16 +667,102 @@ export default function MealWizard() {
             {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
           </div>
 
-          {aiResults.length > 0 && (
+          {/* AI候補の詳細プレビュー（タップで表示・まだ確定しない） */}
+          {aiPreview && (
+            <div className="mb-5 rounded-2xl border border-brand/40 bg-surface p-4 shadow-sm">
+              <button
+                onClick={() => setAiPreview(null)}
+                className="mb-2 text-xs font-medium text-ink-soft transition hover:text-brand"
+              >
+                ← 候補一覧に戻る
+              </button>
+              <h3 className="flex items-center gap-2 text-lg font-bold text-ink">
+                <span aria-hidden>{aiPreview.emoji}</span>
+                {aiPreview.name}
+              </h3>
+              <p className="mt-1 text-xs font-medium text-brand-dark">
+                {aiPreview.tags.cookTime ? `⏱ ${aiPreview.tags.cookTime}分` : ""}
+                {aiPreview.kcal ? ` / ${aiPreview.kcal}kcal` : ""}
+                {`　${aiPreview.servings}人分`}
+              </p>
+              <p className="mt-2 rounded-xl bg-brand-soft/60 px-3 py-2 text-xs text-brand-dark">
+                {aiPreview.catch}
+              </p>
+
+              <p className="mt-3 mb-1 text-xs font-bold text-ink">材料</p>
+              <ul className="flex flex-col gap-0.5">
+                {aiPreview.ingredients.map((i, idx) => (
+                  <li key={idx} className="flex justify-between text-xs">
+                    <span className="text-ink">{i.name}</span>
+                    <span className="text-ink-soft">{i.amount}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-3 mb-1 text-xs font-bold text-ink">作り方</p>
+              <ol className="flex flex-col gap-1.5">
+                {aiPreview.steps.map((s, idx) => (
+                  <li key={idx} className="text-xs leading-relaxed text-ink">
+                    <span className="font-semibold">{idx + 1}. {s.title}</span>
+                    <br />
+                    {s.text}
+                    {s.tip && (
+                      <span className="mt-0.5 block text-[11px] italic text-amber-700">
+                        💡 {s.tip}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+
+              {aiPreview.sources[0] && (
+                <p className="mt-3 text-[11px] text-ink-soft">
+                  参考：
+                  {aiPreview.sources[0].url ? (
+                    <a
+                      href={aiPreview.sources[0].url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-brand underline"
+                    >
+                      {aiPreview.sources[0].label}
+                    </a>
+                  ) : (
+                    aiPreview.sources[0].label
+                  )}
+                  {aiPreview.sources[0].popularity
+                    ? `・${aiPreview.sources[0].popularity}`
+                    : ""}
+                </p>
+              )}
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setAiPreview(null)}
+                  className="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-soft transition hover:bg-paper"
+                >
+                  ← 戻る
+                </button>
+                <button
+                  onClick={() => pickAiRecipe(aiPreview)}
+                  className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95"
+                >
+                  このレシピを作る
+                </button>
+              </div>
+            </div>
+          )}
+
+          {aiResults.length > 0 && !aiPreview && (
             <div className="mb-5">
               <p className="mb-2 text-xs font-semibold text-brand-dark">
-                ✨ AIの提案（タップで決定・{servings}人分）
+                ✨ AIの提案（タップで詳細を見る・{servings}人分）
               </p>
               <ul className="flex flex-col gap-3">
                 {aiResults.map((r) => (
                   <li key={r.id}>
                     <button
-                      onClick={() => pickAiRecipe(r)}
+                      onClick={() => setAiPreview(r)}
                       className="flex w-full items-start gap-3 rounded-2xl border border-brand/40 bg-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <span className="text-2xl" aria-hidden>{r.emoji}</span>
@@ -673,6 +782,9 @@ export default function MealWizard() {
                             </span>
                           )}
                         </div>
+                        <p className="mt-1 text-[11px] text-brand-dark">
+                          タップで詳細 →
+                        </p>
                       </div>
                     </button>
                   </li>
