@@ -1,6 +1,10 @@
 // 個人ローカルアプリのデータ保存先＝PC上の単一JSONファイル（.data/store.json）。
 // PCもスマホも（Tailscale経由で）このPCのサーバーを読み書きするので、端末間で同期される。
 // 認証はTailnet（Tailscale）を安全境界とする＝アプリ内認証は付けない簡易構成。
+//
+// === DEPLOY SEAM (B) ===  公開時はここをDBに差し替える（詳細: DEPLOY.md）
+//   - readAll/setKey を Postgres等の read/write に。キーは `userId:storeKey` でユーザー分離。
+//   - 認証を本物(Auth.js/Supabase)に。Vercelはディスク不可なのでJSONファイルは使えない。
 
 import { promises as fs } from "fs";
 import path from "path";

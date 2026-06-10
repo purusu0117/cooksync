@@ -1,6 +1,13 @@
 // サーバー専用：ローカルの Claude Code（`claude` CLI）をサブプロセスで起動し、
 // 大翔のMaxプラン枠で推論する。APIキー課金なし。Route Handler からのみ import すること。
-// 公開時はこのファイルだけ @anthropic-ai/sdk + ANTHROPIC_API_KEY 実装に差し替える。
+//
+// === DEPLOY SEAM (A) ===  公開時はこのファイルだけ差し替える（詳細: DEPLOY.md）
+//   ANTHROPIC_API_KEY がある時は @anthropic-ai/sdk の messages.create に切替：
+//   - askClaudeText / askClaudeForJson(研究=web_searchツール) / askClaudeForJsonNoWeb
+//   - askClaudeRecipes（出力を parseRecipesTolerant に通す）
+//   - askClaudeVisionItems（画像をbase64で渡す）
+//   - askClaudeImageUrl（Anthropic不可→画像プロバイダ or 当面無効）
+//   Route Handler / UI は無改修でよい。
 
 import { spawn } from "node:child_process";
 
