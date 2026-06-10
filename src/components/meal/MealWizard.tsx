@@ -36,6 +36,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { startGenerating, stopGenerating } from "@/lib/imageGen";
 import PageHeader from "@/components/PageHeader";
+import AppIcon from "@/components/AppIcon";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
 
@@ -488,7 +489,10 @@ export default function MealWizard() {
       {/* 優先消費バナー */}
       {priority.length > 0 && phase !== "done" && (
         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50/70 p-3">
-          <p className="mb-1 text-xs font-bold text-red-700">🔴 今日の優先消費食材</p>
+          <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-bold text-red-700">
+            <AppIcon name="signal" size={16} />
+            今日の優先消費食材
+          </p>
           <p className="text-sm text-red-900">
             {priority
               .map((p) => `${p.name}（${FRESHNESS[freshnessOf(p.expiresOn)].label(daysUntil(p.expiresOn))}）`)
@@ -934,9 +938,10 @@ export default function MealWizard() {
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <a
               href="/shopping"
-              className="rounded-xl border border-line bg-surface px-4 py-3 text-center text-sm font-semibold text-ink transition hover:border-brand"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-4 py-3 text-center text-sm font-semibold text-ink transition hover:border-brand"
             >
-              🛒 買い物リストを見る
+              <AppIcon name="shopping" size={16} />
+              買い物リストを見る
             </a>
             <button
               onClick={downloadIcs}

@@ -19,6 +19,7 @@ import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { startGenerating, stopGenerating, useIsGenerating } from "@/lib/imageGen";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
+import AppIcon from "@/components/AppIcon";
 
 interface Props {
   id: string;
@@ -318,7 +319,10 @@ export default function RecipeDetail({ id }: Props) {
           {recipe.servings ? `　${recipe.servings}人分` : ""}
         </p>
         <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
-          <span>🍳 作った回数</span>
+          <span className="inline-flex items-center gap-1">
+            <AppIcon name="check" size={16} />
+            作った回数
+          </span>
           <button
             type="button"
             onClick={decMade}
@@ -344,7 +348,10 @@ export default function RecipeDetail({ id }: Props) {
           {recipe.catch}
         </p>
         <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-          <span className="text-sm font-bold text-ink">⭐ このレシピを評価</span>
+          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <AppIcon name="star" size={20} />
+            このレシピを評価
+          </span>
           <StarRating value={stars} onChange={setStars} size={30} />
         </div>
       </header>
@@ -353,16 +360,18 @@ export default function RecipeDetail({ id }: Props) {
         <button
           type="button"
           onClick={addMissingToShopping}
-          className="flex-1 rounded-xl border border-brand/40 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-brand/40 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
         >
-          🛒 不足を買い物へ
+          <AppIcon name="shopping" size={18} />
+          不足を買い物へ
         </button>
         <button
           type="button"
           onClick={openMade}
-          className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95"
         >
-          🍳 作った
+          <AppIcon name="check" size={18} />
+          作った
         </button>
       </div>
       {note && (
@@ -409,7 +418,10 @@ export default function RecipeDetail({ id }: Props) {
 
       {/* 行程 */}
       <section className="mb-6">
-        <h2 className="mb-3 text-sm font-bold text-ink">🍳 行程</h2>
+        <h2 className="mb-3 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+          <AppIcon name="meal" size={18} />
+          行程
+        </h2>
         <div className="mb-3">
           <CookingTimer suggestions={timerSuggestions} />
         </div>
@@ -430,14 +442,20 @@ export default function RecipeDetail({ id }: Props) {
 
       {recipe.sideDishes && recipe.sideDishes.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-bold text-ink">🍽 合わせる主食・副菜</h2>
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <AppIcon name="recipe" size={18} />
+            合わせる主食・副菜
+          </h2>
           <p className="text-sm text-ink-soft">{recipe.sideDishes.join("／")}</p>
         </section>
       )}
 
       {recipe.leftoverStorage.length > 0 && (
         <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
-          <h2 className="mb-2 text-sm font-bold text-ink">🧊 余った材料の保存</h2>
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <AppIcon name="fridge" size={18} />
+            余った材料の保存
+          </h2>
           <ul className="flex flex-col gap-1.5">
             {recipe.leftoverStorage.map((l, idx) => (
               <li key={idx} className="text-sm">
@@ -482,13 +500,14 @@ export default function RecipeDetail({ id }: Props) {
             type="button"
             onClick={genImage}
             disabled={imgLoading}
-            className="w-full rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
           >
+            <AppIcon name="camera" size={18} />
             {imgLoading
               ? "AIが写真を生成中…"
               : recipe.image
-                ? "🖼 写真をAIで再生成"
-                : "🖼 写真をAIで生成"}
+                ? "写真をAIで再生成"
+                : "写真をAIで生成"}
           </button>
           <button
             type="button"
@@ -518,8 +537,9 @@ export default function RecipeDetail({ id }: Props) {
             className="w-full max-w-md rounded-3xl bg-surface p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-bold text-ink">
-              🍳 {recipe.name} を作った
+            <h3 className="inline-flex items-center gap-1.5 text-base font-bold text-ink">
+              <AppIcon name="check" size={20} />
+              {recipe.name} を作った
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
               使った冷蔵庫の食材を更新します（あとで「取り消す」で元に戻せます）。

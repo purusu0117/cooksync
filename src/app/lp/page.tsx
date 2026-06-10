@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import AppIcon, { type IconName } from "@/components/AppIcon";
 
 export const metadata: Metadata = {
   title: "CookSync｜冷蔵庫から献立まで、ぜんぶ半自動。",
@@ -8,42 +9,42 @@ export const metadata: Metadata = {
     "賞味期限が近い食材からAIが献立を提案。写真で在庫登録、買い物リストも在庫管理も半自動。フードロスを減らし、毎日の献立に悩まないキッチンアプリ。",
 };
 
-const STEPS = [
-  { icon: "🧊", title: "冷蔵庫の在庫", desc: "写真を撮るだけで登録。期限は自動推定。" },
-  { icon: "🍳", title: "AIが献立提案", desc: "期限が近い食材から、人気レシピを提案。" },
-  { icon: "🛒", title: "買い物リスト", desc: "足りない食材だけ自動でリスト化。" },
-  { icon: "🧊", title: "在庫へ自動反映", desc: "買ったらタップ一つで冷蔵庫へ。" },
-  { icon: "✅", title: "作ったら自動で減る", desc: "使った食材を在庫から自動で消費。" },
+const STEPS: { icon: IconName; title: string; desc: string }[] = [
+  { icon: "fridge", title: "冷蔵庫の在庫", desc: "写真を撮るだけで登録。期限は自動推定。" },
+  { icon: "meal", title: "AIが献立提案", desc: "期限が近い食材から、人気レシピを提案。" },
+  { icon: "shopping", title: "買い物リスト", desc: "足りない食材だけ自動でリスト化。" },
+  { icon: "fridge", title: "在庫へ自動反映", desc: "買ったらタップ一つで冷蔵庫へ。" },
+  { icon: "check", title: "作ったら自動で減る", desc: "使った食材を在庫から自動で消費。" },
 ];
 
-const FEATURES = [
+const FEATURES: { icon: IconName; title: string; desc: string }[] = [
   {
-    icon: "📷",
+    icon: "camera",
     title: "写真で登録、入力ゼロ",
     desc: "冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、賞味期限とカテゴリを自動で推定します。",
   },
   {
-    icon: "🔴🟡🟢",
+    icon: "signal",
     title: "賞味期限を見える化",
     desc: "期限が近い順に並び、今日使うべき食材がひと目で。食材を使い切ってフードロスを減らせます。",
   },
   {
-    icon: "🍳",
+    icon: "meal",
     title: "AIが実在レシピを提案",
     desc: "期限が近い食材を活かす人気レシピを、つくれぽ数・再生数など“人気の根拠”つきで提案。3案は使う食材を分散。",
   },
   {
-    icon: "🔁",
+    icon: "loop",
     title: "買い物も在庫も自動連携",
     desc: "不足は買い物リストへ→買ったら在庫へ→作ったら減る。在庫→献立→買い物→在庫がぐるっと半自動で回ります。",
   },
   {
-    icon: "⭐",
+    icon: "star",
     title: "好みを学習",
     desc: "星評価で提案が自分仕様に。直近に作った料理は自動で避けるので、献立がマンネリ化しません。",
   },
   {
-    icon: "⏱",
+    icon: "timer",
     title: "調理タイマー＆通知",
     desc: "複数同時にかけられ、アプリを離れていても完了を通知。レシピの写真もAIが自動生成します。",
   },
@@ -123,9 +124,7 @@ export default function LandingPage() {
               key={i}
               className="relative rounded-2xl border border-line bg-surface p-5 text-center shadow-sm"
             >
-              <span className="text-3xl" aria-hidden>
-                {s.icon}
-              </span>
+              <AppIcon name={s.icon} size={44} className="mx-auto" />
               <p className="mt-2 text-sm font-bold text-ink">{s.title}</p>
               <p className="mt-1 text-xs leading-relaxed text-ink-soft">{s.desc}</p>
               {i < STEPS.length - 1 && (
@@ -150,9 +149,7 @@ export default function LandingPage() {
                 key={i}
                 className="rounded-2xl border border-line bg-surface p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <div className="text-2xl" aria-hidden>
-                  {f.icon}
-                </div>
+                <AppIcon name={f.icon} size={40} />
                 <h3 className="mt-3 text-base font-bold text-ink">{f.title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
                   {f.desc}

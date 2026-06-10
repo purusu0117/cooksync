@@ -7,6 +7,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { guessItem } from "@/lib/guess";
 import PageHeader from "@/components/PageHeader";
+import AppIcon from "@/components/AppIcon";
 
 const fieldClass =
   "rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
@@ -155,9 +156,10 @@ export default function ShoppingList() {
                   <button
                     type="button"
                     onClick={moveCheckedToFridge}
-                    className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-dark active:scale-95"
+                    className="inline-flex items-center gap-1 rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-dark active:scale-95"
                   >
-                    🧊 冷蔵庫へ入れる
+                    <AppIcon name="fridge" size={14} />
+                    冷蔵庫へ入れる
                   </button>
                   <button
                     type="button"

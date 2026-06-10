@@ -19,6 +19,7 @@ import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
 import BulkAddForm from "./BulkAddForm";
 import PhotoAddForm from "./PhotoAddForm";
+import AppIcon from "./AppIcon";
 import FoodCard from "./FoodCard";
 import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
@@ -84,8 +85,9 @@ export default function FridgeApp() {
 
       {priority.length > 0 && (
         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50/70 p-3">
-          <p className="mb-1 text-xs font-bold text-red-700">
-            🔴 今日の優先消費食材
+          <p className="mb-1 inline-flex items-center gap-1.5 text-xs font-bold text-red-700">
+            <AppIcon name="signal" size={16} />
+            今日の優先消費食材
           </p>
           <p className="text-sm text-red-900">
             {priority
@@ -116,7 +118,7 @@ export default function FridgeApp() {
               mode === "bulk" ? "bg-brand text-white" : "text-ink-soft"
             }`}
           >
-            📋 まとめて追加
+            まとめて追加
           </button>
           <button
             type="button"
@@ -125,7 +127,8 @@ export default function FridgeApp() {
               mode === "photo" ? "bg-brand text-white" : "text-ink-soft"
             }`}
           >
-            📷 写真で追加
+            <AppIcon name="camera" size={14} className="mr-1" />
+            写真で追加
           </button>
         </div>
         {mode === "single" ? (

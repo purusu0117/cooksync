@@ -12,6 +12,7 @@ import {
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
 import PageHeader from "./PageHeader";
+import AppIcon from "./AppIcon";
 
 const fieldClass =
   "w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
@@ -210,7 +211,10 @@ export default function MyPage() {
       </div>
 
       <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
-        <h2 className="mb-1 text-sm font-bold text-ink">🍳 最近作ったもの</h2>
+        <h2 className="mb-1 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+          <AppIcon name="check" size={18} />
+          最近作ったもの
+        </h2>
         <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
           「提案で除外中」は直近2日に作ったため、献立提案で避けられています。間違いは × で削除できます。
         </p>
