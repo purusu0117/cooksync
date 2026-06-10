@@ -22,6 +22,9 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname();
 
+  // ランディングページ(/lp)ではアプリのタブを出さない
+  if (pathname.startsWith("/lp")) return null;
+
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
