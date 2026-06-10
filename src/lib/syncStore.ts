@@ -16,6 +16,7 @@ import {
   mealStore,
   accountStore,
   ratingStore,
+  usageStore,
 } from "./storage";
 
 const ALL_STORES = [
@@ -25,6 +26,7 @@ const ALL_STORES = [
   mealStore,
   accountStore,
   ratingStore,
+  usageStore,
 ];
 
 const mem = new Map<string, unknown[]>();

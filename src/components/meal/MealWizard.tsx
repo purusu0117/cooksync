@@ -36,6 +36,7 @@ import {
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { startGenerating, stopGenerating } from "@/lib/imageGen";
+import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
 import AppIcon from "@/components/AppIcon";
 
@@ -90,6 +91,7 @@ export default function MealWizard() {
   const [, setShopping] = usePersistentList(shoppingStore);
   const [, setStoredRecipes] = usePersistentList(recipeStore);
   const [ratings] = usePersistentList(ratingStore);
+  const usage = useUsage();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -264,9 +266,16 @@ export default function MealWizard() {
 
   async function aiSearch() {
     if (aiLoading) return;
+    if (!usage.canUse("research")) {
+      setAiError(
+        `今月のAIレシピ探索の無料枠（${FREE_LIMITS.research}回）を使い切りました。来月1日にリセットされます。`,
+      );
+      return;
+    }
     setAiError("");
     setAiResults([]);
     setAiLoading(true);
+    usage.recordUse("research");
     const round = searchRound + 1;
     setSearchRound(round);
     // 完了通知の許可を確保（初回はダイアログ。アプリを離れても通知が届く）
@@ -347,6 +356,13 @@ export default function MealWizard() {
   }
 
   async function generateRecipeImage(recipe: Recipe) {
+    if (!usage.canUse("image")) {
+      setImgStatus(
+        `今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`,
+      );
+      return;
+    }
+    usage.recordUse("image");
     setImgStatus(`🖼 「${recipe.name}」の写真を生成中…（30〜60秒・後から反映）`);
     startGenerating(recipe.id);
     try {

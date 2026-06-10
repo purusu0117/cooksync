@@ -11,6 +11,7 @@ import {
 } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
+import { useUsage, FREE_LIMITS, AI_LABEL, type AiKind } from "@/lib/usage";
 import PageHeader from "./PageHeader";
 import AppIcon from "./AppIcon";
 
@@ -22,6 +23,7 @@ export default function MyPage() {
   const [fridge, setFridge] = usePersistentList(fridgeStore);
   const [shopping, setShopping] = usePersistentList(shoppingStore);
   const [meals, setMeals] = usePersistentList(mealStore);
+  const usage = useUsage();
 
   const account = accs[0] ?? null;
 
@@ -252,6 +254,40 @@ export default function MyPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-bold text-ink">今月のAI利用</h2>
+        <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
+          {usage.premium
+            ? "プレミアム：AI機能は無制限です。"
+            : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで無制限（準備中）。"}
+        </p>
+        <ul className="flex flex-col gap-2.5">
+          {(["research", "image", "scan"] as AiKind[]).map((k) => {
+            const used = usage.used(k);
+            const limit = FREE_LIMITS[k];
+            const pct = usage.premium ? 0 : Math.min(100, (used / limit) * 100);
+            return (
+              <li key={k}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-ink">{AI_LABEL[k]}</span>
+                  <span className="font-medium text-ink-soft">
+                    {usage.premium ? "無制限" : `${used} / ${limit}`}
+                  </span>
+                </div>
+                {!usage.premium && (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper">
+                    <div
+                      className={`h-full rounded-full ${pct >= 100 ? "bg-accent" : "bg-brand"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">

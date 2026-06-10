@@ -17,6 +17,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { startGenerating, stopGenerating, useIsGenerating } from "@/lib/imageGen";
+import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
@@ -70,6 +71,7 @@ export default function RecipeDetail({ id }: Props) {
   const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
   const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
   const generating = useIsGenerating(id);
+  const usage = useUsage();
 
   function setStars(n: number) {
     setRatings((prev) => {
@@ -206,6 +208,11 @@ export default function RecipeDetail({ id }: Props) {
 
   async function genImage() {
     if (!recipe || imgLoading) return;
+    if (!usage.canUse("image")) {
+      setNote(`今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`);
+      return;
+    }
+    usage.recordUse("image");
     setImgLoading(true);
     startGenerating(recipe.id);
     setNote("AIが写真を生成中…（30〜60秒）");

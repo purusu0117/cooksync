@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Camera, X } from "lucide-react";
 import { guessItem } from "@/lib/guess";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
+import { useUsage, FREE_LIMITS } from "@/lib/usage";
 
 interface Props {
   onAddMany: (items: FridgeItem[]) => void;
@@ -14,11 +15,19 @@ export default function PhotoAddForm({ onAddMany }: Props) {
   const [error, setError] = useState("");
   const [items, setItems] = useState<{ name: string; checked: boolean }[]>([]);
   const [done, setDone] = useState("");
+  const usage = useUsage();
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // 同じ写真を選び直せるように
     if (!file) return;
+    if (!usage.canUse("scan")) {
+      setError(
+        `今月の写真で在庫登録の無料枠（${FREE_LIMITS.scan}回）を使い切りました。来月1日にリセットされます。`,
+      );
+      return;
+    }
+    usage.recordUse("scan");
     setError("");
     setDone("");
     setItems([]);

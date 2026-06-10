@@ -92,6 +92,15 @@ export interface RatingEntry {
 }
 export const ratingStore = localStore<RatingEntry>("cooksync:ratings:v1");
 
+// AI使用量カウンタ（月別）。無料枠の管理＝公開時の課金導線の土台。
+export interface UsageRecord {
+  month: string; // "2026-06"
+  research: number;
+  image: number;
+  scan: number;
+}
+export const usageStore = localStore<UsageRecord>("cooksync:usage:v1");
+
 // 後方互換（旧 FridgeApp が import していた API）
 export function loadItems(): FridgeItem[] {
   return fridgeStore.load();

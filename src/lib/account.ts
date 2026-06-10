@@ -7,4 +7,5 @@ export interface Account {
   password: string;
   createdAt: number;
   loggedIn: boolean;
+  premium?: boolean; // true=AI無制限。未設定/false=無料枠（月◯回）
 }
