@@ -1,5 +1,7 @@
+import { after } from "next/server";
 import { askClaudeRecipes } from "@/lib/ai";
 import { sendPush } from "@/lib/pushServer";
+import { redis } from "@/lib/kv";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -37,15 +39,22 @@ interface Job {
   createdAt: number;
 }
 
-// ジョブはサーバー(PC)プロセス内に保持。スマホがアプリを離れても処理は継続し、
-// 戻ってきた時にGETで結果を取得できる（バックグラウンド継続）。
-const jobs = new Map<string, Job>();
+// ジョブ保存：公開=Redis（インスタンス間で共有・必須）／ローカル=メモリ。
+// 30分で失効。
+const mem = new Map<string, Job>();
+const JOB_TTL_SEC = 30 * 60;
 
-function prune() {
-  const now = Date.now();
-  for (const [id, j] of jobs) {
-    if (now - j.createdAt > 30 * 60_000) jobs.delete(id);
+async function setJob(id: string, job: Job) {
+  if (redis) await redis.set(`job:${id}`, JSON.stringify(job), { ex: JOB_TTL_SEC });
+  else mem.set(id, job);
+}
+async function getJob(id: string): Promise<Job | null> {
+  if (redis) {
+    const v = await redis.get<unknown>(`job:${id}`);
+    if (!v) return null;
+    return (typeof v === "string" ? JSON.parse(v) : v) as Job;
   }
+  return mem.get(id) ?? null;
 }
 
 function buildPrompt(b: ResearchBody): string {
@@ -94,37 +103,37 @@ function buildPrompt(b: ResearchBody): string {
     .join("\n");
 }
 
-// POST: ジョブを開始して jobId を即返す（処理はサーバーで継続）
+// POST: ジョブを開始して jobId を即返す。
+// 実処理は after() で応答後に継続（Vercelでもレスポンス後に生かされる）。
 export async function POST(request: Request) {
   try {
-    prune();
     const body = (await request.json()) as ResearchBody;
     const prompt = buildPrompt(body);
     const jobId = globalThis.crypto.randomUUID();
-    jobs.set(jobId, { status: "running", createdAt: Date.now() });
+    await setJob(jobId, { status: "running", createdAt: Date.now() });
 
-    // 非同期で実行（await しない＝即レスポンス、スマホが離れても継続）
-    void askClaudeRecipes(prompt)
-      .then((recipes) => {
-        jobs.set(jobId, { status: "done", recipes, createdAt: Date.now() });
-        // アプリを離れていても通知（Web Push）
+    after(async () => {
+      try {
+        const recipes = await askClaudeRecipes(prompt);
+        await setJob(jobId, { status: "done", recipes, createdAt: Date.now() });
         const names = recipes
           .map((r) => (r as { name?: string }).name)
           .filter(Boolean)
           .join(" / ");
-        void sendPush({
+        // 通知は任意（VAPID未設定なら失敗しても結果には影響させない）
+        await sendPush({
           title: "🍳 レシピが見つかりました",
           body: names || "候補ができました。タップして確認",
           url: "/meal",
-        });
-      })
-      .catch((e) => {
-        jobs.set(jobId, {
+        }).catch(() => {});
+      } catch (e) {
+        await setJob(jobId, {
           status: "error",
           error: e instanceof Error ? e.message : "AI research failed",
           createdAt: Date.now(),
         });
-      });
+      }
+    });
 
     return Response.json({ jobId });
   } catch (e) {
@@ -139,7 +148,7 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("jobId");
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
-  const job = jobs.get(jobId);
+  const job = await getJob(jobId);
   if (!job) return Response.json({ status: "missing" });
   if (job.status === "done") {
     return Response.json({ status: "done", recipes: job.recipes ?? [] });

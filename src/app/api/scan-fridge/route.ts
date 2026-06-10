@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { askClaudeVisionItems } from "@/lib/ai";
 
@@ -15,7 +16,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "image required" }, { status: 400 });
     }
     const buf = Buffer.from(await file.arrayBuffer());
-    const dir = path.join(process.cwd(), ".data", "tmp");
+    // Vercelは書き込み可能なのが /tmp のみ。os.tmpdir() でローカルとも両対応。
+    const dir = path.join(os.tmpdir(), "cooksync-scan");
     await fs.mkdir(dir, { recursive: true });
     const ext = file.type.includes("png") ? "png" : "jpg";
     tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.${ext}`);
