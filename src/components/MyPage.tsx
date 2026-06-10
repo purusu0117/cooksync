@@ -163,13 +163,15 @@ export default function MyPage() {
   }
 
   // ログイン済み：プロフィール
+  // 「作った」＝🍳作ったボタンで記録した分だけ（献立に入れただけの計画は含めない）
+  const madeMeals = meals.filter((m) => m.made);
   const stats = [
     { label: "冷蔵庫の食材", value: fridge.length },
     { label: "買い物リスト", value: shopping.filter((s) => !s.checked).length },
-    { label: "作った献立", value: meals.length },
+    { label: "作った料理", value: madeMeals.length },
   ];
-  const sortedMeals = recentMeals(meals, 36500); // 全件・新しい順
-  const avoidIds = new Set(recentMeals(meals, 2).map((e) => e.id)); // 直近2日＝提案で除外中
+  const sortedMeals = recentMeals(madeMeals, 36500); // 作ったもの・新しい順
+  const avoidIds = new Set(recentMeals(madeMeals, 2).map((e) => e.id)); // 直近2日＝提案で除外中
 
   function removeMeal(mid: string) {
     setMeals((prev) => prev.filter((m) => m.id !== mid));

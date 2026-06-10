@@ -390,13 +390,15 @@ export default function MealWizard() {
       return [...existing, ...toAdd];
     });
 
-    // 2) 食事計画を記録（連日回避の根拠に）
+    // 2) 食事計画を記録（連日回避の根拠に）。これは「計画」であって「作った」ではない
+    //    （made:false）。作った回数は🍳作ったボタンを押したときだけ増える。
     const newMeals: MealEntry[] = picks.map((p) => ({
       id: crypto.randomUUID(),
       date: p.date,
       slot: p.slot,
       recipeId: p.recipe.id,
       recipeName: p.recipe.name,
+      made: false,
     }));
     setRecent((meals) => [...meals, ...newMeals]);
 

@@ -64,7 +64,8 @@ export default function RecipeDetail({ id }: Props) {
   } | null>(null);
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
-  const madeCount = meals.filter((m) => m.recipeId === id).length;
+  // 「作った回数」は🍳作ったボタンで記録した分だけ（献立に入れただけ=made:falseは数えない）
+  const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
   const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
 
   function setStars(n: number) {
@@ -170,6 +171,7 @@ export default function RecipeDetail({ id }: Props) {
         slot: "夜",
         recipeId: recipe.id,
         recipeName: recipe.name,
+        made: true,
       } satisfies MealEntry,
     ]);
     setUndoData({ snapshot, mealId });
@@ -211,7 +213,7 @@ export default function RecipeDetail({ id }: Props) {
     }
   }
 
-  // 作った回数の手動編集（＋／−）
+  // 作った回数の手動編集（＋／−）。作った回数＝made:true の記録のみ
   function incMade() {
     if (!recipe) return;
     setMeals((prev) => [
@@ -222,6 +224,7 @@ export default function RecipeDetail({ id }: Props) {
         slot: "夜",
         recipeId: recipe.id,
         recipeName: recipe.name,
+        made: true,
       } satisfies MealEntry,
     ]);
   }
@@ -229,9 +232,9 @@ export default function RecipeDetail({ id }: Props) {
     setMeals((prev) => {
       let removed = false;
       const out: MealEntry[] = [];
-      // 末尾（最新）から1件だけ削除
+      // 末尾（最新）から、made:true の1件だけ削除
       for (let i = prev.length - 1; i >= 0; i--) {
-        if (!removed && prev[i].recipeId === id) {
+        if (!removed && prev[i].recipeId === id && prev[i].made) {
           removed = true;
           continue;
         }

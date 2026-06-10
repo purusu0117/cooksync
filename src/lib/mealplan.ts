@@ -12,6 +12,7 @@ export interface MealEntry {
   slot: MealSlot;
   recipeId: string;
   recipeName: string; // 表示用に非正規化
+  made?: boolean; // true=「作った」ボタンで記録（実際に作った）／false・未定義=献立計画のみ
 }
 
 const DAY_MS = 86_400_000;
