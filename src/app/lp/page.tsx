@@ -1,8 +1,22 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Flame, Clock, Leaf } from "lucide-react";
-import AppIcon, { type IconName } from "@/components/AppIcon";
+import {
+  Camera,
+  Flame,
+  Clock,
+  Leaf,
+  ChefHat,
+  Recycle,
+  Star,
+  Timer,
+  Refrigerator,
+  ShoppingCart,
+  CookingPot,
+  PackageCheck,
+  CheckCircle2,
+  type LucideIcon,
+} from "lucide-react";
 
 export const metadata: Metadata = {
   title: "CookSync｜AIが、冷蔵庫をシェフにする。",
@@ -11,56 +25,63 @@ export const metadata: Metadata = {
 };
 
 const FEATURES: {
-  icon?: IconName;
+  Icon?: LucideIcon;
   freshness?: boolean;
   title: string;
   desc: string;
-  tint: string;
+  color: string; // アイコン色
+  tint: string; // 円タイル背景（淡色・境目が溶けるよう薄め）
 }[] = [
   {
-    icon: "camera",
+    Icon: Camera,
     title: "写真で登録、入力ゼロ",
     desc: "冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、賞味期限とカテゴリを自動で推定します。",
-    tint: "bg-sky-100",
+    color: "text-sky-600",
+    tint: "bg-sky-50",
   },
   {
     freshness: true,
     title: "賞味期限を見える化",
-    desc: "🔥 近い / ⏱ そろそろ / 🌿 余裕 で色分け。期限が近い順に並び、使い切りを後押しします。",
+    desc: "近い・そろそろ・余裕を色で見える化。期限が近い順に並び、使い切りを後押しします。",
+    color: "",
     tint: "bg-paper",
   },
   {
-    icon: "meal",
+    Icon: ChefHat,
     title: "AIが実在レシピを提案",
     desc: "期限が近い食材を活かす人気レシピを、つくれぽ数・再生数など“人気の根拠”つきで。3案は食材を分散。",
+    color: "text-accent-dark",
     tint: "bg-accent-soft",
   },
   {
-    icon: "loop",
+    Icon: Recycle,
     title: "買い物も在庫も自動で循環",
     desc: "不足は買い物リストへ→買ったら在庫へ→作ったら減る。ぐるっと半自動で回り続けます。",
+    color: "text-brand",
     tint: "bg-brand-soft",
   },
   {
-    icon: "star",
+    Icon: Star,
     title: "好みを学習",
     desc: "星評価で提案が自分仕様に。直近に作った料理は自動で避け、マンネリ化を防ぎます。",
-    tint: "bg-amber-100",
+    color: "text-amber-500",
+    tint: "bg-amber-50",
   },
   {
-    icon: "timer",
+    Icon: Timer,
     title: "調理タイマー＆通知",
     desc: "複数同時にかけられ、アプリを離れていても完了を通知。レシピ写真もAIが自動生成。",
-    tint: "bg-rose-100",
+    color: "text-rose-500",
+    tint: "bg-rose-50",
   },
 ];
 
-const STEPS: { n: string; icon: IconName; title: string; desc: string }[] = [
-  { n: "01", icon: "fridge", title: "冷蔵庫に登録", desc: "写真を撮るだけ。賞味期限も自動で推定。" },
-  { n: "02", icon: "meal", title: "AIが献立を提案", desc: "期限が近い食材から、人気レシピを3案。" },
-  { n: "03", icon: "shopping", title: "不足を買い物リストへ", desc: "足りない食材だけ自動でリスト化。" },
-  { n: "04", icon: "fridge", title: "買ったら在庫へ", desc: "購入チェックで冷蔵庫に自動反映。" },
-  { n: "05", icon: "check", title: "作ったら在庫が減る", desc: "使った食材を自動で消費。そしてまた01へ。" },
+const STEPS: { n: string; Icon: LucideIcon; title: string; desc: string }[] = [
+  { n: "01", Icon: Refrigerator, title: "冷蔵庫に登録", desc: "写真を撮るだけ。賞味期限も自動で推定。" },
+  { n: "02", Icon: CookingPot, title: "AIが献立を提案", desc: "期限が近い食材から、人気レシピを3案。" },
+  { n: "03", Icon: ShoppingCart, title: "不足を買い物リストへ", desc: "足りない食材だけ自動でリスト化。" },
+  { n: "04", Icon: PackageCheck, title: "買ったら在庫へ", desc: "購入チェックで冷蔵庫に自動反映。" },
+  { n: "05", Icon: CheckCircle2, title: "作ったら在庫が減る", desc: "使った食材を自動で消費。そしてまた01へ。" },
 ];
 
 const GALLERY = [
@@ -150,28 +171,33 @@ export default function LandingPage() {
             毎日の「何作ろう」を、なくす。
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f, i) => (
-              <div
-                key={i}
-                className="group rounded-3xl border border-line bg-surface p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-              >
-                <span
-                  className={`grid h-16 w-16 place-items-center rounded-2xl ${f.tint} transition group-hover:scale-105`}
+            {FEATURES.map((f, i) => {
+              const Icon = f.Icon;
+              return (
+                <div
+                  key={i}
+                  className="group rounded-3xl border border-line bg-surface p-7 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
                 >
-                  {f.freshness ? (
-                    <span className="flex items-center gap-0.5">
-                      <Flame size={17} className="text-red-500" strokeWidth={2.4} />
-                      <Clock size={17} className="text-amber-500" strokeWidth={2.4} />
-                      <Leaf size={17} className="text-brand" strokeWidth={2.4} />
-                    </span>
-                  ) : (
-                    f.icon && <AppIcon name={f.icon} size={46} />
-                  )}
-                </span>
-                <h3 className="mt-4 text-base font-bold text-ink">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{f.desc}</p>
-              </div>
-            ))}
+                  <span
+                    className={`mx-auto grid h-20 w-20 place-items-center rounded-full ${f.tint} transition group-hover:scale-105`}
+                  >
+                    {f.freshness ? (
+                      <span className="flex items-center gap-1.5">
+                        <Flame size={22} className="text-red-500" strokeWidth={1.9} />
+                        <Clock size={22} className="text-amber-500" strokeWidth={1.9} />
+                        <Leaf size={22} className="text-brand" strokeWidth={1.9} />
+                      </span>
+                    ) : (
+                      Icon && (
+                        <Icon size={34} className={f.color} strokeWidth={1.7} />
+                      )
+                    )}
+                  </span>
+                  <h3 className="mt-5 text-base font-bold text-ink">{f.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-ink-soft">{f.desc}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -192,10 +218,12 @@ export default function LandingPage() {
               aria-hidden
               className="absolute left-[39px] top-4 bottom-4 w-px bg-line sm:left-[43px]"
             />
-            {STEPS.map((s) => (
+            {STEPS.map((s) => {
+              const Icon = s.Icon;
+              return (
               <li key={s.n} className="relative flex items-center gap-4">
-                <span className="relative z-10 grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-line bg-surface shadow-sm sm:h-[88px] sm:w-[88px]">
-                  <AppIcon name={s.icon} size={44} />
+                <span className="relative z-10 grid h-20 w-20 shrink-0 place-items-center rounded-full border border-line bg-surface shadow-sm sm:h-[84px] sm:w-[84px]">
+                  <Icon size={34} className="text-brand" strokeWidth={1.7} />
                 </span>
                 <div className="min-w-0 flex-1 rounded-2xl border border-line bg-paper px-5 py-4">
                   <div className="flex items-center gap-2">
@@ -207,10 +235,11 @@ export default function LandingPage() {
                   <p className="mt-1 text-xs leading-relaxed text-ink-soft">{s.desc}</p>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ol>
           <p className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-brand">
-            <AppIcon name="loop" size={18} />
+            <Recycle size={18} strokeWidth={1.9} />
             そしてまた最初へ。半自動でずっと回る。
           </p>
         </div>
