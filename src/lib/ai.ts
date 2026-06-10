@@ -103,6 +103,63 @@ export async function askClaudeForJson<T>(prompt: string): Promise<T> {
   }
 }
 
+/**
+ * recipes 配列を「途中で切れていても」救出する寛容パーサ。
+ * モデル出力が長く末尾が欠けても、完成しているレシピだけ拾う（errorで全滅させない）。
+ */
+export function parseRecipesTolerant(text: string): unknown[] {
+  try {
+    const obj = extractJson<{ recipes?: unknown[] }>(text);
+    if (Array.isArray(obj.recipes) && obj.recipes.length) return obj.recipes;
+  } catch {
+    /* 続けてサルベージ */
+  }
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1];
+  const key = t.indexOf('"recipes"');
+  const arrStart = key >= 0 ? t.indexOf("[", key) : -1;
+  if (arrStart < 0) return [];
+  const out: unknown[] = [];
+  let depth = 0;
+  let objStart = -1;
+  let inStr = false;
+  let esc = false;
+  for (let p = arrStart + 1; p < t.length; p++) {
+    const c = t[p];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") {
+      if (depth === 0) objStart = p;
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        try {
+          out.push(JSON.parse(t.slice(objStart, p + 1)));
+        } catch {
+          /* 不完全な末尾オブジェクトは捨てる */
+        }
+        objStart = -1;
+      }
+    } else if (c === "]" && depth === 0) {
+      break;
+    }
+  }
+  return out;
+}
+
+/** レシピ研究：途中欠けに強い形でレシピ配列を返す */
+export async function askClaudeRecipes(prompt: string): Promise<unknown[]> {
+  const text = await runClaude(prompt, true);
+  return parseRecipesTolerant(text);
+}
+
 /** Web無しでJSONを得る（校正など、検索不要の整形タスク用） */
 export async function askClaudeForJsonNoWeb<T>(prompt: string): Promise<T> {
   const text = await runClaude(prompt, false, SYSTEM_JSON);

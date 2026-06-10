@@ -1,4 +1,4 @@
-import { askClaudeForJson } from "@/lib/ai";
+import { askClaudeRecipes } from "@/lib/ai";
 import { sendPush } from "@/lib/pushServer";
 
 // ローカルClaude Codeを起動するので動的・長め
@@ -74,7 +74,8 @@ function buildPrompt(b: ResearchBody): string {
       : "",
     "",
     "要件:",
-    "- 2〜3品、できれば方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
+    "- 2〜3品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
+    "- 【最重要：食材の分散】候補ごとに“主役にする食材”を必ず変える。冷蔵庫の食材リストの順に割り当てる：1品目は1つ目の食材を主役（他の冷蔵庫食材は使わなくてよい）、2品目は2つ目の食材を主役（1つ目は使わない/脇役）、3品目は両方を組み合わせる or それ以外の路線。3案が全部同じ食材（例：全部『肉＋玉ねぎ』）になるのは禁止。最低でも1品は、ある食材を使わずに別の食材を主役にすること。",
     "- 実在のレシピを参照し、sources に つくれぽ数/再生数 等の人気の根拠(popularity)とURLを入れる。出典のない創作はしない。",
     `- 材料は ${servings}人分の分量。家に無さそうな生鮮品は toBuy:true、塩こしょう等の基本調味料は basicSeasoning:true。`,
     "",
@@ -103,9 +104,8 @@ export async function POST(request: Request) {
     jobs.set(jobId, { status: "running", createdAt: Date.now() });
 
     // 非同期で実行（await しない＝即レスポンス、スマホが離れても継続）
-    void askClaudeForJson<{ recipes?: unknown[] }>(prompt)
-      .then((data) => {
-        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+    void askClaudeRecipes(prompt)
+      .then((recipes) => {
         jobs.set(jobId, { status: "done", recipes, createdAt: Date.now() });
         // アプリを離れていても通知（Web Push）
         const names = recipes
