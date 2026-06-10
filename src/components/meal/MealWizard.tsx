@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flame } from "lucide-react";
+import { Flame, ChefHat } from "lucide-react";
 import {
   bucketOf,
   daysUntil,
@@ -493,11 +493,7 @@ export default function MealWizard() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader
-        title="献立を決める"
-        icon="/icons/meal.png"
-        tint="bg-accent-soft"
-      />
+      <PageHeader title="献立を決める" Icon={ChefHat} iconClass="text-accent" />
 
       {/* 写真生成のステータス（追加したAIレシピの写真） */}
       {imgStatus && (

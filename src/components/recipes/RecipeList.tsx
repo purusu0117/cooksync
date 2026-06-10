@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { ratingStore } from "@/lib/storage";
 import { useGeneratingIds } from "@/lib/imageGen";
+import { BookOpen } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 
@@ -31,7 +32,7 @@ export default function RecipeList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
-      <PageHeader title="レシピ" icon="/icons/recipe.png" tint="bg-amber-100" />
+      <PageHeader title="レシピ" Icon={BookOpen} iconClass="text-accent" />
 
       <div className="mb-3 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
         {(

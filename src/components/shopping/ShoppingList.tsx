@@ -6,6 +6,7 @@ import { usePersistentList } from "@/lib/useStore";
 import type { ShoppingItem } from "@/lib/shopping";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { guessItem } from "@/lib/guess";
+import { ShoppingCart } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import AppIcon from "@/components/AppIcon";
 
@@ -115,7 +116,7 @@ export default function ShoppingList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader title="買い物リスト" icon="/icons/shopping.png" tint="bg-sky-100" />
+      <PageHeader title="買い物リスト" Icon={ShoppingCart} iconClass="text-sky-500" />
 
       <form onSubmit={add} className="mb-5 flex gap-2">
         <input

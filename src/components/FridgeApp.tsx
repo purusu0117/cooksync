@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Flame } from "lucide-react";
+import { Flame, Refrigerator } from "lucide-react";
 import {
   bucketOf,
   BUCKETS,
@@ -61,7 +61,7 @@ export default function FridgeApp() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader title="冷蔵庫" icon="/icons/fridge.png" tint="bg-brand-soft" />
+      <PageHeader title="冷蔵庫" Icon={Refrigerator} iconClass="text-brand" />
 
       <MaintenancePanel onAddToFridge={addItem} />
 

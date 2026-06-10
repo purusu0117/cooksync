@@ -1,33 +1,27 @@
-import Image from "next/image";
+import type { LucideIcon } from "lucide-react";
 
 interface Props {
   kicker?: string; // 互換のため受け取るが現デザインでは未使用
   title: string;
   tagline?: string;
-  icon?: string; // 透過アイコンのパス（例: /icons/fridge.png）
-  tint?: string; // アイコンタイルの背景色（Tailwindクラス）。色分けで単調さを回避
+  Icon?: LucideIcon; // 左上のアイコン（lucide＝ボトムナビと同系のシンプル線画）
+  iconClass?: string; // アイコンの色（Tailwindクラス）。ページごとに色分け
 }
 
 export default function PageHeader({
   title,
   tagline,
-  icon,
-  tint = "bg-brand-soft",
+  Icon,
+  iconClass = "text-brand",
 }: Props) {
   return (
     <header className="mb-6 flex items-center gap-3.5">
-      {icon && (
-        <span
-          className={`grid h-16 w-16 shrink-0 place-items-center rounded-3xl shadow-sm ${tint}`}
-        >
-          <Image
-            src={icon}
-            alt=""
-            width={48}
-            height={48}
-            className="h-12 w-12 object-contain"
-          />
-        </span>
+      {Icon && (
+        <Icon
+          className={`h-14 w-14 shrink-0 ${iconClass}`}
+          strokeWidth={1.5}
+          aria-hidden
+        />
       )}
       <div className="min-w-0">
         <h1 className="text-2xl font-bold tracking-tight text-brand-dark">

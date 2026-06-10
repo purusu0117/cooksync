@@ -135,7 +135,7 @@ export default function MyPage() {
           {mode === "register" && (
             <label>
               <span className="mb-1 block text-xs font-medium text-ink-soft">お名前</span>
-              <input className={fieldClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="大翔" />
+              <input className={fieldClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="タロウ" />
             </label>
           )}
           <label>
