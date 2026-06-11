@@ -45,6 +45,8 @@ type Phase = "timing" | "direction" | "pick" | "missing" | "done";
 
 // 進行中のAIリサーチjobIdの保存先（アプリ離脱→再訪でも結果を回収するため）
 const JOB_KEY = "cooksync:aiJob";
+// 献立ウィザードの状態スナップショット（通知から開く/他タブ往復でも3案を保持）
+const STATE_KEY = "cooksync:mealState";
 
 interface Pick {
   date: string;
@@ -160,6 +162,30 @@ export default function MealWizard() {
     setAiSeen([]);
     setSearchRound(0);
     setPhase("pick");
+  }
+
+  // 明示的に中断＝最初に戻る（これを押すまでAI候補は保持される）
+  function cancelWizard() {
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = null;
+    }
+    try {
+      localStorage.removeItem(JOB_KEY);
+    } catch {
+      /* noop */
+    }
+    setAiLoading(false);
+    setAiError("");
+    setAiResults([]);
+    setAiPreview(null);
+    setAiSeen([]);
+    setSearchRound(0);
+    setWish("");
+    setPicks([]);
+    setSlots([]);
+    setSlotIndex(0);
+    setPhase("timing"); // ← 保存スナップショットも消える（save effectがtimingで削除）
   }
 
   function pickRecipe(recipe: Recipe) {
@@ -319,8 +345,37 @@ export default function MealWizard() {
     }
   }
 
-  // 復帰時：未完了ジョブがあればポーリング再開（離脱→再訪でも結果を受け取れる）
+  // 復帰時：①保存したウィザード状態を復元（通知から開く/他タブ往復でも3案を保持）
+  //         ②未完了ジョブがあればポーリング再開（離脱→再訪でも結果を受け取れる）
   useEffect(() => {
+    // ①状態スナップショットの復元（マウント時に一度だけ）
+    const restoreSnapshot = () => {
+      let raw = "";
+      try {
+        raw = localStorage.getItem(STATE_KEY) || "";
+      } catch {
+        /* noop */
+      }
+      if (!raw) return;
+      try {
+        const s = JSON.parse(raw);
+        if (s.phase) setPhase(s.phase);
+        if (s.timing) setTiming(s.timing);
+        if (s.filters) setFilters(s.filters);
+        if (Array.isArray(s.slots)) setSlots(s.slots);
+        if (Array.isArray(s.picks)) setPicks(s.picks);
+        if (typeof s.slotIndex === "number") setSlotIndex(s.slotIndex);
+        if (typeof s.servings === "number") setServings(s.servings);
+        if (typeof s.wish === "string") setWish(s.wish);
+        if (Array.isArray(s.aiResults)) setAiResults(s.aiResults);
+        if (s.aiPreview) setAiPreview(s.aiPreview);
+        if (Array.isArray(s.aiSeen)) setAiSeen(s.aiSeen);
+        if (typeof s.searchRound === "number") setSearchRound(s.searchRound);
+      } catch {
+        /* 壊れていたら無視 */
+      }
+    };
+
     const resume = () => {
       if (pollRef.current) return;
       let p = "";
@@ -335,7 +390,10 @@ export default function MealWizard() {
       }
     };
     // 初回はマウント後（effect本体での同期setStateを避ける）
-    const t = setTimeout(resume, 0);
+    const t = setTimeout(() => {
+      restoreSnapshot();
+      resume();
+    }, 0);
     void ensurePushIfGranted();
     const onVis = () => {
       if (document.visibilityState === "visible") resume();
@@ -348,6 +406,48 @@ export default function MealWizard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ウィザード状態を保存（pick等の途中だけ。timing/doneでは消す＝古い候補を残さない）
+  useEffect(() => {
+    try {
+      if (phase === "timing" || phase === "done") {
+        localStorage.removeItem(STATE_KEY);
+      } else {
+        localStorage.setItem(
+          STATE_KEY,
+          JSON.stringify({
+            phase,
+            timing,
+            filters,
+            slots,
+            picks,
+            slotIndex,
+            servings,
+            wish,
+            aiResults,
+            aiPreview,
+            aiSeen,
+            searchRound,
+          }),
+        );
+      }
+    } catch {
+      /* noop */
+    }
+  }, [
+    phase,
+    timing,
+    filters,
+    slots,
+    picks,
+    slotIndex,
+    servings,
+    wish,
+    aiResults,
+    aiPreview,
+    aiSeen,
+    searchRound,
+  ]);
 
   // 「このレシピを作る」確定：レシピリストへ追加し、写真生成を開始して次へ
   function pickAiRecipe(recipe: Recipe) {
@@ -620,6 +720,13 @@ export default function MealWizard() {
       {/* Step 4-6: 候補から選ぶ */}
       {phase === "pick" && (
         <section className="animate-pop-in">
+          <button
+            type="button"
+            onClick={cancelWizard}
+            className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-ink-soft transition hover:text-brand"
+          >
+            ← やめる（最初に戻る）
+          </button>
           <p className="mb-3 text-sm text-ink-soft">
             {slots.length > 1 && (
               <span className="mr-2 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand-dark">
