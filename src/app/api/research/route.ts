@@ -118,6 +118,22 @@ function buildPrompt(b: ResearchBody): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ResearchBody;
+
+    // ① 全体の月間AI上限（コスト暴走の安全ネット）。公開(redis)時のみ。大翔のローカルは対象外。
+    if (redis) {
+      const cap = Number(process.env.COOKSYNC_MONTHLY_AI_CAP) || 300;
+      const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const k = `cooksync:aiquota:${month}`;
+      const n = await redis.incr(k);
+      if (n === 1) await redis.expire(k, 40 * 24 * 3600);
+      if (n > cap) {
+        return Response.json(
+          { error: "今月のAI提案が上限に達しました。来月またご利用ください。" },
+          { status: 429 },
+        );
+      }
+    }
+
     const prompt = buildPrompt(body);
     const uid = body.u || "anon";
     const jobId = globalThis.crypto.randomUUID();
