@@ -34,6 +34,9 @@ export const viewport: Viewport = {
   themeColor: "#2f9e60",
   width: "device-width",
   initialScale: 1,
+  // 入力フォーカス時の自動拡大＆ピンチズームを無効化（アプリらしい固定表示）
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 
