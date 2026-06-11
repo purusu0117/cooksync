@@ -8,7 +8,11 @@ import { Client } from "@upstash/qstash";
 export const dynamic = "force-dynamic";
 
 const qstash = process.env.QSTASH_TOKEN
-  ? new Client({ token: process.env.QSTASH_TOKEN })
+  ? new Client({
+      token: process.env.QSTASH_TOKEN,
+      // EU/USリージョンのトークンは接続先URLも合わせる必要がある
+      baseUrl: process.env.QSTASH_URL,
+    })
   : null;
 
 interface Body {
