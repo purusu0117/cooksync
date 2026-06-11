@@ -21,6 +21,7 @@ interface ResearchBody {
   avoid?: string[];
   round?: number;
   u?: string;
+  shopMode?: "stock" | "buy"; // stock=在庫だけ / buy=買い物OK
 }
 
 // 再探索ごとに切り口を変えるためのヒント（縛りではなく方向性）
@@ -67,6 +68,7 @@ function buildPrompt(b: ResearchBody): string {
   const avoid = b.avoid ?? [];
   const round = b.round && b.round > 0 ? b.round : 1;
   const angle = ANGLES[(round - 1) % ANGLES.length];
+  const shopMode = b.shopMode === "buy" ? "buy" : "stock";
   return [
     "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2〜3品調べ、結果をJSONだけで返してください。",
     wish ? `■ 作りたいもの: ${wish}` : "■ 作りたいもの: おまかせ（下の冷蔵庫の食材を活かせるもの）",
@@ -77,6 +79,9 @@ function buildPrompt(b: ResearchBody): string {
     filters.heaviness ? `■ 好み: ${filters.heaviness}` : "",
     filters.staple ? `■ 主食: ${filters.staple}` : "",
     filters.cookTime ? `■ 調理時間: ${filters.cookTime}分以内` : "",
+    shopMode === "stock"
+      ? "■ 買い物方針: 【在庫だけで作る】上の冷蔵庫の食材だけで完結する献立にする。買い足しは基本調味料（塩・醤油・油等）のみ許可。それ以外の新規食材は使わない（toBuyは原則false）。"
+      : "■ 買い物方針: 【買い物OK】冷蔵庫の在庫に縛られなくてよい。新しい食材を買う前提のレシピでもよい。ただし“使い切りたい食材”があれば、3案のうち最低1品はそれを1つ活かす（残りは買い足してOK）。買う物は toBuy:true。",
     avoid.length ? `■ 避ける（最近作った・既に提案済み）: ${avoid.join("、")}` : "",
     `■ 今回の切り口のヒント: ${angle}（縛りではなく方向性。ユーザー指定の条件は厳守）`,
     round > 1
@@ -85,9 +90,13 @@ function buildPrompt(b: ResearchBody): string {
     "",
     "要件:",
     "- 2〜3品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
-    "- 【最重要：食材の分散】候補ごとに“主役にする食材”を必ず変える。冷蔵庫の食材リストの順に割り当てる：1品目は1つ目の食材を主役（他の冷蔵庫食材は使わなくてよい）、2品目は2つ目の食材を主役（1つ目は使わない/脇役）、3品目は両方を組み合わせる or それ以外の路線。3案が全部同じ食材（例：全部『肉＋玉ねぎ』）になるのは禁止。最低でも1品は、ある食材を使わずに別の食材を主役にすること。",
+    shopMode === "stock"
+      ? "- 【最重要：食材の分散】候補ごとに“主役にする食材”を必ず変える。冷蔵庫の食材リストの順に割り当てる：1品目は1つ目の食材を主役、2品目は2つ目の食材を主役、3品目は組み合わせ or それ以外。3案が全部同じ食材になるのは禁止。すべて冷蔵庫内の食材で完結させる。"
+      : "- 【候補の多様性】3案は味・ジャンル・調理法をしっかり変える。冷蔵庫の食材は使っても使わなくてもよく、新しい料理を提案してよい。ただし最低1品は“使い切りたい食材”を主役にする。",
     "- 実在のレシピを参照し、sources に つくれぽ数/再生数 等の人気の根拠(popularity)とURLを入れる。出典のない創作はしない。",
-    `- 材料は ${servings}人分の分量。家に無さそうな生鮮品は toBuy:true、塩こしょう等の基本調味料は basicSeasoning:true。`,
+    shopMode === "stock"
+      ? `- 材料は ${servings}人分。冷蔵庫にある食材は toBuy:false、基本調味料は basicSeasoning:true。冷蔵庫に無い新規食材は使わない（買い足し前提にしない）。`
+      : `- 材料は ${servings}人分。買う必要がある食材は toBuy:true、塩こしょう等の基本調味料は basicSeasoning:true。冷蔵庫にある物は toBuy:false。`,
     "",
     "【手順(steps)の構成ルール＝最重要】",
     "- stepsの最初は必ず『下準備』ステップにする。材料の切り方・下処理（例：にんにく2かけは薄切り、玉ねぎは1/2個を薄切り、鶏肉は厚みを開く）を“すべてここで”済ませる。",

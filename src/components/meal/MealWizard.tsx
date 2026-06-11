@@ -99,6 +99,8 @@ export default function MealWizard() {
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
+  // 買い物方針：stock=冷蔵庫の在庫だけで作る / buy=買い物OK（在庫に縛られない）
+  const [shopMode, setShopMode] = useState<"stock" | "buy">("stock");
   const [slots, setSlots] = useState<{ date: string; slot: MealSlot }[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [slotIndex, setSlotIndex] = useState(0);
@@ -319,6 +321,7 @@ export default function MealWizard() {
           wish: wish.trim(),
           servings,
           round,
+          shopMode,
           fridge: fridge.map((f) => f.name),
           expiring: priority.map((p) => p.name),
           filters,
@@ -363,6 +366,7 @@ export default function MealWizard() {
         if (s.phase) setPhase(s.phase);
         if (s.timing) setTiming(s.timing);
         if (s.filters) setFilters(s.filters);
+        if (s.shopMode) setShopMode(s.shopMode);
         if (Array.isArray(s.slots)) setSlots(s.slots);
         if (Array.isArray(s.picks)) setPicks(s.picks);
         if (typeof s.slotIndex === "number") setSlotIndex(s.slotIndex);
@@ -422,6 +426,7 @@ export default function MealWizard() {
             phase,
             timing,
             filters,
+            shopMode,
             slots,
             picks,
             slotIndex,
@@ -441,6 +446,7 @@ export default function MealWizard() {
     phase,
     timing,
     filters,
+    shopMode,
     slots,
     picks,
     slotIndex,
@@ -708,6 +714,30 @@ export default function MealWizard() {
                 ))}
               </div>
             </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-ink-soft">買い物は？</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShopMode("stock")}
+                  className={chip(shopMode === "stock")}
+                >
+                  🥬 在庫だけで作る
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShopMode("buy")}
+                  className={chip(shopMode === "buy")}
+                >
+                  🛒 買い物してもOK
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+                {shopMode === "stock"
+                  ? "冷蔵庫にある食材だけで作れる献立を提案します（基本調味料は除く）。"
+                  : "在庫に縛られず提案。期限が近い食材を1つだけ活かして、残りは買い足す案も出します。"}
+              </p>
+            </div>
           </div>
           <div className="mt-5 flex gap-2">
             <button onClick={() => setPhase("timing")} className="flex-1 rounded-xl border border-line px-4 py-3 text-sm font-medium text-ink-soft transition hover:bg-paper">
@@ -792,6 +822,14 @@ export default function MealWizard() {
               </p>
               <p>
                 👥 人数：<span className="text-ink">{servings}人分</span>
+              </p>
+              <p>
+                🛒 買い物：
+                <span className="text-ink">
+                  {shopMode === "stock"
+                    ? "在庫だけで作る"
+                    : "買い物OK（在庫に縛られない）"}
+                </span>
               </p>
               <p>
                 🔴 使い切りたい食材：
