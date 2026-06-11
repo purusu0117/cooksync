@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ShoppingCart } from "lucide-react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
 import {
   recipeStore,
@@ -369,7 +370,7 @@ export default function RecipeDetail({ id }: Props) {
           onClick={addMissingToShopping}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-brand/40 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
         >
-          <AppIcon name="shopping" size={18} />
+          <ShoppingCart className="h-[18px] w-[18px]" strokeWidth={1.75} />
           不足を買い物へ
         </button>
         <button

@@ -1,7 +1,15 @@
-import { sendPush } from "@/lib/pushServer";
-
 // タイマー完了をサーバー側で予約 → アプリを閉じていても終了時刻ちょうどにプッシュ。
+//  - 公開（Vercel）：QStash（指定時刻にHTTPを叩く）で /api/timer-fire を予約。
+//  - ローカル：プロセス内 setTimeout。
+import { sendPush } from "@/lib/pushServer";
+import { redis } from "@/lib/kv";
+import { Client } from "@upstash/qstash";
+
 export const dynamic = "force-dynamic";
+
+const qstash = process.env.QSTASH_TOKEN
+  ? new Client({ token: process.env.QSTASH_TOKEN })
+  : null;
 
 interface Body {
   id?: string;
@@ -11,7 +19,7 @@ interface Body {
   u?: string;
 }
 
-// サーバープロセス内に予約を保持（id→setTimeoutハンドル）
+// ローカル用：プロセス内に予約を保持（id→setTimeoutハンドル）
 const scheduled = new Map<string, ReturnType<typeof setTimeout>>();
 
 export async function POST(request: Request) {
@@ -20,14 +28,35 @@ export async function POST(request: Request) {
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
     const uid = u || "anon";
 
-    // 既存予約があれば必ず解除（再設定・一時停止・削除に対応）
+    // ---- 公開：QStash ----
+    if (qstash && redis) {
+      // 既存の予約があれば取り消し（再設定・停止・削除に対応）
+      const prev = await redis.get<string>(`timer:${id}`);
+      if (prev) {
+        await qstash.messages.delete(prev).catch(() => {});
+        await redis.del(`timer:${id}`);
+      }
+      if (cancel) return Response.json({ ok: true });
+      if (typeof endAt !== "number") {
+        return Response.json({ error: "endAt required" }, { status: 400 });
+      }
+      const origin = new URL(request.url).origin;
+      const res = await qstash.publishJSON({
+        url: `${origin}/api/timer-fire`,
+        body: { uid, label },
+        notBefore: Math.floor(endAt / 1000),
+      });
+      await redis.set(`timer:${id}`, res.messageId, { ex: 24 * 3600 });
+      return Response.json({ ok: true });
+    }
+
+    // ---- ローカル：setTimeout ----
     const existing = scheduled.get(id);
     if (existing) {
       clearTimeout(existing);
       scheduled.delete(id);
     }
     if (cancel) return Response.json({ ok: true });
-
     if (typeof endAt !== "number") {
       return Response.json({ error: "endAt required" }, { status: 400 });
     }

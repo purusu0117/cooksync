@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flame, ChefHat } from "lucide-react";
+import { Flame, ChefHat, ShoppingCart } from "lucide-react";
 import {
   bucketOf,
   daysUntil,
@@ -39,7 +39,6 @@ import { getUid } from "@/lib/syncStore";
 import { startGenerating, stopGenerating } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
-import AppIcon from "@/components/AppIcon";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
 
@@ -956,7 +955,7 @@ export default function MealWizard() {
               href="/shopping"
               className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-4 py-3 text-center text-sm font-semibold text-ink transition hover:border-brand"
             >
-              <AppIcon name="shopping" size={16} />
+              <ShoppingCart className="h-4 w-4" strokeWidth={1.75} />
               買い物リストを見る
             </a>
             <button
