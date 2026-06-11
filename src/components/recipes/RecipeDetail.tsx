@@ -118,6 +118,14 @@ export default function RecipeDetail({ id }: Props) {
     setNote(`不足 ${toAdd.length} 件を買い物リストに追加しました`);
   }
 
+  // 保存時の古い toBuy ではなく、今の冷蔵庫と照らし合わせてライブ判定する
+  const inStockNow = (ing: RecipeIngredient) =>
+    !ing.basicSeasoning &&
+    fridge.some((f) => ingredientMatches(f.name, ing.name));
+  const needsBuyNow = (ing: RecipeIngredient) =>
+    !ing.basicSeasoning &&
+    !fridge.some((f) => ingredientMatches(f.name, ing.name));
+
   async function proofread() {
     if (!recipe || proofLoading) return;
     setProofLoading(true);
@@ -415,7 +423,12 @@ export default function RecipeDetail({ id }: Props) {
                 <li key={idx} className="flex justify-between text-sm">
                   <span className="text-ink">
                     {i.name}
-                    {i.toBuy && (
+                    {inStockNow(i) && (
+                      <span className="ml-1 text-[11px] font-semibold text-brand">
+                        ✓在庫あり
+                      </span>
+                    )}
+                    {needsBuyNow(i) && (
                       <span className="ml-1 text-[11px] font-semibold text-accent">
                         ★買い足し
                       </span>
