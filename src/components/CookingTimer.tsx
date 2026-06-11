@@ -17,10 +17,13 @@ import { getUid } from "@/lib/syncStore";
 
 // サーバー側に完了時刻を予約／解除（アプリを閉じていても終了時刻ちょうどに通知）
 function scheduleServerTimer(id: string, endAt: number, label: string) {
+  // 通知タップ時に戻る先＝今のページ（レシピ詳細など）
+  const url =
+    typeof window !== "undefined" ? window.location.pathname : "/";
   void fetch("/api/timer", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, endAt, label, u: getUid() }),
+    body: JSON.stringify({ id, endAt, label, u: getUid(), url }),
   }).catch(() => {});
 }
 function cancelServerTimer(id: string) {

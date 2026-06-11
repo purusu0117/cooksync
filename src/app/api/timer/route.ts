@@ -21,6 +21,7 @@ interface Body {
   label?: string;
   cancel?: boolean;
   u?: string;
+  url?: string; // 通知タップ時に戻る先（レシピ詳細など）
 }
 
 // ローカル用：プロセス内に予約を保持（id→setTimeoutハンドル）
@@ -28,9 +29,10 @@ const scheduled = new Map<string, ReturnType<typeof setTimeout>>();
 
 export async function POST(request: Request) {
   try {
-    const { id, endAt, label, cancel, u } = (await request.json()) as Body;
+    const { id, endAt, label, cancel, u, url } = (await request.json()) as Body;
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
     const uid = u || "anon";
+    const backUrl = url || "/";
 
     // ---- 公開：QStash ----
     if (qstash && redis) {
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
       const origin = new URL(request.url).origin;
       const res = await qstash.publishJSON({
         url: `${origin}/api/timer-fire`,
-        body: { uid, label },
+        body: { uid, label, url: backUrl },
         notBefore: Math.floor(endAt / 1000),
       });
       await redis.set(`timer:${id}`, res.messageId, { ex: 24 * 3600 });
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
       void sendPush(uid, {
         title: "⏰ タイマー完了",
         body: `${label || "タイマー"}が完了しました`,
-        url: "/",
+        url: backUrl,
       });
     }, delay);
     scheduled.set(id, handle);

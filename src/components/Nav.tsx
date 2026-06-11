@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type MouseEvent } from "react";
 import {
   Home,
   BookOpen,
@@ -21,6 +22,18 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
 
 export default function Nav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // レシピ内のページ（一覧/詳細）に来たら、最後に開いた場所を覚える
+  useEffect(() => {
+    if (pathname.startsWith("/recipes")) {
+      try {
+        localStorage.setItem("cooksync:lastRecipe", pathname);
+      } catch {
+        /* noop */
+      }
+    }
+  }, [pathname]);
 
   // ランディングページ(/lp)ではアプリのタブを出さない
   if (pathname.startsWith("/lp")) return null;
@@ -28,6 +41,19 @@ export default function Nav() {
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
+  }
+
+  // レシピタブは「直前に開いていたレシピ位置」に戻す（一覧へは詳細の戻るボタンで）
+  function handleTabClick(href: string, e: MouseEvent) {
+    if (href !== "/recipes") return;
+    e.preventDefault();
+    let dest = "/recipes";
+    try {
+      dest = localStorage.getItem("cooksync:lastRecipe") || "/recipes";
+    } catch {
+      /* noop */
+    }
+    router.push(dest);
   }
 
   return (
@@ -40,6 +66,7 @@ export default function Nav() {
             <Link
               key={t.href}
               href={t.href}
+              onClick={(e) => handleTabClick(t.href, e)}
               className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition ${
                 active ? "text-brand-dark" : "text-ink-soft hover:text-brand"
               }`}

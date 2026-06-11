@@ -19,14 +19,15 @@ export async function POST(request: Request) {
         return Response.json({ error: "invalid signature" }, { status: 401 });
       }
     }
-    const { uid, label } = JSON.parse(raw || "{}") as {
+    const { uid, label, url } = JSON.parse(raw || "{}") as {
       uid?: string;
       label?: string;
+      url?: string;
     };
     await sendPush(uid || "anon", {
       title: "⏰ タイマー完了",
       body: `${label || "タイマー"}が完了しました`,
-      url: "/",
+      url: url || "/",
     });
     return Response.json({ ok: true });
   } catch (e) {
