@@ -77,6 +77,31 @@ export default function CookingTimer({
   const audioRef = useRef<AudioContext | null>(null);
   const rung = useRef<Set<string>>(new Set());
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
+  const restoredRef = useRef(false);
+
+  // タブ移動でアンマウントされてもタイマーを失わない：localStorageに保存→復元。
+  // endAt(終了時刻)ベースなので戻った時に残り時間が正確に再計算される。
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("cooksync:timers");
+      if (raw) {
+        const arr = JSON.parse(raw);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (Array.isArray(arr)) setTimers(arr as TimerItem[]);
+      }
+    } catch {
+      /* noop */
+    }
+    restoredRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!restoredRef.current) return; // 復元前は保存しない（[]での上書き防止）
+    try {
+      localStorage.setItem("cooksync:timers", JSON.stringify(timers));
+    } catch {
+      /* noop */
+    }
+  }, [timers]);
 
   const presets = Array.from(new Set([3, 5, 10, ...suggestions]))
     .filter((n) => n > 0)
