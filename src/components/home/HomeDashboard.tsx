@@ -15,6 +15,7 @@ import {
   ChevronRight,
   type LucideIcon,
 } from "lucide-react";
+import RecipeThumb from "@/components/recipes/RecipeThumb";
 import { bucketOf, type Category } from "@/lib/food";
 import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
@@ -27,13 +28,6 @@ const CATEGORY_ICON: Record<Category, LucideIcon> = {
   調味料: Soup,
   飲料: CupSoda,
   その他: Apple,
-};
-
-const CUISINE_GRADIENT: Record<string, string> = {
-  和: "from-emerald-100 to-lime-50",
-  洋: "from-amber-100 to-orange-50",
-  中: "from-rose-100 to-orange-50",
-  アジアン: "from-orange-100 to-yellow-50",
 };
 
 export default function HomeDashboard() {
@@ -91,25 +85,15 @@ export default function HomeDashboard() {
               href={`/recipes/${r.id}`}
               className="w-44 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              {r.image ? (
-                <div className="relative h-28 w-full">
-                  <Image
-                    src={r.image}
-                    alt={r.name}
-                    fill
-                    sizes="176px"
-                    className="object-cover"
-                  />
-                </div>
-              ) : (
-                <div
-                  className={`grid h-28 place-items-center bg-gradient-to-br text-5xl ${
-                    CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
-                  }`}
-                >
-                  <span aria-hidden>{r.emoji}</span>
-                </div>
-              )}
+              <div className="relative h-28 w-full">
+                <RecipeThumb
+                  image={r.image}
+                  emoji={r.emoji}
+                  cuisine={r.tags.cuisine}
+                  alt={r.name}
+                  sizes="176px"
+                />
+              </div>
               <div className="p-3">
                 <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-ink">
                   {r.name}

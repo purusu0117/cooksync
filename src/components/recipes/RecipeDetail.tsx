@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
@@ -17,11 +16,17 @@ import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
-import { startGenerating, stopGenerating, useIsGenerating } from "@/lib/imageGen";
+import {
+  startGenerating,
+  stopGenerating,
+  useIsGenerating,
+  useImageGenEnabled,
+} from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
+import RecipeThumb from "@/components/recipes/RecipeThumb";
 
 interface Props {
   id: string;
@@ -72,6 +77,7 @@ export default function RecipeDetail({ id }: Props) {
   const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
   const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
   const generating = useIsGenerating(id);
+  const imageGenEnabled = useImageGenEnabled();
   const usage = useUsage();
 
   function setStars(n: number) {
@@ -298,15 +304,14 @@ export default function RecipeDetail({ id }: Props) {
 
       {(recipe.image || generating) && (
         <div className="relative mt-3 h-52 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-brand-soft to-emerald-50">
-          {recipe.image && (
-            <Image
-              src={recipe.image}
-              alt={recipe.name}
-              fill
-              sizes="(max-width: 768px) 100vw, 672px"
-              className="object-cover"
-            />
-          )}
+          <RecipeThumb
+            image={recipe.image}
+            emoji={recipe.emoji}
+            cuisine={recipe.tags?.cuisine}
+            alt={recipe.name}
+            sizes="(max-width: 768px) 100vw, 672px"
+            emojiClass="text-6xl"
+          />
           {generating && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/40 text-white">
               <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/40 border-t-white" />
@@ -504,19 +509,21 @@ export default function RecipeDetail({ id }: Props) {
 
       {isStored && (
         <div className="mt-2 mb-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={genImage}
-            disabled={imgLoading}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
-          >
-            <AppIcon name="camera" size={18} />
-            {imgLoading
-              ? "AIが写真を生成中…"
-              : recipe.image
-                ? "写真をAIで再生成"
-                : "写真をAIで生成"}
-          </button>
+          {imageGenEnabled && (
+            <button
+              type="button"
+              onClick={genImage}
+              disabled={imgLoading}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
+            >
+              <AppIcon name="camera" size={18} />
+              {imgLoading
+                ? "AIが写真を生成中…"
+                : recipe.image
+                  ? "写真をAIで再生成"
+                  : "写真をAIで生成"}
+            </button>
+          )}
           <button
             type="button"
             onClick={proofread}

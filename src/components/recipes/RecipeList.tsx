@@ -2,20 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { ratingStore } from "@/lib/storage";
 import { useGeneratingIds } from "@/lib/imageGen";
 import { BookOpen } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
-
-const CUISINE_GRADIENT: Record<string, string> = {
-  和: "from-emerald-100 to-lime-50",
-  洋: "from-amber-100 to-orange-50",
-  中: "from-rose-100 to-orange-50",
-  アジアン: "from-orange-100 to-yellow-50",
-};
+import RecipeThumb from "@/components/recipes/RecipeThumb";
 
 export default function RecipeList() {
   const recipes = useAllRecipes();
@@ -62,23 +55,13 @@ export default function RecipeList() {
               className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
               <div className="relative h-28 w-full">
-                {r.image ? (
-                  <Image
-                    src={r.image}
-                    alt={r.name}
-                    fill
-                    sizes="(max-width: 640px) 50vw, 320px"
-                    className="object-cover"
-                  />
-                ) : (
-                  <div
-                    className={`grid h-full place-items-center bg-gradient-to-br text-5xl ${
-                      CUISINE_GRADIENT[r.tags.cuisine ?? ""] ?? "from-brand-soft to-emerald-50"
-                    }`}
-                  >
-                    <span aria-hidden>{r.emoji}</span>
-                  </div>
-                )}
+                <RecipeThumb
+                  image={r.image}
+                  emoji={r.emoji}
+                  cuisine={r.tags.cuisine}
+                  alt={r.name}
+                  sizes="(max-width: 640px) 50vw, 320px"
+                />
                 {genIds.includes(r.id) && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-ink/45 text-white">
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />

@@ -37,7 +37,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
-import { startGenerating, stopGenerating } from "@/lib/imageGen";
+import { startGenerating, stopGenerating, useImageGenEnabled } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
 
@@ -96,6 +96,7 @@ export default function MealWizard() {
   const [ratings] = usePersistentList(ratingStore);
   const usage = useUsage();
   const guide = useGuide();
+  const imageGenEnabled = useImageGenEnabled();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -469,6 +470,7 @@ export default function MealWizard() {
   }
 
   async function generateRecipeImage(recipe: Recipe) {
+    if (!imageGenEnabled) return; // 公開版は画像生成オフ（絵文字表示のまま）
     if (!usage.canUse("image")) {
       setImgStatus(
         `今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`,

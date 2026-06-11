@@ -12,6 +12,10 @@ interface Body {
 
 export async function POST(request: Request) {
   try {
+    // 公開（API）では画像生成は無効＝絵文字表示にフォールバック（500を出さない）
+    if (process.env.ANTHROPIC_API_KEY) {
+      return Response.json({ disabled: true });
+    }
     const body = (await request.json()) as Body;
     const name = (body.name ?? "").trim();
     const safeId = (body.id ?? "").replace(/[^a-z0-9-]/gi, "");
