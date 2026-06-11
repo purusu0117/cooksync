@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Flame, Refrigerator } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useGuide, setGuide } from "@/lib/guide";
 import {
   bucketOf,
   BUCKETS,
@@ -26,6 +28,8 @@ import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
 
 export default function FridgeApp() {
+  const router = useRouter();
+  const guide = useGuide();
   const [items, setItems] = usePersistentList(fridgeStore);
   const [editing, setEditing] = useState<FridgeItem | null>(null);
   const [mode, setMode] = useState<"single" | "bulk" | "photo">("single");
@@ -62,6 +66,32 @@ export default function FridgeApp() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader title="冷蔵庫" Icon={Refrigerator} iconClass="text-brand" />
+
+      {guide === "fridge" && (
+        <div className="mb-5 rounded-2xl border border-brand/30 bg-brand-soft px-4 py-3.5">
+          {items.length === 0 ? (
+            <p className="text-sm font-semibold leading-relaxed text-brand-dark">
+              🎉 登録できました！まずは食材を1つ入れてみましょう（下のフォーム、または「写真で追加」）。
+            </p>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold leading-relaxed text-brand-dark">
+                いい感じ！次は、その食材で献立を探してみましょう。
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setGuide("meal");
+                  router.push("/meal");
+                }}
+                className="shrink-0 rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+              >
+                献立を探す →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <MaintenancePanel onAddToFridge={addItem} />
 

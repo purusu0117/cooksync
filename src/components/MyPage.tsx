@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { APP_TAGLINE } from "@/lib/brand";
 import { setUid } from "@/lib/syncStore";
+import { setGuide } from "@/lib/guide";
 import {
   fridgeStore,
   shoppingStore,
@@ -22,6 +24,7 @@ const fieldClass =
   "w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
 
 export default function MyPage() {
+  const router = useRouter();
   const [accs, setAccs] = usePersistentList(accountStore);
   const [fridge, setFridge] = usePersistentList(fridgeStore);
   const [shopping, setShopping] = usePersistentList(shoppingStore);
@@ -88,6 +91,9 @@ export default function MyPage() {
       setError("");
       setPassword("");
       setSession(true);
+      // 操作ガイド開始：まず冷蔵庫へ
+      setGuide("fridge");
+      router.push("/fridge");
     } catch {
       setError("通信に失敗しました。時間をおいて再度お試しください。");
     } finally {

@@ -36,6 +36,7 @@ import {
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
+import { useGuide, setGuide } from "@/lib/guide";
 import { startGenerating, stopGenerating } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
@@ -92,6 +93,7 @@ export default function MealWizard() {
   const [, setStoredRecipes] = usePersistentList(recipeStore);
   const [ratings] = usePersistentList(ratingStore);
   const usage = useUsage();
+  const guide = useGuide();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -275,6 +277,7 @@ export default function MealWizard() {
     setAiError("");
     setAiResults([]);
     setAiLoading(true);
+    setGuide("done"); // 探索を始めたら初回ガイド完了
     usage.recordUse("research");
     const round = searchRound + 1;
     setSearchRound(round);
@@ -493,6 +496,14 @@ export default function MealWizard() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader title="献立を決める" Icon={ChefHat} iconClass="text-accent" />
+
+      {guide === "meal" && (
+        <div className="mb-5 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3.5">
+          <p className="text-sm font-semibold leading-relaxed text-accent-dark">
+            最後のステップ！条件はお好みでOK。下の「AIでレシピを探す」を押してみましょう（3〜4分かかります。完了したら通知でお知らせします）。
+          </p>
+        </div>
+      )}
 
       {/* 写真生成のステータス（追加したAIレシピの写真） */}
       {imgStatus && (
