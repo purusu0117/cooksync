@@ -55,6 +55,16 @@ export function getUid(): string {
   }
 }
 
+// ログイン時に本人のデータIDへ切り替える（サーバーauthが返すdataId）。
+// 呼び出し後はページreloadして新IDで再hydrateする想定。
+export function setUid(id: string): void {
+  try {
+    window.localStorage.setItem("cooksync:uid", id);
+  } catch {
+    /* noop */
+  }
+}
+
 // PUT を直列化（前の書き込みが終わってから次を実行）＝サーバー競合回避
 let writeChain: Promise<unknown> = Promise.resolve();
 function queuePut(key: string, value: unknown[]) {

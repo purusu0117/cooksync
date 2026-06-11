@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { APP_TAGLINE } from "@/lib/brand";
+import { setUid } from "@/lib/syncStore";
 import {
   fridgeStore,
   shoppingStore,
@@ -34,45 +35,110 @@ export default function MyPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [session, setSession] = useState(false);
 
-  function handleRegister() {
+  useEffect(() => {
+    // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setMounted(true);
+    try {
+      setSession(window.localStorage.getItem("cooksync:session") === "1");
+    } catch {
+      /* noop */
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  async function handleRegister() {
     if (!name.trim() || !email.trim() || !password) {
       setError("すべての項目を入力してください。");
       return;
     }
-    setAccs([
-      {
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        createdAt: Date.now(),
-        loggedIn: true,
-      },
-    ]);
-    setError("");
-    setPassword("");
+    setBusy(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "register",
+          name: name.trim(),
+          email: email.trim(),
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.dataId) {
+        setError(data.error || "登録に失敗しました。");
+        return;
+      }
+      // 本人のデータIDへ切り替えてアカウントを保存
+      setUid(data.dataId);
+      window.localStorage.setItem("cooksync:session", "1");
+      setAccs([
+        {
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+          createdAt: Date.now(),
+          loggedIn: true,
+        },
+      ]);
+      setError("");
+      setPassword("");
+      setSession(true);
+    } catch {
+      setError("通信に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleLogin() {
-    if (!account) {
-      setError("アカウントがありません。新規登録してください。");
+  async function handleLogin() {
+    if (!email.trim() || !password) {
+      setError("メールとパスワードを入力してください。");
       return;
     }
-    if (account.email !== email.trim() || account.password !== password) {
-      setError("メールアドレスかパスワードが違います。");
-      return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "login",
+          email: email.trim(),
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.dataId) {
+        setError(data.error || "ログインに失敗しました。");
+        return;
+      }
+      // 本人のデータIDに切り替え→reloadして本人のデータを読み込む
+      setUid(data.dataId);
+      window.localStorage.setItem("cooksync:session", "1");
+      window.location.reload();
+    } catch {
+      setError("通信に失敗しました。時間をおいて再度お試しください。");
+      setBusy(false);
     }
-    setAccs([{ ...account, loggedIn: true }]);
-    setError("");
-    setPassword("");
   }
 
   function submitAuth() {
-    if (mode === "register") handleRegister();
-    else handleLogin();
+    if (busy) return;
+    if (mode === "register") void handleRegister();
+    else void handleLogin();
   }
 
   function logout() {
+    try {
+      window.localStorage.removeItem("cooksync:session");
+    } catch {
+      /* noop */
+    }
+    setSession(false);
     if (account) setAccs([{ ...account, loggedIn: false }]);
   }
 
@@ -84,8 +150,20 @@ export default function MyPage() {
     setMeals([]);
   }
 
+  // ハイドレーション前は描画しない（SSRと不一致を避ける）
+  if (!mounted) return null;
+
+  // ログイン済みだがデータ読込中（別端末でログインした直後のreload後など）
+  if (session && !account) {
+    return (
+      <div className="mx-auto w-full max-w-md px-4 pt-16 text-center text-sm text-ink-soft">
+        読み込み中…
+      </div>
+    );
+  }
+
   // 未ログイン：登録 / ログイン
-  if (!account || !account.loggedIn) {
+  if (!session) {
     return (
       <div className="mx-auto w-full max-w-md px-4 pt-8">
         <div className="mb-6 text-center">
@@ -154,14 +232,19 @@ export default function MyPage() {
           <button
             type="button"
             onClick={submitAuth}
-            className="mt-1 touch-manipulation rounded-xl bg-brand py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+            disabled={busy}
+            className="mt-1 touch-manipulation rounded-xl bg-brand py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99] disabled:opacity-60"
           >
-            {mode === "register" ? "アカウントを作成" : "ログイン"}
+            {busy
+              ? "処理中…"
+              : mode === "register"
+                ? "アカウントを作成"
+                : "ログイン"}
           </button>
         </form>
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-ink-soft/80">
-          アカウント情報はこの端末内にのみ保存される簡易版です（本格的な認証ではありません）。
+          メールとパスワードで登録すると、別の端末からも同じアカウントでログインできます。
         </p>
       </div>
     );
