@@ -114,6 +114,7 @@ export default function MealWizard() {
   const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
   const [searchRound, setSearchRound] = useState(0); // 探索回数（角度を変える）
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoredRef = useRef(false); // 復元が終わるまで保存/削除しない（初期timingでの誤削除防止）
   const [comment, setComment] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
 
@@ -393,6 +394,7 @@ export default function MealWizard() {
     const t = setTimeout(() => {
       restoreSnapshot();
       resume();
+      restoredRef.current = true; // 以降のみ保存/削除を有効化
     }, 0);
     void ensurePushIfGranted();
     const onVis = () => {
@@ -409,6 +411,7 @@ export default function MealWizard() {
 
   // ウィザード状態を保存（pick等の途中だけ。timing/doneでは消す＝古い候補を残さない）
   useEffect(() => {
+    if (!restoredRef.current) return; // 復元前は触らない（マウント直後の誤削除を防ぐ）
     try {
       if (phase === "timing" || phase === "done") {
         localStorage.removeItem(STATE_KEY);
