@@ -151,11 +151,11 @@ export default function Onboarding() {
               type="button"
               onClick={() => {
                 finish();
-                router.push("/fridge");
+                router.push("/mypage");
               }}
               className="flex-1 rounded-full bg-brand py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
             >
-              さっそく冷蔵庫に追加する
+              はじめる（登録・ログイン）
             </button>
           ) : (
             <button

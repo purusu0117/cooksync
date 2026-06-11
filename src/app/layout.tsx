@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Quicksand, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import AppGate from "@/components/AppGate";
 import Onboarding from "@/components/Onboarding";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
@@ -48,7 +49,9 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <div className="app-bg" aria-hidden />
-        <main className="flex-1 pb-24">{children}</main>
+        <main className="flex-1 pb-24">
+          <AppGate>{children}</AppGate>
+        </main>
         <Nav />
         <Onboarding />
       </body>
