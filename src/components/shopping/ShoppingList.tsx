@@ -141,9 +141,14 @@ export default function ShoppingList() {
       </form>
 
       {items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-line bg-surface/60 py-12 text-center text-sm text-ink-soft">
-          買い物リストは空です。
-        </p>
+        <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">買い物リストは空です</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+            「献立を決める」でレシピを選ぶと、足りない材料がここに自動で入ります。
+            <br />
+            下の欄から手動で追加することもできます。
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-5">
           <ul className="flex flex-col gap-2">{todo.map(row)}</ul>

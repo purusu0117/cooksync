@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Quicksand, Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import Onboarding from "@/components/Onboarding";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 // ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝Zen角ゴ
@@ -49,6 +50,7 @@ export default function RootLayout({
         <div className="app-bg" aria-hidden />
         <main className="flex-1 pb-24">{children}</main>
         <Nav />
+        <Onboarding />
       </body>
     </html>
   );

@@ -12,7 +12,9 @@ import {
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
 import { useUsage, FREE_LIMITS, AI_LABEL, type AiKind } from "@/lib/usage";
+import { HelpCircle } from "lucide-react";
 import PageHeader from "./PageHeader";
+import { OPEN_EVENT } from "./Onboarding";
 import AppIcon from "./AppIcon";
 
 const fieldClass =
@@ -199,6 +201,15 @@ export default function MyPage() {
           ログアウト
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))}
+        className="mb-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface py-3 text-sm font-semibold text-ink-soft shadow-sm transition hover:border-brand"
+      >
+        <HelpCircle className="h-4 w-4" strokeWidth={1.75} />
+        使い方を見る
+      </button>
 
       <div className="mb-6 grid grid-cols-3 gap-3">
         {stats.map((s) => (

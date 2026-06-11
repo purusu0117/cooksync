@@ -142,9 +142,14 @@ export default function FridgeApp() {
       </div>
 
       {sorted.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-line bg-surface/60 py-12 text-center text-sm text-ink-soft">
-          まだ食材がありません。上のフォームから追加してみましょう。
-        </p>
+        <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">まだ食材がありません</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+            上の「写真で追加」で冷蔵庫を撮るか、手入力で登録しましょう。
+            <br />
+            食材が入ると、AIが献立を提案できるようになります。
+          </p>
+        </div>
       ) : (
         <ul className="flex flex-col gap-2">
           {sorted.map((item) => (
