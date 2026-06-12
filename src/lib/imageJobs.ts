@@ -1,7 +1,11 @@
 // サーバー側の非同期「レシピ写真生成」ジョブ。
 // 生成は30〜90秒かかり、スマホは画面ロック/アプリ切替で同期fetchが死ぬため、
 // 送信は即jobIdを返し、生成はサーバーで走り続ける（チャットと同じパターン）。
-// 完了したら public/recipes/<id>.png に保存し、プッシュ通知も送る。
+//
+// ⚠️ 保存先は public/ ではなく .data/recipe-images/。
+// Next本番(next start)はビルド後に追加された public/ のファイルを静的配信せず、
+// /recipes/[id] ページルートがHTMLを返してしまう（＝生成画像が次のビルドまで表示されない）。
+// 配信は /api/recipe-img/<id> ルート経由で行う。
 
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "fs";
@@ -42,12 +46,12 @@ export function startImageJob(recipeId: string, name: string, uid?: string): str
       const res = await fetch(url);
       if (!res.ok) throw new Error(`download ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const dir = path.join(process.cwd(), "public", "recipes");
+      const dir = path.join(process.cwd(), ".data", "recipe-images");
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, `${recipeId}.png`), buf);
       jobs.set(id, {
         status: "done",
-        image: `/recipes/${recipeId}.png?v=${Date.now()}`,
+        image: `/api/recipe-img/${recipeId}?v=${Date.now()}`,
         createdAt: Date.now(),
       });
       if (uid) {

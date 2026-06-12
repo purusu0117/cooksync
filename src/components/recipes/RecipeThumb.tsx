@@ -29,7 +29,9 @@ export default function RecipeThumb({
   sizes,
   emojiClass = "text-5xl",
 }: Props) {
-  const [failed, setFailed] = useState(false);
+  // 失敗はURL単位で記録：再生成でURL(?v=)が変われば自動で再試行する
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const failed = failedFor === image;
 
   if (image && !failed) {
     return (
@@ -39,7 +41,7 @@ export default function RecipeThumb({
         fill
         sizes={sizes}
         className="object-cover"
-        onError={() => setFailed(true)}
+        onError={() => setFailedFor(image)}
       />
     );
   }
