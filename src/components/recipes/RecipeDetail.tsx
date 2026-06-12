@@ -17,8 +17,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import {
-  startGenerating,
-  stopGenerating,
+  beginImageGeneration,
   useIsGenerating,
   useImageGenEnabled,
 } from "@/lib/imageGen";
@@ -64,7 +63,6 @@ export default function RecipeDetail({ id }: Props) {
   const [ratings, setRatings] = usePersistentList(ratingStore);
   const [note, setNote] = useState("");
   const [proofLoading, setProofLoading] = useState(false);
-  const [imgLoading, setImgLoading] = useState(false);
   const [showMade, setShowMade] = useState(false);
   const [madeChoices, setMadeChoices] = useState<Record<string, UseChoice>>({});
   const [undoData, setUndoData] = useState<{
@@ -221,37 +219,16 @@ export default function RecipeDetail({ id }: Props) {
     setNote("取り消しました");
   }
 
-  async function genImage() {
-    if (!recipe || imgLoading) return;
+  function genImage() {
+    if (!recipe || generating) return;
     if (!usage.canUse("image")) {
       setNote(`今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`);
       return;
     }
     usage.recordUse("image");
-    setImgLoading(true);
-    startGenerating(recipe.id);
-    setNote("AIが写真を生成中…（30〜60秒）");
-    try {
-      const res = await fetch("/api/recipe-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: recipe.id, name: recipe.name }),
-      });
-      const data = await res.json();
-      if (res.ok && data.image) {
-        setStored((prev) =>
-          prev.map((r) => (r.id === id ? { ...r, image: data.image } : r)),
-        );
-        setNote("写真を生成しました ✨");
-      } else {
-        setNote("写真生成に失敗しました");
-      }
-    } catch {
-      setNote("写真生成に失敗しました");
-    } finally {
-      setImgLoading(false);
-      if (recipe) stopGenerating(recipe.id);
-    }
+    // ジョブ方式：即返し→裏で生成→完了で自動反映＋プッシュ通知。画面を閉じても切れない。
+    setNote("AIが写真を生成中…（30〜90秒・画面を閉じてもOK、できたら自動で反映されます）");
+    beginImageGeneration(recipe.id, recipe.name);
   }
 
   // 作った回数の手動編集（＋／−）。作った回数＝made:true の記録のみ
@@ -526,11 +503,11 @@ export default function RecipeDetail({ id }: Props) {
             <button
               type="button"
               onClick={genImage}
-              disabled={imgLoading}
+              disabled={generating}
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
             >
               <AppIcon name="camera" size={18} />
-              {imgLoading
+              {generating
                 ? "AIが写真を生成中…"
                 : recipe.image
                   ? "写真をAIで再生成"

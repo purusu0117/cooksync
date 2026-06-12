@@ -37,7 +37,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
-import { startGenerating, stopGenerating, useImageGenEnabled } from "@/lib/imageGen";
+import { beginImageGeneration, useImageGenEnabled } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
 
@@ -469,7 +469,7 @@ export default function MealWizard() {
     pickRecipe(recipe);
   }
 
-  async function generateRecipeImage(recipe: Recipe) {
+  function generateRecipeImage(recipe: Recipe) {
     if (!imageGenEnabled) return; // 公開版は画像生成オフ（絵文字表示のまま）
     if (!usage.canUse("image")) {
       setImgStatus(
@@ -478,37 +478,11 @@ export default function MealWizard() {
       return;
     }
     usage.recordUse("image");
-    setImgStatus(`🖼 「${recipe.name}」の写真を生成中…（30〜60秒・後から反映）`);
-    startGenerating(recipe.id);
-    try {
-      // 一時的な失敗に備えて最大2回試行
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const res = await fetch("/api/recipe-image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: recipe.id, name: recipe.name }),
-          });
-          const data = await res.json();
-          if (res.ok && data.image) {
-            setStoredRecipes((prev) =>
-              prev.map((r) =>
-                r.id === recipe.id ? { ...r, image: data.image } : r,
-              ),
-            );
-            setImgStatus(`🖼 「${recipe.name}」の写真ができました ✨`);
-            return;
-          }
-        } catch {
-          /* 次の試行へ */
-        }
-      }
-      setImgStatus(
-        `写真の自動生成に失敗しました。レシピ詳細の「🖼 写真をAIで再生成」で作り直せます。`,
-      );
-    } finally {
-      stopGenerating(recipe.id);
-    }
+    // ジョブ方式：即返し→裏で生成→完了で自動反映＋プッシュ通知。画面を閉じても切れない。
+    setImgStatus(
+      `🖼 「${recipe.name}」の写真を生成中…（30〜90秒・画面を閉じてもOK、できたら自動で反映）`,
+    );
+    beginImageGeneration(recipe.id, recipe.name);
   }
 
   function finalize() {

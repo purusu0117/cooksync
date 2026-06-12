@@ -163,6 +163,24 @@ export function useServerList<T>(
   return [data, setData];
 }
 
+/** フック外からの更新（画像ジョブ完了の反映など）。hydrate前は読み込み完了を待ってから適用。 */
+export function updateServerList<T>(key: string, updater: (prev: T[]) => T[]): void {
+  const run = () => {
+    const prev = (mem.get(key) as T[]) ?? [];
+    const next = updater(prev);
+    mem.set(key, next);
+    notify();
+    void queuePut(key, next as unknown[]);
+  };
+  if (!hydrated) {
+    void hydrate().then(() => {
+      if (hydrated) run();
+    });
+    return;
+  }
+  run();
+}
+
 /** 全データをサーバーから消す（リセット用） */
 export async function clearAllServer() {
   for (const store of ALL_STORES) {
