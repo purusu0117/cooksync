@@ -15,7 +15,13 @@ describe("toBuyableAmount", () => {
   });
   it("重量・容量はそのまま（半端でも買えるので）", () => {
     expect(toBuyableAmount("180g")).toBe("180g");
-    expect(toBuyableAmount("大さじ2")).toBe("大さじ2");
+    expect(toBuyableAmount("100ml")).toBe("100ml");
+  });
+  it("調味料の計量単位（小さじ/大さじ/カップ/cm）は店で量り買い不可→1本", () => {
+    expect(toBuyableAmount("大さじ2")).toBe("1本");
+    expect(toBuyableAmount("小さじ1/2")).toBe("1本");
+    expect(toBuyableAmount("カップ1")).toBe("1本");
+    expect(toBuyableAmount("5cm")).toBe("1本"); // わさび等
   });
   it("適量・お好みは変えない", () => {
     expect(toBuyableAmount("適量")).toBe("適量");

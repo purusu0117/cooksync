@@ -37,15 +37,33 @@ export function parseAmount(amount: string): Parsed {
   return { num: NaN, unit: "", ok: false };
 }
 
-/** 買い物リスト用に "買える量" へ丸める。個数単位は切り上げ（最低1）、重量等は範囲上限のみ採用、適量等はそのまま。 */
+// 調理時の計量単位＝店で量り買いできない（小さじ/大さじ/カップ/cm 等）→「1本」で買う
+const COOKING_MEASURE = [
+  "大さじ",
+  "小さじ",
+  "カップ",
+  "杯",
+  "滴",
+  "振り",
+  "ふり",
+  "つまみ",
+  "cm",
+  "mm",
+];
+
+/** 買い物リスト用に "買える量" へ丸める。個数=切り上げ、調味料の計量単位=「1本」、重量等=そのまま、適量等=そのまま。 */
 export function toBuyableAmount(amount: string): string {
-  const p = parseAmount(amount);
+  const a = (amount ?? "").trim();
+  // 「大さじ2」「小さじ1/2」「カップ1」「5cm」など計量単位は店で量り買い不可 → 1本で買う。
+  // ※「大さじ2」は“単位→数字”でparseAmountが解釈できないため、文字列含有でも判定する。
+  if (COOKING_MEASURE.some((u) => a.includes(u))) return "1本";
+  const p = parseAmount(a);
   if (!p.ok || !isFinite(p.num)) return amount; // 「適量」「お好みで」等はそのまま
   if (COUNTABLE.includes(p.unit)) {
     const whole = Math.max(1, Math.ceil(p.num - 1e-9));
     return `${whole}${p.unit}`;
   }
-  // 重量・容量・単位なしは数値はそのまま（範囲は上限に整理済み）
+  // 重量・容量（g/ml/kg）・単位なしは数値そのまま（範囲は上限に整理済み）
   return `${formatNum(p.num)}${p.unit}`;
 }
 
