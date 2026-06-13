@@ -70,14 +70,69 @@ export function generatedImageUrl(name: string): string {
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=600&height=450&nologo=true&seed=${seed}`;
 }
 
-/** 材料名をマッチング用に正規化（表記ゆれ・全角空白・括弧書きを吸収） */
+// カタカナ→ひらがな（タマネギ＝たまねぎ を同一視するため）
+function kataToHira(s: string): string {
+  return s.replace(/[ァ-ヶ]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) - 0x60),
+  );
+}
+
+// 食材の表記ゆれ辞書：各行の先頭が代表表記、残りが別表記（正規化後＝小文字・かな化済みの形で記載）。
+const SYNONYM_GROUPS: string[][] = [
+  ["たまねぎ", "玉ねぎ", "玉葱", "おにおん"],
+  ["にんじん", "人参"],
+  ["だいこん", "大根"],
+  ["たまご", "卵", "玉子"],
+  ["ながねぎ", "長ねぎ", "長葱", "長ネギ"],
+  ["ねぎ", "葱"],
+  ["なす", "茄子"],
+  ["きゅうり", "胡瓜"],
+  ["じゃがいも", "じゃが芋", "馬鈴薯"],
+  ["さつまいも", "さつま芋", "薩摩芋"],
+  ["かぼちゃ", "南瓜"],
+  ["にんにく", "大蒜"],
+  ["しょうが", "生姜"],
+  ["ピーマン", "ぴーまん"],
+  ["とりにく", "鶏肉", "鳥肉", "とり肉"],
+  ["ぶたにく", "豚肉"],
+  ["ぎゅうにく", "牛肉"],
+  ["ひきにく", "挽肉", "ひき肉"],
+  ["しょうゆ", "醤油"],
+  ["みそ", "味噌"],
+  ["さとう", "砂糖"],
+  ["しお", "塩"],
+  ["こしょう", "胡椒", "こしょー"],
+  ["さけ", "鮭", "しゃけ"],
+  ["とうふ", "豆腐"],
+  ["ごま", "胡麻"],
+];
+// 別表記→代表表記の置換リスト（長い別表記から適用＝部分置換でも壊れない）。
+// 名前に数量が混ざる（例「玉ねぎ1個」）ケースでも部分一致が効くよう、完全一致ではなく置換にする。
+const SYNONYM_REPLACERS: [string, string][] = (() => {
+  const list: [string, string][] = [];
+  for (const group of SYNONYM_GROUPS) {
+    const canon = group[0];
+    for (const v of group.slice(1)) {
+      list.push([kataToHira(v.toLowerCase()), canon]);
+    }
+  }
+  return list.sort((a, b) => b[0].length - a[0].length);
+})();
+
+/** 材料名をマッチング用に正規化（表記ゆれ・全角空白・括弧書き・かな/漢字を吸収） */
 export function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[（(].*?[)）]/g, "") // 括弧書きを除去
-    .replace(/\s|　/g, "")
-    .replace(/[・,、]/g, "")
-    .trim();
+  let s = kataToHira(
+    name
+      .toLowerCase()
+      .replace(/[（(].*?[)）]/g, "") // 括弧書きを除去
+      .replace(/\s|　/g, "")
+      .replace(/[・,、]/g, "")
+      .trim(),
+  );
+  for (const [variant, canon] of SYNONYM_REPLACERS) {
+    if (s.includes(variant)) s = s.split(variant).join(canon);
+  }
+  return s;
 }
 
 /** 2つの食材名が同一食材を指すか（部分一致で寛容に判定） */
