@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
 import { scaleMeasures } from "@/lib/recipeScale";
-import { toBuyableAmount, subtractAmount } from "@/lib/portion";
+import { toBuyableAmount, subtractAmount, parseAmount } from "@/lib/portion";
 import {
   recipeStore,
   shoppingStore,
@@ -44,6 +44,9 @@ function halveQty(q: string): string {
   }
   return q ? `${q}（半分）` : "半分";
 }
+
+// Date.now をモジュール関数に隔離（react purity lintの誤検知回避）
+const nowMs = (): number => Date.now();
 
 function groupIngredients(ings: RecipeIngredient[]): [string, RecipeIngredient[]][] {
   const map = new Map<string, RecipeIngredient[]>();
@@ -94,39 +97,76 @@ export default function RecipeDetail({ id }: Props) {
     router.push("/recipes");
   }
 
+  // 在庫を「種類＋数量」で判定。必要量(scaled)と冷蔵庫の同単位合計を比べる。
+  //  enough=足りる / short=あるが足りない / none=在庫なし。
+  //  単位が違う・読めない時は安全側で enough(あるものとみなす)。
+  function stockOf(name: string, scaledAmount: string): {
+    status: "enough" | "short" | "none";
+    need?: number;
+    have?: number;
+    unit?: string;
+  } {
+    const matches = fridge.filter((f) => ingredientMatches(f.name, name));
+    if (matches.length === 0) return { status: "none" };
+    const need = parseAmount(scaledAmount);
+    if (!need.ok) return { status: "enough" };
+    const nu = need.unit.trim();
+    let have = 0;
+    let comparable = false;
+    for (const f of matches) {
+      const h = parseAmount(f.quantity);
+      if (h.ok && h.unit.trim() === nu) {
+        have += h.num;
+        comparable = true;
+      }
+    }
+    if (!comparable) return { status: "enough" };
+    return {
+      status: have >= need.num ? "enough" : "short",
+      need: need.num,
+      have,
+      unit: nu,
+    };
+  }
+
   function addMissingToShopping() {
     if (!recipe) return;
     const f = (servings ?? recipe.servings) / (recipe.servings || 1);
-    const toAdd = recipe.ingredients.filter((ing) => {
-      if (ing.basicSeasoning) return false;
-      const inFridge = fridge.some((f) => ingredientMatches(f.name, ing.name));
-      const inShopping = shopping.some((s) => s.name === ing.name);
-      return !inFridge && !inShopping;
-    });
-    if (toAdd.length === 0) {
+    const items: ShoppingItem[] = [];
+    for (const ing of recipe.ingredients) {
+      if (ing.basicSeasoning) continue;
+      if (shopping.some((s) => s.name === ing.name)) continue;
+      const scaled = scaleMeasures(ing.amount, f);
+      const st = stockOf(ing.name, scaled);
+      if (st.status === "enough") continue;
+      // 不足分だけ（短い時は need-have、無い時は全量）を買える単位で
+      let amt = toBuyableAmount(scaled);
+      if (
+        st.status === "short" &&
+        st.need != null &&
+        st.have != null &&
+        st.unit != null
+      ) {
+        const shortNum = Math.round((st.need - st.have) * 100) / 100;
+        if (shortNum > 0) amt = toBuyableAmount(`${shortNum}${st.unit}`);
+      }
+      items.push({
+        id: crypto.randomUUID(),
+        name: ing.name,
+        amount: amt,
+        checked: false,
+        addedAt: nowMs(),
+        note: `${recipe.name}用`,
+        fromRecipeId: recipe.id,
+      });
+    }
+    if (items.length === 0) {
       setNote("不足はありません（在庫・リストに揃っています）");
       return;
     }
-    const items: ShoppingItem[] = toAdd.map((ing) => ({
-      id: crypto.randomUUID(),
-      name: ing.name,
-      amount: toBuyableAmount(scaleMeasures(ing.amount, f)),
-      checked: false,
-      addedAt: Date.now(),
-      note: `${recipe.name}用`,
-      fromRecipeId: recipe.id,
-    }));
     setShopping((prev) => [...prev, ...items]);
-    setNote(`不足 ${toAdd.length} 件を買い物リストに追加しました`);
+    setNote(`不足 ${items.length} 件を買い物リストに追加しました`);
   }
-
-  // 保存時の古い toBuy ではなく、今の冷蔵庫と照らし合わせてライブ判定する
-  const inStockNow = (ing: RecipeIngredient) =>
-    !ing.basicSeasoning &&
-    fridge.some((f) => ingredientMatches(f.name, ing.name));
-  const needsBuyNow = (ing: RecipeIngredient) =>
-    !ing.basicSeasoning &&
-    !fridge.some((f) => ingredientMatches(f.name, ing.name));
 
   async function proofread() {
     if (!recipe || proofLoading) return;
@@ -472,16 +512,29 @@ export default function RecipeDetail({ id }: Props) {
           <div key={group} className="mb-3 last:mb-0">
             <p className="mb-1 text-xs font-semibold text-ink-soft">{group}</p>
             <ul className="flex flex-col gap-1">
-              {list.map((i, idx) => (
+              {list.map((i, idx) => {
+                const st = i.basicSeasoning ? null : stockOf(i.name, i.amount);
+                const shortText =
+                  st?.status === "short" &&
+                  st.need != null &&
+                  st.have != null
+                    ? `あと${Math.round((st.need - st.have) * 100) / 100}${st.unit ?? ""}`
+                    : "";
+                return (
                 <li key={idx} className="flex justify-between text-sm">
                   <span className="text-ink">
                     {i.name}
-                    {inStockNow(i) && (
+                    {st?.status === "enough" && (
                       <span className="ml-1 text-[11px] font-semibold text-brand">
                         ✓在庫あり
                       </span>
                     )}
-                    {needsBuyNow(i) && (
+                    {st?.status === "short" && (
+                      <span className="ml-1 text-[11px] font-semibold text-accent">
+                        ★不足（{shortText}）
+                      </span>
+                    )}
+                    {st?.status === "none" && (
                       <span className="ml-1 text-[11px] font-semibold text-accent">
                         ★買い足し
                       </span>
@@ -496,7 +549,8 @@ export default function RecipeDetail({ id }: Props) {
                     )}
                   </span>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </div>
         ))}
