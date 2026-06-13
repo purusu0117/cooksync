@@ -43,3 +43,5 @@ next-env.d.ts
 # personal local server data (synced via /api/store)
 .data/
 .design/
+
+server.log

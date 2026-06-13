@@ -27,6 +27,7 @@ import {
 } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { rankCandidates } from "@/lib/ranking";
+import { toBuyableAmount } from "@/lib/portion";
 import {
   slotsForTiming,
   type MealEntry,
@@ -495,7 +496,7 @@ export default function MealWizard() {
         .map((m) => ({
           id: crypto.randomUUID(),
           name: m.name,
-          amount: m.amount,
+          amount: toBuyableAmount(m.amount),
           note: m.note,
           checked: false,
           addedAt: Date.now(),

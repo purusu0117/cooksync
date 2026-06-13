@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
+import { scaleMeasures } from "@/lib/recipeScale";
+import { toBuyableAmount, subtractAmount } from "@/lib/portion";
 import {
   recipeStore,
   shoppingStore,
@@ -31,7 +33,7 @@ interface Props {
   id: string;
 }
 
-type UseChoice = "use" | "half" | "keep";
+type UseChoice = "portion" | "use" | "half" | "keep";
 
 /** 数量の先頭の数値を半分にする（できなければ「（半分）」を付す） */
 function halveQty(q: string): string {
@@ -62,6 +64,7 @@ export default function RecipeDetail({ id }: Props) {
   const [fridge, setFridge] = usePersistentList(fridgeStore);
   const [ratings, setRatings] = usePersistentList(ratingStore);
   const [note, setNote] = useState("");
+  const [servings, setServings] = useState<number | null>(null); // null＝レシピ基準のまま
   const [proofLoading, setProofLoading] = useState(false);
   const [showMade, setShowMade] = useState(false);
   const [madeChoices, setMadeChoices] = useState<Record<string, UseChoice>>({});
@@ -93,6 +96,7 @@ export default function RecipeDetail({ id }: Props) {
 
   function addMissingToShopping() {
     if (!recipe) return;
+    const f = (servings ?? recipe.servings) / (recipe.servings || 1);
     const toAdd = recipe.ingredients.filter((ing) => {
       if (ing.basicSeasoning) return false;
       const inFridge = fridge.some((f) => ingredientMatches(f.name, ing.name));
@@ -106,7 +110,7 @@ export default function RecipeDetail({ id }: Props) {
     const items: ShoppingItem[] = toAdd.map((ing) => ({
       id: crypto.randomUUID(),
       name: ing.name,
-      amount: ing.amount,
+      amount: toBuyableAmount(scaleMeasures(ing.amount, f)),
       checked: false,
       addedAt: Date.now(),
       note: `${recipe.name}用`,
@@ -173,11 +177,27 @@ export default function RecipeDetail({ id }: Props) {
     return recipe.ingredients.filter((ing) => ing.basicSeasoning).map((i) => i.name);
   }
 
+  // この冷蔵庫アイテムに対してレシピが使う量（選択人数に換算）
+  function recipeAmountFor(f: FridgeItem): string {
+    if (!recipe) return "";
+    const ing = recipe.ingredients.find((i) => ingredientMatches(f.name, i.name));
+    if (!ing) return "";
+    return scaleMeasures(ing.amount, (servings ?? recipe.servings) / (recipe.servings || 1));
+  }
+
   function openMade() {
     if (!recipe) return;
     const init: Record<string, UseChoice> = {};
-    // 調味料は既定で「残す」（初期設定の常備を消さない）、それ以外は「使い切った」
-    matchedFridge().forEach((f) => (init[f.id] = isSeasoningItem(f) ? "keep" : "use"));
+    // 調味料は既定で「残す」（常備を消さない）。それ以外は、レシピ使用分を引いて残量が出せるなら
+    // 既定「レシピ分」（使った分だけ引いて残りを在庫に）、出せなければ「使い切った」。
+    matchedFridge().forEach((f) => {
+      if (isSeasoningItem(f)) {
+        init[f.id] = "keep";
+        return;
+      }
+      const rem = subtractAmount(f.quantity, recipeAmountFor(f));
+      init[f.id] = rem === f.quantity ? "use" : "portion";
+    });
     setMadeChoices(init);
     setShowMade(true);
   }
@@ -191,6 +211,11 @@ export default function RecipeDetail({ id }: Props) {
         const c = madeChoices[f.id];
         if (c === "use") return null; // 使い切った → 削除
         if (c === "half") return { ...f, quantity: halveQty(f.quantity) };
+        if (c === "portion") {
+          // レシピ分だけ引いて残りを在庫に（例：1個から1/4使用→3/4残す）。使い切りなら削除。
+          const rem = subtractAmount(f.quantity, recipeAmountFor(f));
+          return rem === "" ? null : { ...f, quantity: rem };
+        }
         return f; // keep / 対象外
       })
       .filter((f): f is FridgeItem => f !== null);
@@ -273,9 +298,23 @@ export default function RecipeDetail({ id }: Props) {
     );
   }
 
+  // 人数スケール（servings=null のときはレシピ基準のまま）
+  const baseServings = recipe.servings || 1;
+  const viewServings = servings ?? baseServings;
+  const factor = viewServings / baseServings;
+  const viewIngredients =
+    factor === 1
+      ? recipe.ingredients
+      : recipe.ingredients.map((i) => ({ ...i, amount: scaleMeasures(i.amount, factor) }));
+  const viewSteps =
+    factor === 1
+      ? recipe.steps
+      : recipe.steps.map((s) => ({ ...s, text: scaleMeasures(s.text, factor) }));
+  const viewKcal = recipe.kcal ? Math.round(recipe.kcal * factor) : recipe.kcal;
+
   const timerSuggestions = Array.from(
     new Set(
-      recipe.steps.flatMap((s) =>
+      viewSteps.flatMap((s) =>
         Array.from(s.text.matchAll(/(\d+)\s*分/g)).map((m) => Number(m[1])),
       ),
     ),
@@ -313,8 +352,8 @@ export default function RecipeDetail({ id }: Props) {
         </h1>
         <p className="mt-1.5 text-xs font-medium text-brand-dark">
           {recipe.tags.cookTime ? `⏱ ${recipe.tags.cookTime}分` : ""}
-          {recipe.kcal ? ` / ${recipe.kcal}kcal` : ""}
-          {recipe.servings ? `　${recipe.servings}人分` : ""}
+          {viewKcal ? ` / ${viewKcal}kcal` : ""}
+          {`　${viewServings}人分`}
         </p>
         <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
           <span className="inline-flex items-center gap-1">
@@ -354,6 +393,38 @@ export default function RecipeDetail({ id }: Props) {
         </div>
       </header>
 
+      {/* 何人前で作るか（完成レシピの人数セレクタ） */}
+      <section className="mb-4 rounded-2xl border border-brand/30 bg-brand-soft/40 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+              <AppIcon name="meal" size={18} />
+              何人前で作る？
+            </h2>
+            <p className="mt-0.5 text-[11px] text-ink-soft">
+              選んだ人数に材料・手順の分量・kcalを自動換算します
+            </p>
+          </div>
+          <div className="inline-flex overflow-hidden rounded-xl ring-1 ring-line">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setServings(n)}
+                aria-pressed={viewServings === n}
+                className={`px-4 py-2 text-sm font-semibold transition ${
+                  viewServings === n
+                    ? "bg-brand text-white"
+                    : "bg-surface text-ink-soft hover:bg-paper"
+                }`}
+              >
+                {n}人
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <div className="mb-2 flex gap-2">
         <button
           type="button"
@@ -389,10 +460,15 @@ export default function RecipeDetail({ id }: Props) {
 
       {/* 材料 */}
       <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
-        <h2 className="mb-3 text-sm font-bold text-ink">
-          材料（{recipe.servings}人分）
-        </h2>
-        {groupIngredients(recipe.ingredients).map(([group, list]) => (
+        <h2 className="mb-3 text-sm font-bold text-ink">材料（{viewServings}人分）</h2>
+        {factor !== 1 && (
+          <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+            ※{baseServings}人分を{viewServings}人分に自動換算（端数は目安）。
+            {factor > 1 &&
+              "塩・しょうゆ・スパイス・にんにく・わさび等の調味料は倍にすると濃くなりがち。表示量より控えめ（7〜8割）から入れて、味を見て足すのがおすすめ。"}
+          </p>
+        )}
+        {groupIngredients(viewIngredients).map(([group, list]) => (
           <div key={group} className="mb-3 last:mb-0">
             <p className="mb-1 text-xs font-semibold text-ink-soft">{group}</p>
             <ul className="flex flex-col gap-1">
@@ -411,7 +487,14 @@ export default function RecipeDetail({ id }: Props) {
                       </span>
                     )}
                   </span>
-                  <span className="text-ink-soft">{i.amount}</span>
+                  <span className="text-ink-soft">
+                    {i.amount}
+                    {factor > 1 && i.basicSeasoning && (
+                      <span className="ml-1 text-[10px] font-medium text-amber-700">
+                        味見て調整
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -429,7 +512,7 @@ export default function RecipeDetail({ id }: Props) {
           <CookingTimer suggestions={timerSuggestions} />
         </div>
         <ol className="flex flex-col gap-3">
-          {recipe.steps.map((s, idx) => (
+          {viewSteps.map((s, idx) => (
             <li key={idx} className="rounded-2xl border border-line bg-surface p-4">
               <p className="font-semibold text-ink">{s.title}</p>
               <p className="mt-1 text-sm leading-relaxed text-ink">{s.text}</p>
@@ -547,7 +630,7 @@ export default function RecipeDetail({ id }: Props) {
               {recipe.name} を作った
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-              使った冷蔵庫の食材を更新します（あとで「取り消す」で元に戻せます）。
+              使った冷蔵庫の食材を更新します（あとで「取り消す」で元に戻せます）。「レシピ分」を選ぶと、使った分だけ引いて残りを在庫に残します。
             </p>
 
             {matchedFridge().length === 0 ? (
@@ -568,10 +651,21 @@ export default function RecipeDetail({ id }: Props) {
                           調味料
                         </span>
                       )}
+                      {recipeAmountFor(f) && (
+                        <span className="text-[10px] font-medium text-brand-dark">
+                          レシピ:{recipeAmountFor(f)}
+                        </span>
+                      )}
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-2 gap-1.5">
                       {(
                         [
+                          [
+                            "portion",
+                            recipeAmountFor(f)
+                              ? `レシピ分(${recipeAmountFor(f)})`
+                              : "レシピ分使う",
+                          ],
                           ["use", "使い切った"],
                           ["half", "半分使った"],
                           ["keep", "残す"],
