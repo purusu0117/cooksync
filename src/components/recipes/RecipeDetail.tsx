@@ -28,6 +28,7 @@ import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
 import RecipeThumb from "@/components/recipes/RecipeThumb";
+import { storageList } from "@/lib/storageTips";
 
 interface Props {
   id: string;
@@ -590,16 +591,21 @@ export default function RecipeDetail({ id }: Props) {
         </section>
       )}
 
-      {recipe.leftoverStorage.length > 0 && (
+      {storageList(recipe).length > 0 && (
         <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
           <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
             <AppIcon name="fridge" size={18} />
             余った材料の保存
           </h2>
           <ul className="flex flex-col gap-1.5">
-            {recipe.leftoverStorage.map((l, idx) => (
+            {storageList(recipe).map((l, idx) => (
               <li key={idx} className="text-sm">
                 <span className="font-medium text-ink">{l.ingredient}</span>
+                {l.auto && (
+                  <span className="ml-1 text-[10px] font-medium text-ink-soft">
+                    （目安）
+                  </span>
+                )}
                 <span className="text-ink-soft">：{l.method}</span>
               </li>
             ))}
