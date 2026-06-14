@@ -1,7 +1,13 @@
 # CookSync — 冷蔵庫から献立まで
 
-毎日の「冷蔵庫に何がある？ → 何作る？ → 何を買い足す？」を一気通貫で解く個人用キッチンアプリ。
+毎日の「冷蔵庫に何がある？ → 何作る？ → 何を買い足す？」を一気通貫で解く AI キッチンアプリ。
 自作の Claude Code スキル `/meal`（献立提案ワークフロー）を Web アプリ化したもの。
+
+## 🔗 デモ・公開状況
+
+- **紹介ページ（LP・ログイン不要）**：https://cooksync-one.vercel.app/lp
+- **本番アプリ**：https://cooksync-one.vercel.app/ （メール登録で利用可）
+- 友人・家族 8〜10 名に配布して実利用中。**Vercel Pro + Upstash Redis + メール認証 + Anthropic API + Web Push** でデプロイ済みのフルスタック構成。企画・設計・実装・運用まで一人で担当。
 
 ## できること
 
@@ -19,14 +25,14 @@
 
 → 決定論の大半はクライアントで完結し、AI が無くても優雅に縮退する。
 
-### AI 実行（個人ローカル運用）
+### AI 実行（本番／ローカルを1ファイルで切替）
 
-公開しない個人ツールとして、AI 部分はローカルの **Claude Code（`claude` CLI＝Maxプラン枠）** で駆動する想定（追加課金ゼロ）。公開する場合は `ai.ts` を Anthropic API キー実装に差し替えるだけ。
+AI 部分はサーバー境界（`ai.ts`／Route Handler）の裏に隔離している。**本番（Vercel）では Anthropic API で駆動**し、研究ジョブは Upstash Redis に保存して `after()`（`maxDuration=300`）で応答後も継続する。個人ローカル運用では `claude` CLI（Maxプラン枠）に切り替えて追加課金ゼロで動かせる。差し替えは `ai.ts` の1ファイルで完結。
 
 ## 技術
 
 - Next.js 16（App Router・Turbopack）/ React 19 / TypeScript / Tailwind v4
-- 永続化は localStorage（`Store<T>` インターフェースに抽象化＝将来 DB に差し替え可能）
+- 永続化は `Store<T>` インターフェースに抽象化：ローカルは localStorage、**本番は Upstash Redis**（ユーザー別保存）に差し替え
 - 外部ストアは `useSyncExternalStore` で購読（SSR 安全・タブ/画面間同期）
 
 ```
