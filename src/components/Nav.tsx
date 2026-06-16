@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import {
   Home,
   BookOpen,
@@ -23,6 +23,20 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
+  // iOSのソフトキーボードが開くと fixed要素が画面中央に張り付くので、
+  // キーボード中はナビを下にしまう（visualViewportの高さで検知）。
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      // 表示領域がレイアウト高より150px以上小さい＝キーボード等で縮んでいる
+      setKeyboardOpen(window.innerHeight - vv.height > 150);
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   // レシピ内のページ（一覧/詳細）に来たら、最後に開いた場所を覚える
   useEffect(() => {
@@ -57,7 +71,11 @@ export default function Nav() {
   }
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md">
+    <nav
+      className={`fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md transition-transform duration-200 ${
+        keyboardOpen ? "translate-y-full" : "translate-y-0"
+      }`}
+    >
       <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)]">
         {TABS.map((t) => {
           const active = isActive(t.href);
