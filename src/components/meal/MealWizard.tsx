@@ -378,6 +378,16 @@ export default function MealWizard() {
         if (s.aiPreview) setAiPreview(s.aiPreview);
         if (Array.isArray(s.aiSeen)) setAiSeen(s.aiSeen);
         if (typeof s.searchRound === "number") setSearchRound(s.searchRound);
+        if (Array.isArray(s.missing)) setMissing(s.missing);
+        // 不足確認フェーズなのにリストが空（古いスナップショット等）→ picksから再構築
+        if (
+          s.phase === "missing" &&
+          (!Array.isArray(s.missing) || s.missing.length === 0) &&
+          Array.isArray(s.picks) &&
+          s.picks.length > 0
+        ) {
+          buildMissing(s.picks);
+        }
       } catch {
         /* 壊れていたら無視 */
       }
@@ -438,6 +448,7 @@ export default function MealWizard() {
             aiPreview,
             aiSeen,
             searchRound,
+            missing,
           }),
         );
       }
@@ -458,6 +469,7 @@ export default function MealWizard() {
     aiPreview,
     aiSeen,
     searchRound,
+    missing,
   ]);
 
   // 「このレシピを作る」確定：レシピリストへ追加し、写真生成を開始して次へ
