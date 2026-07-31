@@ -93,3 +93,6 @@ android/app/src/main/assets/capacitor.config.json
 .dev3014.log
 .local3000.log
 .diag/
+
+# 監査スクリプトの出力
+.audit-result.txt
