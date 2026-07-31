@@ -87,7 +87,11 @@ export function monthlyBudgetYen(): number {
  *  COOKSYNC_ENFORCE_QUOTA=1 でローカルでも強制できる（動作確認用）。 */
 export function quotaEnforced(): boolean {
   if (process.env.COOKSYNC_ENFORCE_QUOTA === "1") return true;
-  return !!redis;
+  // 枠が要るのは **AIの利用料が発生するときだけ**。
+  // ローカル版は claude.exe（Max枠）を叩くので1円も掛からず、数える意味が無い。
+  // 以前は `!!redis` で判定していたが、Redisは保存先の話であって課金の話ではないので、
+  // ローカルでRedisを繋いだ途端に上限が掛かってしまう作りだった。
+  return !!process.env.ANTHROPIC_API_KEY;
 }
 
 function month(): string {
