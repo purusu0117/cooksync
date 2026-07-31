@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { APP_TAGLINE } from "@/lib/brand";
 import { setUid } from "@/lib/syncStore";
+import { isNativeApp } from "@/lib/native";
 import { setGuide } from "@/lib/guide";
 import {
   fridgeStore,
@@ -67,6 +68,8 @@ export default function MyPage() {
   const [mounted, setMounted] = useState(false);
   const [session, setSession] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  /** ネイティブアプリ（iOS）内で動いているか。Googleログインの出し分けに使う */
+  const [native, setNative] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   /** ログイン済みなのにアカウントが読めない状態が続いたか（永久ローディング防止） */
@@ -76,6 +79,7 @@ export default function MyPage() {
     // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
     /* eslint-disable react-hooks/set-state-in-effect */
     setMounted(true);
+    setNative(isNativeApp());
     try {
       setSession(window.localStorage.getItem("cooksync:session") === "1");
     } catch {
@@ -117,6 +121,16 @@ export default function MyPage() {
           }
           window.localStorage.setItem("cooksync:session", "1");
           setSession(true);
+          return;
+        }
+        // サーバーが「ログインしていない」と答えた（＝Cookieが無い／期限切れ）のに
+        // 端末側だけログイン済みのつもりでいる状態。
+        // データの認可はCookieだけで決まるので、このままでは何も読めずに固まる。
+        // → 端末側の思い込みを捨てて、すぐログイン画面に戻す（データは消さない）。
+        if (window.localStorage.getItem("cooksync:session") === "1") {
+          window.localStorage.removeItem("cooksync:session");
+          setSession(false);
+          setError("ログインの有効期限が切れました。もう一度ログインしてください。");
         }
       } catch {
         /* オフライン等：従来のローカル判定のまま動かす */
@@ -223,16 +237,35 @@ export default function MyPage() {
     else void handleLogin();
   }
 
-  function logout() {
+  /**
+   * ログアウト。
+   *
+   * ⚠️ 以前は `cooksync:session` を消すだけで、**`cooksync:uid` を前の人の dataId のまま**
+   *    残していた（2026-08-01 監査 C-2 の派生）。共用端末では次に開いた人の画面に
+   *    前の人の冷蔵庫・レシピ・献立がそのまま出た。
+   *    → ログアウトしたら端末IDを**新しいUUIDに振り直す**＝「まっさらな未ログイン端末」に戻す。
+   *      サーバー上の本人のデータは消さない（ログインし直せば元通り）。
+   */
+  async function logout() {
+    // サーバー側のセッションCookieを先に破棄する（残るとAIの枠が前の人のままになる）
+    await fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
     try {
-      window.localStorage.removeItem("cooksync:session");
+      // 端末に残った前の人のキャッシュを一掃してから、新しい端末IDを割り当てる
+      for (const k of Object.keys(window.localStorage)) {
+        if (k.startsWith("cooksync:") || k.startsWith("fridge-app:")) {
+          window.localStorage.removeItem(k);
+        }
+      }
+      setUid(crypto.randomUUID());
     } catch {
       /* noop */
     }
-    // サーバー側のセッションCookieも破棄する（消さないとAIの枠は前の人のままになる）
-    void fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
     setSession(false);
-    if (account) setAccs([{ ...account, loggedIn: false }]);
+    // ⚠️ ここでストアに書き込んではいけない。uid を振り直した直後なので、
+    //    書くと**前の人のアカウント情報が新しい匿名端末の領域にコピーされる**。
+    //    アカウント情報はサーバー側（本人の dataId）に残っているので何もしなくてよい。
+    // メモリ上のストアにも前の人のデータが載っているので、読み込み直す
+    window.location.href = "/mypage";
   }
 
   /** アカウントと全データを削除する（審査ガイドライン 5.1.1(v) 対応）。
@@ -348,8 +381,15 @@ export default function MyPage() {
           <p className="mt-1 text-sm text-ink-soft">{APP_TAGLINE}</p>
         </div>
 
-        {/* Googleログイン。未設定の環境ではボタン自体を出さない（押すと501になるだけなので） */}
-        {googleEnabled && (
+        {/* Googleログイン。
+            ・未設定の環境ではボタン自体を出さない（押すと501になるだけなので）
+            ・**ネイティブアプリ（iOS）でも出さない**（2026-08-01 監査 H-12）。
+              素の <a> でのフルページ遷移なので WKWebView から Safari に出たきり
+              アプリに戻る手段が無く（@capacitor/browser も CFBundleURLTypes も未使用）、
+              押した人はログインできないまま詰む。
+              審査ガイドライン4.8（外部ログインを出すなら同等の選択肢が要る）も同時に回避できる。
+              アプリ版はメール＋パスワードで登録・ログインする。 */}
+        {googleEnabled && !native && (
           <>
             <a
               href="/api/auth/google/start"
@@ -479,7 +519,7 @@ export default function MyPage() {
           <p className="truncate text-xs text-ink-soft">{account.email}</p>
         </div>
         <button
-          onClick={logout}
+          onClick={() => void logout()}
           className="ml-auto shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-soft transition hover:bg-paper"
         >
           ログアウト

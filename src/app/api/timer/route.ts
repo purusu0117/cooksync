@@ -1,7 +1,7 @@
 // タイマー完了をサーバー側で予約 → アプリを閉じていても終了時刻ちょうどにプッシュ。
 //  - 公開（Vercel）：QStash（指定時刻にHTTPを叩く）で /api/timer-fire を予約。
 //  - ローカル：プロセス内 setTimeout。
-import { sendPush } from "@/lib/pushServer";
+import { resolvePushTarget, sendPush } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
 import { Client } from "@upstash/qstash";
 
@@ -31,7 +31,16 @@ export async function POST(request: Request) {
   try {
     const { id, endAt, label, cancel, u, url } = (await request.json()) as Body;
     if (!id) return Response.json({ error: "id required" }, { status: 400 });
-    const uid = u || "anon";
+    // 通知の宛先は**サーバーが決める**。クライアントの `u` をそのまま予約に載せると、
+    // 他人のuidでタイマーを仕掛けて通知を送りつけられる（監査 H-6 と同じ穴）。
+    const target = await resolvePushTarget(request, u);
+    if (!target) {
+      return Response.json(
+        { error: "ログインが確認できませんでした。ログインし直してください。" },
+        { status: 403 },
+      );
+    }
+    const uid = target.uid;
     const backUrl = url || "/";
 
     // ---- 公開：QStash ----

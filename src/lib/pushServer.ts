@@ -11,16 +11,21 @@ import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "@/lib/kv";
 import { sendApns } from "@/lib/apns";
+import { identify } from "@/lib/session";
+import { isAccountDataId } from "@/lib/userStore";
 
 interface PushSub {
   endpoint: string;
   keys: { p256dh: string; auth: string };
 }
 
-const DIR = path.join(process.cwd(), ".data");
-const VAPID_FILE = path.join(DIR, "vapid.json");
-const SUBS_FILE = path.join(DIR, "push-subs.json");
-const DEVICES_FILE = path.join(DIR, "push-devices.json");
+// 保存先。COOKSYNC_DATA_DIR で差し替えられる（テストが大翔の実データを壊さないため）。
+function DIR(): string {
+  return process.env.COOKSYNC_DATA_DIR || path.join(process.cwd(), ".data");
+}
+const VAPID_FILE = () => path.join(DIR(), "vapid.json");
+const SUBS_FILE = () => path.join(DIR(), "push-subs.json");
+const DEVICES_FILE = () => path.join(DIR(), "push-devices.json");
 const SUBJECT = process.env.VAPID_SUBJECT || "mailto:daito150117@gmail.com";
 
 let configured = false;
@@ -35,12 +40,12 @@ async function ensureVapid(): Promise<{ publicKey: string; privateKey: string }>
     };
   } else {
     // ローカル：ファイル（無ければ生成）
-    await fs.mkdir(DIR, { recursive: true });
+    await fs.mkdir(DIR(), { recursive: true });
     try {
-      keys = JSON.parse(await fs.readFile(VAPID_FILE, "utf8"));
+      keys = JSON.parse(await fs.readFile(VAPID_FILE(), "utf8"));
     } catch {
       keys = webpush.generateVAPIDKeys();
-      await fs.writeFile(VAPID_FILE, JSON.stringify(keys), "utf8");
+      await fs.writeFile(VAPID_FILE(), JSON.stringify(keys), "utf8");
     }
   }
   if (!configured) {
@@ -70,7 +75,7 @@ async function readSubs(uid: string): Promise<PushSub[]> {
     return Array.isArray(arr) ? (arr as PushSub[]) : [];
   }
   try {
-    return JSON.parse(await fs.readFile(SUBS_FILE, "utf8"));
+    return JSON.parse(await fs.readFile(SUBS_FILE(), "utf8"));
   } catch {
     return [];
   }
@@ -80,8 +85,8 @@ async function writeSubs(uid: string, subs: PushSub[]): Promise<void> {
     await redis.set(subsKey(uid), JSON.stringify(subs));
     return;
   }
-  await fs.mkdir(DIR, { recursive: true });
-  await fs.writeFile(SUBS_FILE, JSON.stringify(subs), "utf8");
+  await fs.mkdir(DIR(), { recursive: true });
+  await fs.writeFile(SUBS_FILE(), JSON.stringify(subs), "utf8");
 }
 
 export async function addSubscription(uid: string, sub: PushSub): Promise<void> {
@@ -104,15 +109,15 @@ function ownerKey(token: string): string {
 
 async function readDeviceFile(): Promise<Record<string, string[]>> {
   try {
-    const v = JSON.parse(await fs.readFile(DEVICES_FILE, "utf8"));
+    const v = JSON.parse(await fs.readFile(DEVICES_FILE(), "utf8"));
     return v && typeof v === "object" ? (v as Record<string, string[]>) : {};
   } catch {
     return {};
   }
 }
 async function writeDeviceFile(map: Record<string, string[]>): Promise<void> {
-  await fs.mkdir(DIR, { recursive: true });
-  await fs.writeFile(DEVICES_FILE, JSON.stringify(map), "utf8");
+  await fs.mkdir(DIR(), { recursive: true });
+  await fs.writeFile(DEVICES_FILE(), JSON.stringify(map), "utf8");
 }
 
 async function readDevices(uid: string): Promise<string[]> {
@@ -231,4 +236,46 @@ export async function sendPush(
     sendNativePush(uid, payload).catch(() => 0),
   ]);
   return { web, native };
+}
+
+/**
+ * 通知の宛先uidを決める。**購読を登録・解除する経路は必ずここを通す。**
+ *
+ * ⚠️ /api/push/subscribe は body の `u` を**無検証**で購読キーにしていた
+ *    （2026-08-01 監査 H-6）。攻撃者は自分のendpointを被害者のuidで登録でき、
+ *    レシピ名や献立が載った通知をそのまま受け取れた。
+ *
+ * ルールは /api/store と同じ:
+ *   ① セッションCookieがある → その人の dataId（申告値は無視）
+ *   ② Cookieが無い          → 端末のUUIDのみ。**登録済みアカウントの dataId は名乗れない**
+ */
+export async function resolvePushTarget(
+  request: Request,
+  claimed?: string | null,
+): Promise<{ uid: string; trusted: boolean } | null> {
+  const q = (claimed || "anon").trim() || "anon";
+  const id = identify(request, q);
+  if (id.trusted) return { uid: id.dataId, trusted: true };
+  if (q === "anon") return { uid: "anon", trusted: false };
+  if (await isAccountDataId(q)) return null;
+  return { uid: q, trusted: false };
+}
+
+/**
+ * アカウント削除用：その uid の通知購読・端末トークンを**全部**消す。
+ * これが漏れていたため、削除後も iPhone に通知が届き続ける状態だった（監査 H-10(c)）。
+ */
+export async function purgePushFor(uid: string): Promise<void> {
+  const tokens = await readDevices(uid).catch(() => [] as string[]);
+  if (redis) {
+    await redis.del(subsKey(uid), devicesKey(uid));
+    for (const t of tokens) await redis.del(ownerKey(t));
+    return;
+  }
+  const map = await readDeviceFile();
+  if (map[safeUid(uid)]) {
+    delete map[safeUid(uid)];
+    await writeDeviceFile(map);
+  }
+  await writeSubs(uid, []);
 }

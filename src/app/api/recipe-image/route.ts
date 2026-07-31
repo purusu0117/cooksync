@@ -1,4 +1,5 @@
 import { startImageJob } from "@/lib/imageJobs";
+import { resolvePushTarget } from "@/lib/pushServer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,10 @@ export async function POST(request: Request) {
     if (!name || !safeId) {
       return Response.json({ error: "id and name required" }, { status: 400 });
     }
-    const jobId = startImageJob(safeId, name, body.uid);
+    // 完了通知の宛先も**サーバーが決める**（他のpush経路と同じ規則。監査 H-6）。
+    // 申告された uid をそのまま使うと、他人に通知を送りつける口になる。
+    const target = await resolvePushTarget(request, body.uid);
+    const jobId = startImageJob(safeId, name, target?.uid);
     return Response.json({ jobId });
   } catch (e) {
     return Response.json(

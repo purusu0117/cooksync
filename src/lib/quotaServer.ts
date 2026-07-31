@@ -79,6 +79,20 @@ function day(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+/**
+ * AI利用カウンタのキーに使う月（当月・前月）。**month() と同じ基準（UTC）で作る。**
+ *
+ * ⚠️ アカウント削除側で `new Date(y, m-1, 1).toISOString()` と書いていたため、
+ *    JSTの1日0時がUTCで前日に巻き戻り、**常に「2ヶ月前」**を指していた。
+ *    結果、前月のカウンタが一度も消えず残っていた（2026-08-01 監査 H-10(b)）。
+ *    月の計算はここに一本化して、キーを作る側と消す側がズレないようにする。
+ */
+export function recentUsageMonths(): string[] {
+  const now = new Date();
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return [month(), prev.toISOString().slice(0, 7)];
+}
+
 /** IPは生で保存しない（個人情報）。ソルト付きハッシュで持つ。
  *  ⚠️ 既定ソルトは**公開リポジトリに載っている**ので、公開時は必ず
  *     COOKSYNC_IP_SALT を設定すること。既定のままだとIPv4は総当たりで逆引きできる。 */
@@ -218,20 +232,13 @@ export async function consume(
   const spent = await monthYenSpent(m);
   if (spent + EST_YEN[kind] > monthlyBudgetYen()) return denyBudget(limit, premium);
 
+  // ⚠️ **判定は内側（ユーザー）から外側（全体）の順に行い、拒否したら必ず戻す。**
+  //    以前は外側の「全体の月間回数」を最初に incr していて、**拒否しても戻していなかった**。
+  //    そのため枠切れのユーザーが連打するだけで全体カウンタが積み上がり、
+  //    原価が1円も出ていないのに 300回で**全ユーザーのAI機能が月末まで止まった**
+  //    （2026-08-01 監査 H-2）。1人の連打で全員を巻き込むのは防御ではなく自爆。
   if (redis) {
-    // ③ 全体の回数上限
-    const gk = `cooksync:aiquota:${m}`;
-    const g = await redis.incr(gk);
-    if (g === 1) await redis.expire(gk, 40 * 24 * 3600);
-    if (g > globalMonthlyCap()) return denyGlobal(limit, premium);
-
-    // ② IP日次上限
-    const ik = `cooksync:ipday:${ipk}:${d}`;
-    const i = await redis.incr(ik);
-    if (i === 1) await redis.expire(ik, 2 * 24 * 3600);
-    if (i > ipDailyCap()) return denyIp(limit, premium);
-
-    // ① uidごとの月間枠
+    // ① uidごとの月間枠（一番内側＝その人だけの話）
     const uk = `cooksync:usage:${id}:${m}`;
     const used = await redis.hincrby(uk, kind, 1);
     if (used === 1) await redis.expire(uk, 70 * 24 * 3600);
@@ -239,30 +246,48 @@ export async function consume(
       await redis.hincrby(uk, kind, -1); // 使わせないので戻す
       return denyUser(kind, limit, premium);
     }
+
+    // ② IP日次上限
+    const ik = `cooksync:ipday:${ipk}:${d}`;
+    const i = await redis.incr(ik);
+    if (i === 1) await redis.expire(ik, 2 * 24 * 3600);
+    if (i > ipDailyCap()) {
+      await redis.decr(ik);
+      await redis.hincrby(uk, kind, -1);
+      return denyIp(limit, premium);
+    }
+
+    // ③ 全体の回数上限（最終防衛線。**実際に使わせるものだけ数える**）
+    const gk = `cooksync:aiquota:${m}`;
+    const g = await redis.incr(gk);
+    if (g === 1) await redis.expire(gk, 40 * 24 * 3600);
+    if (g > globalMonthlyCap()) {
+      await redis.decr(gk);
+      await redis.decr(ik);
+      await redis.hincrby(uk, kind, -1);
+      return denyGlobal(limit, premium);
+    }
     return { ok: true, used, limit, remaining: Math.max(0, limit - used), premium };
   }
 
-  // ローカルでの強制（動作確認用）。Redis分岐と同じ判定・同じ文言を返す。
+  // ローカルでの強制（動作確認用）。Redis分岐と同じ順序・同じ文言を返す。
+  // ローカルは read-modify-write なので、**通ったときだけ**まとめて書けばロールバック不要。
   const db = await readLocal();
-  db.global[m] = (db.global[m] ?? 0) + 1;
-  if (db.global[m] > globalMonthlyCap()) {
-    await writeLocal(db);
-    return denyGlobal(limit, premium);
-  }
-  const ikey = `${ipk}:${d}`;
-  db.ip[ikey] = (db.ip[ikey] ?? 0) + 1;
-  if (db.ip[ikey] > ipDailyCap()) {
-    await writeLocal(db);
-    return denyIp(limit, premium);
-  }
   const ukey = `${id}:${m}`;
   const rec = (db.usage[ukey] ??= {});
   const used = (rec[kind] ?? 0) + 1;
-  if (used > limit) {
-    await writeLocal(db);
-    return denyUser(kind, limit, premium);
-  }
+  if (used > limit) return denyUser(kind, limit, premium);
+
+  const ikey = `${ipk}:${d}`;
+  const ipCount = (db.ip[ikey] ?? 0) + 1;
+  if (ipCount > ipDailyCap()) return denyIp(limit, premium);
+
+  const globalCount = (db.global[m] ?? 0) + 1;
+  if (globalCount > globalMonthlyCap()) return denyGlobal(limit, premium);
+
   rec[kind] = used;
+  db.ip[ikey] = ipCount;
+  db.global[m] = globalCount;
   await writeLocal(db);
   return { ok: true, used, limit, remaining: Math.max(0, limit - used), premium };
 }
@@ -312,9 +337,13 @@ export async function guardAi(
  *
  * IPごとに15分あたり `limit` 回まで。超えたら false。
  * 数えられない（Redis障害等）ときは通す＝ログインできなくなる方が困るため。
+ *
+ * ⚠️ **課金枠のスイッチ（quotaEnforced）に相乗りしてはいけない**（2026-08-01 監査 H-1）。
+ *    quotaEnforced() は `ANTHROPIC_API_KEY` の有無で決まる＝AI原価の話であって認証の話ではない。
+ *    そこにぶら下げていたせいで、キー未設定の環境では総当たり制限が**丸ごと無効**だった。
+ *    認証の防御は原価と無関係に **常時有効**にする。
  */
 export async function checkLoginAttempt(request: Request, limit = 10): Promise<boolean> {
-  if (!quotaEnforced()) return true;
   const ipk = hashIp(clientIp(request));
   // 15分の窓。エポックを900秒で割って窓IDにする（スライドではないが十分）
   const win = Math.floor(Date.now() / (15 * 60 * 1000));
@@ -345,14 +374,20 @@ export async function checkIpOnly(request: Request): Promise<boolean> {
       const k = `cooksync:ipday:${ipk}:${d}`;
       const n = await redis.incr(k);
       if (n === 1) await redis.expire(k, 2 * 24 * 3600);
-      return n <= ipDailyCap();
+      // 拒否した分は戻す（consume と同じ方針。使わせなかった呼び出しは数えない）
+      if (n > ipDailyCap()) {
+        await redis.decr(k);
+        return false;
+      }
+      return true;
     }
     const db = await readLocal();
     const key = `${ipk}:${d}`;
-    db.ip[key] = (db.ip[key] ?? 0) + 1;
-    const ok = db.ip[key] <= ipDailyCap();
+    const n = (db.ip[key] ?? 0) + 1;
+    if (n > ipDailyCap()) return false; // 増やさずに拒否
+    db.ip[key] = n;
     await writeLocal(db);
-    return ok;
+    return true;
   } catch {
     return true; // 計測できないときは通す（本流を止めない）
   }

@@ -4,9 +4,11 @@ import path from "path";
 import {
   FREE_LIMITS,
   PREMIUM_LIMITS,
+  checkLoginAttempt,
   consume,
   peek,
   quotaResponse,
+  recentUsageMonths,
   refund,
 } from "../quotaServer";
 import { logAiCost } from "../aiCost";
@@ -31,6 +33,7 @@ afterEach(async () => {
   delete process.env.COOKSYNC_ENFORCE_QUOTA;
   delete process.env.COOKSYNC_USD_JPY;
   delete process.env.COOKSYNC_MONTHLY_BUDGET_YEN;
+  delete process.env.COOKSYNC_MONTHLY_AI_CAP;
   await clean();
 });
 
@@ -200,6 +203,85 @@ describe("クライアント表示との文言一致", () => {
     expect(fail.message).toBe(over.message); // クライアントは上書きしない
     expect(fail.quota?.reason).toBe("user");
     expect(fail.quota?.limit).toBe(FREE_LIMITS.scan);
+  });
+});
+
+describe("H-2 拒否したリクエストは全体の枠を食わない", () => {
+  // 枠切れのユーザーが連打するだけで全体カウンタが積み上がり、
+  // 原価が1円も出ていないのに **300回で全ユーザーが月末まで停止**していた。
+  it("枠切れユーザーがいくら連打しても、他の人の分が減らない", async () => {
+    process.env.COOKSYNC_MONTHLY_AI_CAP = String(FREE_LIMITS.research + 2);
+    const r = req("10.3.0.1");
+    // userX が自分の月間枠を使い切る（＝全体カウンタは FREE_LIMITS.research だけ進む）
+    for (let i = 0; i < FREE_LIMITS.research; i++) {
+      expect((await consume("userX", "research", r)).ok).toBe(true);
+    }
+    // 拒否されるだけの連打（原価0）。ここで全体を消費してはいけない
+    for (let i = 0; i < 30; i++) {
+      expect((await consume("userX", "research", r)).reason).toBe("user");
+    }
+    // 全体上限のうち実際に使ったのは FREE_LIMITS.research 回だけ。別のユーザーはまだ通る
+    expect((await consume("userY", "research", req("10.3.0.2"))).ok).toBe(true);
+  });
+
+  it("全体の上限に達したら、そのときのユーザー枠・IPは消費されない（戻す）", async () => {
+    process.env.COOKSYNC_MONTHLY_AI_CAP = "1";
+    const r = req("10.3.0.3");
+    expect((await consume("userZ", "research", r)).ok).toBe(true);
+    const denied = await consume("userZ", "research", r);
+    expect(denied.reason).toBe("global");
+    // 使えなかったのだから、その人の使用回数は増えていない
+    expect((await peek("userZ")).used.research).toBe(1);
+  });
+
+  it("IP日次上限で拒否したときもユーザー枠は減らない", async () => {
+    process.env.COOKSYNC_IP_DAILY_CAP = "2";
+    const r = req("10.3.0.4");
+    await consume("ipUser", "scan", r);
+    await consume("ipUser", "scan", r);
+    expect((await consume("ipUser", "scan", r)).reason).toBe("ip");
+    expect((await peek("ipUser")).used.scan).toBe(2);
+    delete process.env.COOKSYNC_IP_DAILY_CAP;
+  });
+});
+
+describe("H-1 ログイン総当たり制限は課金枠と切り離して常時有効", () => {
+  it("ANTHROPIC_API_KEY も COOKSYNC_ENFORCE_QUOTA も無い環境で効く", async () => {
+    // ← ここが監査で見つかった穴。quotaEnforced() は ANTHROPIC_API_KEY の有無で決まるので、
+    //    キー未設定の環境ではログイン試行の制限が**丸ごと無効**だった。
+    delete process.env.COOKSYNC_ENFORCE_QUOTA;
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const r = req("10.4.0.1");
+      for (let i = 0; i < 10; i++) expect(await checkLoginAttempt(r)).toBe(true);
+      expect(await checkLoginAttempt(r)).toBe(false);
+    } finally {
+      if (savedKey) process.env.ANTHROPIC_API_KEY = savedKey;
+    }
+  });
+
+  it("IPごとに独立している（他人のログインを巻き込まない）", async () => {
+    delete process.env.COOKSYNC_ENFORCE_QUOTA;
+    const a = req("10.4.0.2");
+    for (let i = 0; i < 11; i++) await checkLoginAttempt(a);
+    expect(await checkLoginAttempt(a)).toBe(false);
+    expect(await checkLoginAttempt(req("10.4.0.3"))).toBe(true);
+  });
+});
+
+describe("H-10(b) 利用カウンタの月キー", () => {
+  it("当月と**直前の月**を返す（2ヶ月前を指して消し残さない）", () => {
+    const [cur, prev] = recentUsageMonths();
+    const now = new Date();
+    expect(cur).toBe(now.toISOString().slice(0, 7));
+    const expectedPrev = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15),
+    )
+      .toISOString()
+      .slice(0, 7);
+    expect(prev).toBe(expectedPrev);
+    expect(prev).not.toBe(cur);
   });
 });
 

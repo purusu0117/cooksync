@@ -45,7 +45,10 @@ export async function GET(request: Request) {
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
     const dest = new URL("/mypage", request.url);
     dest.searchParams.set("login", "ok");
-    // クライアント側のデータIDを合わせるため dataId も渡す（HttpOnlyではない別Cookie）
+    // ⚠️ 以前はここで dataId を **HttpOnlyでないCookie** `cooksync_dataid` として配っていた。
+    //    dataId は「どのデータを触れるか」を決める値なので、JSから読める場所に置くのは
+    //    鍵を玄関マットの下に置くのと同じ（XSS・拡張機能・共用端末で拾える）。
+    //    クライアントは代わりに **Cookie必須の /api/auth/session** から受け取る。
     return new Response(null, {
       status: 302,
       headers: [
@@ -56,11 +59,8 @@ export async function GET(request: Request) {
           "Set-Cookie",
           `${OAUTH_STATE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
         ],
-        // JSから読める形で dataId を1回だけ渡す（読んだら消す運用）
-        [
-          "Set-Cookie",
-          `cooksync_dataid=${encodeURIComponent(user.dataId)}; Path=/; SameSite=Lax; Max-Age=120${secure}`,
-        ],
+        // 過去に配ってしまった dataId Cookie を確実に消す（古い端末に残っている）
+        ["Set-Cookie", `cooksync_dataid=; Path=/; SameSite=Lax; Max-Age=0${secure}`],
       ],
     });
   } catch {
