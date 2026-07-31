@@ -40,6 +40,43 @@ export function currentMonth(): string {
   return todayISO().slice(0, 7); // "2026-06"
 }
 
+/** サーバーが429で返す枠情報（quotaServer.quotaResponse の `quota`）。 */
+export interface ServerQuota {
+  kind?: AiKind;
+  /** 拒否理由。"user" だけが「その人の枠を使い切った」。他は本人の枠は減っていない */
+  reason?: "user" | "ip" | "global" | "budget";
+  used?: number;
+  limit?: number;
+  premium?: boolean;
+}
+
+/**
+ * 枠切れの文言。**quotaServer.ts の denyUser と同じ言い回しにすること**。
+ * クライアントの事前チェックとサーバーの429で文言が違うと、
+ * 同じ「枠切れ」なのに押すタイミングで説明が変わり、ユーザーはどちらが本当か分からなくなる。
+ */
+export function quotaMessage(kind: AiKind, limit: number, premium: boolean): string {
+  return premium
+    ? `今月の${AI_LABEL[kind]}が上限（${limit}回）に達しました。来月またご利用ください。`
+    : `今月の無料枠（${AI_LABEL[kind]} ${limit}回）を使い切りました。`;
+}
+
+/**
+ * APIの失敗レスポンスから、画面に出す文言と枠情報を取り出す。
+ *
+ * 429（枠切れ）は**サーバーの文言をそのまま出す**。
+ * 理由がIP日次なのか全体なのか金額なのかはサーバーしか知らず、
+ * こちらで「無料枠を使い切りました」と書くと嘘になることがあるため。
+ */
+export function readApiError(
+  data: unknown,
+  fallback: string,
+): { message: string; quota?: ServerQuota } {
+  const d = (data ?? {}) as { error?: unknown; quota?: ServerQuota };
+  const message = typeof d.error === "string" && d.error.trim() ? d.error : fallback;
+  return { message, quota: d.quota };
+}
+
 export function useUsage() {
   const [records, setRecords] = usePersistentList(usageStore);
   const [accounts] = usePersistentList(accountStore);
@@ -66,15 +103,54 @@ export function useUsage() {
   function canUse(kind: AiKind): boolean {
     return (rec[kind] ?? 0) < limits[kind];
   }
-  function recordUse(kind: AiKind): void {
+  // 今月のレコードを1つだけ書き換える共通処理（無ければ作る）
+  function update(kind: AiKind, next: (n: number) => number): void {
     setRecords((prev) => {
       const others = prev.filter((r) => r.month !== month);
       const cur =
         prev.find((r) => r.month === month) ??
         ({ month, research: 0, scan: 0 } as UsageRecord);
-      return [...others, { ...cur, [kind]: (cur[kind] ?? 0) + 1 }];
+      return [...others, { ...cur, [kind]: Math.max(0, next(cur[kind] ?? 0)) }];
     });
   }
 
-  return { premium, used, limitOf, remaining, canUse, recordUse };
+  function recordUse(kind: AiKind): void {
+    update(kind, (n) => n + 1);
+  }
+
+  /** 先に数えた1回を取り消す。サーバーもAI失敗時は refund するので、それに合わせる。 */
+  function undoUse(kind: AiKind): void {
+    update(kind, (n) => n - 1);
+  }
+
+  /** 事前チェックで弾くときの文言。サーバーの429と同じ言い回しを使う。 */
+  function limitMessage(kind: AiKind): string {
+    return quotaMessage(kind, limits[kind], premium);
+  }
+
+  /**
+   * サーバーの応答に合わせて表示カウンタを直す。**判定はあくまでサーバー**で、
+   * ここは「メーターの見た目がサーバーと食い違わないようにする」だけ。
+   *   枠切れ(reason:"user") … 本当に使い切っているのでメーターも満杯にする
+   *   それ以外               … 本人の枠は減っていないので、先に数えた1回を戻す
+   */
+  function syncFromServer(kind: AiKind, quota?: ServerQuota): void {
+    if (quota?.reason === "user") {
+      update(kind, () => quota.limit ?? limits[kind]);
+      return;
+    }
+    undoUse(kind);
+  }
+
+  return {
+    premium,
+    used,
+    limitOf,
+    remaining,
+    canUse,
+    recordUse,
+    undoUse,
+    limitMessage,
+    syncFromServer,
+  };
 }

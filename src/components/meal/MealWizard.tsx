@@ -57,7 +57,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
-import { useUsage } from "@/lib/usage";
+import { readApiError, useUsage } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 import DishIcon from "@/components/DishIcon";
@@ -346,10 +346,10 @@ export default function MealWizard() {
 
   async function aiSearch() {
     if (aiLoading) return;
+    // 事前チェックは「押す前に気づける」ための表示用。文言はサーバーの429と同じものを使う
+    // （同じ枠切れなのに説明が変わると、どちらが本当か分からなくなるため）。
     if (!usage.canUse("research")) {
-      setAiError(
-        `今月のAIレシピ探索の枠（${usage.limitOf("research")}回）を使い切りました。来月1日にリセットされます。`,
-      );
+      setAiError(usage.limitMessage("research"));
       return;
     }
     setAiError("");
@@ -387,9 +387,18 @@ export default function MealWizard() {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.jobId) {
-        throw new Error(data.error || "開始に失敗しました");
+      if (!res.ok) {
+        // 429（枠切れ）は**サーバーの文言をそのまま**出す。
+        // 断られた理由（本人の枠／回線／全体／予算）はサーバーしか知らないので、
+        // こちらで文言を作ると「無料枠を使い切りました」等の嘘になることがある。
+        const fail = readApiError(data, "開始に失敗しました");
+        usage.syncFromServer("research", fail.quota); // 表示カウンタをサーバーの実態に合わせる
+        throw new Error(fail.message);
       }
+      if (!data.jobId) throw new Error("開始に失敗しました");
+      // 共有プールから返ってきた回はAIを呼んでいない＝サーバーは枠を消費していない。
+      // 先に数えた1回を戻さないと、メーターだけが減っていく。
+      if (data.cached) usage.undoUse("research");
       try {
         localStorage.setItem(JOB_KEY, data.jobId);
       } catch {

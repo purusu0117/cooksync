@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Camera, X } from "lucide-react";
 import { guessItem } from "@/lib/guess";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
-import { useUsage } from "@/lib/usage";
+import { readApiError, useUsage } from "@/lib/usage";
 import { getUid } from "@/lib/syncStore";
 
 interface Props {
@@ -22,10 +22,9 @@ export default function PhotoAddForm({ onAddMany }: Props) {
     const file = e.target.files?.[0];
     e.target.value = ""; // 同じ写真を選び直せるように
     if (!file) return;
+    // 事前チェックは表示用。文言はサーバーの429と揃える（説明がブレないように）。
     if (!usage.canUse("scan")) {
-      setError(
-        `今月の写真で在庫登録の枠（${usage.limitOf("scan")}回）を使い切りました。来月1日にリセットされます。`,
-      );
+      setError(usage.limitMessage("scan"));
       return;
     }
     usage.recordUse("scan");
@@ -42,8 +41,18 @@ export default function PhotoAddForm({ onAddMany }: Props) {
         body: fd,
       });
       const data = await res.json();
-      if (!res.ok || !Array.isArray(data.items) || data.items.length === 0) {
-        throw new Error(data.error || "食材を認識できませんでした。明るく撮り直すか、手入力をお試しください。");
+      if (!res.ok) {
+        // 429（枠切れ）は**サーバーの文言をそのまま**出す。断られた理由（本人の枠／回線／
+        // 全体／予算）はサーバーしか知らないので、こちらで書き換えると嘘になる。
+        const fail = readApiError(data, "認識に失敗しました");
+        usage.syncFromServer("scan", fail.quota); // 表示カウンタをサーバーの実態に合わせる
+        throw new Error(fail.message);
+      }
+      if (!Array.isArray(data.items) || data.items.length === 0) {
+        // 200だが空＝AIは呼ばれている（サーバーの枠も減っている）ので戻さない
+        throw new Error(
+          "食材を認識できませんでした。明るく撮り直すか、手入力をお試しください。",
+        );
       }
       setItems(
         (data.items as string[]).map((n) => ({ name: n, checked: true })),

@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "fs";
 import path from "path";
-import { FREE_LIMITS, consume, peek, refund } from "../quotaServer";
+import {
+  FREE_LIMITS,
+  PREMIUM_LIMITS,
+  consume,
+  peek,
+  quotaResponse,
+  refund,
+} from "../quotaServer";
 import { logAiCost } from "../aiCost";
+import { quotaMessage, readApiError } from "../usage";
 
 // 枠はローカルではデフォルト無効（大翔のローカルは原価0のため）。
 // 検証のあいだだけ強制する。
@@ -152,6 +160,46 @@ describe("refund", () => {
     await refund("userG", "research", r);
     await refund("userG", "research", r);
     expect((await peek("userG")).used.research).toBe(0);
+  });
+});
+
+describe("クライアント表示との文言一致", () => {
+  // 事前チェック(usage.ts)で弾いたときと、サーバーが429を返したときで文言が違うと、
+  // 同じ枠切れなのに押すタイミングで説明が変わってしまう。両者を突き合わせて固定する。
+  it("無料ユーザーの枠切れ文言が usage.quotaMessage と一致する", async () => {
+    const r = req("10.2.0.1");
+    for (let i = 0; i < FREE_LIMITS.research; i++) await consume("msgFree", "research", r);
+    const over = await consume("msgFree", "research", r);
+    expect(over.ok).toBe(false);
+    expect(over.message).toBe(quotaMessage("research", FREE_LIMITS.research, false));
+  });
+
+  it("プレミアムの上限到達の文言も usage.quotaMessage と一致する", async () => {
+    // プレミアムはローカルではファイルの premium リストで表現される
+    await fs.mkdir(path.dirname(FILE), { recursive: true });
+    await fs.writeFile(
+      FILE,
+      JSON.stringify({ usage: {}, ip: {}, global: {}, premium: ["msgPaid"] }),
+      "utf8",
+    );
+    const r = req("10.2.0.2");
+    for (let i = 0; i < PREMIUM_LIMITS.import; i++) await consume("msgPaid", "import", r);
+    const over = await consume("msgPaid", "import", r);
+    expect(over.ok).toBe(false);
+    expect(over.premium).toBe(true);
+    expect(over.message).toBe(quotaMessage("import", PREMIUM_LIMITS.import, true));
+  });
+
+  it("429のボディから readApiError がサーバーの文言と枠情報を取り出せる", async () => {
+    const r = req("10.2.0.3");
+    for (let i = 0; i < FREE_LIMITS.scan; i++) await consume("msgRead", "scan", r);
+    const over = await consume("msgRead", "scan", r);
+    const body = await quotaResponse(over, "scan").json();
+
+    const fail = readApiError(body, "認識に失敗しました");
+    expect(fail.message).toBe(over.message); // クライアントは上書きしない
+    expect(fail.quota?.reason).toBe("user");
+    expect(fail.quota?.limit).toBe(FREE_LIMITS.scan);
   });
 });
 

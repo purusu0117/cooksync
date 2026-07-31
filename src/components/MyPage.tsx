@@ -23,6 +23,30 @@ import AppIcon from "./AppIcon";
 const fieldClass =
   "w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
 
+/** Googleの公式4色マーク（lucideには無いのでinline SVG） */
+function GoogleMark() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M45.1 24.5c0-1.6-.1-2.7-.4-3.9H24v7.1h12.1c-.2 1.8-1.6 4.5-4.5 6.3l6.9 5.4c4.1-3.8 6.6-9.4 6.6-14.9z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M11.5 28.4c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 9.9l7.1-5.5z"
+      />
+      <path
+        fill="#EA4335"
+        d="M24 10.3c4.1 0 6.9 1.8 8.5 3.3l6.1-6C34.9 4.1 29.9 2 24 2 15.4 2 8.1 6.9 4.4 14.1l7.1 5.5c1.8-5.3 6.7-9.3 12.5-9.3z"
+      />
+    </svg>
+  );
+}
+
 export default function MyPage() {
   const router = useRouter();
   const [accs, setAccs] = usePersistentList(accountStore);
@@ -41,6 +65,7 @@ export default function MyPage() {
   const [busy, setBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [session, setSession] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   useEffect(() => {
     // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
@@ -52,6 +77,53 @@ export default function MyPage() {
       /* noop */
     }
     /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  // Googleログインの戻り（/mypage?login=ok）と、この環境でGoogleが使えるかの確認。
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        const s = (await res.json()) as {
+          loggedIn?: boolean;
+          dataId?: string | null;
+          googleEnabled?: boolean;
+        };
+        if (!alive) return;
+        setGoogleEnabled(!!s.googleEnabled);
+        // Googleログイン直後：サーバーが決めた dataId に切り替えて再読込する。
+        // ここを合わせないと、その人のデータではなく端末のUUID側を見てしまう。
+        if (s.loggedIn && s.dataId) {
+          const current = window.localStorage.getItem("cooksync:uid");
+          if (current !== s.dataId) {
+            setUid(s.dataId);
+            window.localStorage.setItem("cooksync:session", "1");
+            window.location.reload();
+            return;
+          }
+          window.localStorage.setItem("cooksync:session", "1");
+          setSession(true);
+        }
+      } catch {
+        /* オフライン等：従来のローカル判定のまま動かす */
+      }
+    })();
+    // 同意画面でキャンセルした等のエラーを画面に出す（URLという外部状態の取り込み）。
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const p = new URLSearchParams(window.location.search);
+    const err = p.get("login_error");
+    if (err) {
+      setError(
+        err === "cancelled"
+          ? "Googleログインをキャンセルしました。"
+          : "Googleログインに失敗しました。時間をおいてお試しください。",
+      );
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function handleRegister() {
@@ -144,6 +216,8 @@ export default function MyPage() {
     } catch {
       /* noop */
     }
+    // サーバー側のセッションCookieも破棄する（消さないとAIの枠は前の人のままになる）
+    void fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
     setSession(false);
     if (account) setAccs([{ ...account, loggedIn: false }]);
   }
@@ -183,6 +257,24 @@ export default function MyPage() {
           />
           <p className="mt-1 text-sm text-ink-soft">{APP_TAGLINE}</p>
         </div>
+
+        {/* Googleログイン。未設定の環境ではボタン自体を出さない（押すと501になるだけなので） */}
+        {googleEnabled && (
+          <>
+            <a
+              href="/api/auth/google/start"
+              className="mb-3 flex touch-manipulation items-center justify-center gap-2.5 rounded-xl border border-line bg-surface py-3.5 text-sm font-semibold text-ink shadow-sm transition hover:border-brand/40 active:scale-[0.99]"
+            >
+              <GoogleMark />
+              Googleでログイン
+            </a>
+            <div className="mb-3 flex items-center gap-3">
+              <span className="h-px flex-1 bg-line" />
+              <span className="text-[11px] text-ink-soft">または</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          </>
+        )}
 
         <div className="mb-4 grid grid-cols-2 rounded-full border border-line bg-surface p-0.5 text-sm">
           <button

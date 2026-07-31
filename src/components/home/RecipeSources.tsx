@@ -15,10 +15,12 @@ import ImportedRecipePreview, {
   type ImportResult,
 } from "@/components/recipes/ImportedRecipePreview";
 import { getUid } from "@/lib/syncStore";
+import { readApiError, useUsage } from "@/lib/usage";
 
 type Mode = "video" | "photo" | null;
 
 export default function RecipeSources() {
+  const usage = useUsage();
   const [mode, setMode] = useState<Mode>(null);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -95,6 +97,12 @@ export default function RecipeSources() {
     e.target.value = ""; // 同じ写真を選び直せるように
     if (files.length === 0) return;
     reset();
+    // 事前チェックは表示用（押す前に気づけるように）。文言はサーバーの429と揃える。
+    if (!usage.canUse("import")) {
+      setError(usage.limitMessage("import"));
+      return;
+    }
+    usage.recordUse("import");
     setLoading(true);
     setStep(
       files.length > 1
@@ -111,9 +119,15 @@ export default function RecipeSources() {
         body: fd,
       });
       const data = await res.json();
-      if (!res.ok || !data.recipe) {
-        throw new Error(data.error || "レシピを読み取れませんでした");
+      if (!res.ok) {
+        // 429（枠切れ）は**サーバーの文言をそのまま**出す。断られた理由（本人の枠／回線／
+        // 全体／予算）はサーバーしか知らないので、こちらで書き換えると嘘になる。
+        // 読み取れなかった422のときはサーバーが枠を戻すので、こちらの表示も戻す。
+        const fail = readApiError(data, "レシピを読み取れませんでした");
+        usage.syncFromServer("import", fail.quota);
+        throw new Error(fail.message);
       }
+      if (!data.recipe) throw new Error("レシピを読み取れませんでした");
       setResult({
         recipe: data.recipe,
         missing: data.missing,
