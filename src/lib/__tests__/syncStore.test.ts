@@ -18,6 +18,28 @@ let server: Server;
 let store: Map<string, string>;
 let netOk: boolean;
 let putCount: number;
+let getCount: number;
+/** uidごとの版番号。本番の /api/store と同じ楽観ロックを偽サーバーでも再現する。 */
+let revs: Map<string, number>;
+/**
+ * 「GETを返した直後に、別の端末が書いた」を差し込むための1回きりのフック。
+ * GET→PUT の隙間（数百ms）を、テストから確実に再現するために使う。
+ */
+let afterGet: (() => void) | null;
+
+/** 別端末からの書き込み（版番号も1つ進む＝こちらのPUTは版ずれになる） */
+function otherDeviceWrite(uid: string, key: string, value: unknown[]): void {
+  const cur = server.get(uid) ?? {};
+  cur[key] = value;
+  server.set(uid, cur);
+  revs.set(uid, (revs.get(uid) ?? 0) + 1);
+}
+
+function headersWith(rev: number) {
+  return {
+    get: (k: string) => (k.toLowerCase() === "x-cooksync-rev" ? String(rev) : null),
+  };
+}
 
 function makeLocalStorage(map: Map<string, string>) {
   return {
@@ -43,20 +65,48 @@ function installEnv() {
     async (url: string, init?: { method?: string; body?: string }) => {
       if (!netOk) throw new TypeError("Failed to fetch");
       if (!init || (init.method ?? "GET") === "GET") {
+        getCount += 1;
         const u = new URL(url, "http://local").searchParams.get("u") ?? "anon";
         const snapshot = { ...(server.get(u) ?? {}) };
-        return { ok: true, status: 200, json: async () => snapshot };
+        const res = {
+          ok: true,
+          status: 200,
+          headers: headersWith(revs.get(u) ?? 0),
+          json: async () => snapshot,
+        };
+        // ★ここが「GETを返してからPUTが届くまでの隙間」
+        const hook = afterGet;
+        afterGet = null;
+        hook?.();
+        return res;
       }
       putCount += 1;
       const body = JSON.parse(init.body!) as {
         key: string;
         value: unknown[];
         u: string;
+        rev?: number;
       };
       const cur = server.get(body.u) ?? {};
+      const rev = revs.get(body.u) ?? 0;
+      // 版番号つきで来たのに合わない＝別端末が先に書いた。**何も書かずに**409。
+      if (typeof body.rev === "number" && body.rev !== rev) {
+        return {
+          ok: false,
+          status: 409,
+          headers: headersWith(rev),
+          json: async () => ({ code: "revision_conflict", rev }),
+        };
+      }
       cur[body.key] = body.value;
       server.set(body.u, cur);
-      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      revs.set(body.u, rev + 1);
+      return {
+        ok: true,
+        status: 200,
+        headers: headersWith(rev + 1),
+        json: async () => ({ ok: true, rev: rev + 1 }),
+      };
     },
   );
 }
@@ -99,8 +149,11 @@ const item = (id: string, extra: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   server = new Map();
   store = new Map();
+  revs = new Map();
+  afterGet = null;
   netOk = true;
   putCount = 0;
+  getCount = 0;
   installEnv();
 });
 
@@ -449,5 +502,199 @@ describe("同期の状態表示", () => {
     server.set("u1", { [FRIDGE]: [item("a")] });
     await openPage();
     expect(putCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 監査2周目（2026-08-01）で残っていたデータ消失経路
+// ---------------------------------------------------------------------------
+
+describe("中-11 圏外でログアウトしたあとに貯めたデータが、登録で消えない", () => {
+  /** MyPage.logout と同じ手順（端末のキャッシュを消して uid を振り直す） */
+  function logout(mod: Sync) {
+    for (const k of [...store.keys()]) {
+      if (k.startsWith("cooksync:") || k.startsWith("fridge-app:")) store.delete(k);
+    }
+    mod.setUid("anon-after-logout");
+  }
+
+  it("ログアウト直後に端末へ焼き付く印が「匿名」になっている", async () => {
+    store.set("cooksync:uid", "acct-A");
+    store.set("cooksync:session", "1");
+    const mod = await openPage();
+    mod.setServerList(FRIDGE, () => [item("A-data")]);
+    await settle();
+
+    netOk = false; // ★圏外。同期は一度も成功しない
+    logout(mod);
+    await settle();
+
+    // 旧実装はここが false のまま焼き付き、次の登録で全部消していた
+    expect(JSON.parse(store.get("cooksync:sync-meta")!).anon).toBe(true);
+    expect(mod.__debugState().anon).toBe(true);
+  });
+
+  it("圏外ログアウト→リロード→匿名で3件追加→登録 で、3件とも残る（実測した消失）", async () => {
+    store.set("cooksync:uid", "acct-A");
+    store.set("cooksync:session", "1");
+    const mod = await openPage();
+    mod.setServerList(FRIDGE, () => [item("A-data")]);
+    await settle();
+
+    netOk = false;
+    logout(mod);
+    await settle();
+
+    // 圏外のままリロードして、匿名で3件貯める
+    const anon = await newModule();
+    anon.setServerList(FRIDGE, () => [item("x"), item("y"), item("z")]);
+    await settle();
+    expect(shown(anon)).toHaveLength(3);
+
+    // 電波が戻って、そのまま新規登録
+    netOk = true;
+    anon.setUid("acct-new");
+    await settle();
+
+    expect(shown(anon)).toHaveLength(3);
+    expect(server.get("acct-new")![FRIDGE]).toHaveLength(3);
+  });
+
+  it("それでも、ログイン済みの人のデータは別人の新規登録へ流れない", async () => {
+    // セッション切れ（sessionだけ消える）＝キャッシュはまだアカウントのもの。
+    // ここで別人が登録しても、前の人のデータは渡らない。
+    store.set("cooksync:uid", "acct-A");
+    store.set("cooksync:session", "1");
+    const mod = await openPage();
+    mod.setServerList(FRIDGE, () => [item("A-secret")]);
+    await settle();
+
+    store.delete("cooksync:session"); // 期限切れ。キャッシュは消えない
+    mod.setUid("acct-B");
+    await settle();
+
+    expect(shown(mod)).toEqual([]);
+    expect(server.get("acct-B")?.[FRIDGE] ?? []).toEqual([]);
+  });
+});
+
+describe("中-14 圏外の「すべてリセット」がリロードで中途半端にならない", () => {
+  it("リロードを跨いでも全消しのまま実行される", async () => {
+    store.set("cooksync:uid", "u1");
+    const mod = await openPage();
+    mod.setServerList(FRIDGE, () => [item("a"), item("b")]);
+    await settle();
+
+    netOk = false;
+    await mod.clearAllServer(); // 送れない
+    await settle();
+    expect(mod.__debugState().forced).toContain(FRIDGE);
+
+    // 圏外のままリロード（旧実装はここで forced を忘れていた）
+    const reopened = await newModule();
+    expect(reopened.__debugState().forced).toContain(FRIDGE);
+
+    // その間に別端末が追加していた
+    otherDeviceWrite("u1", FRIDGE, [item("a"), item("b"), item("from-pc")]);
+    netOk = true;
+    reopened.retryNow();
+    await settle();
+
+    expect(server.get("u1")![FRIDGE]).toEqual([]);
+    expect(shown(reopened)).toEqual([]);
+  });
+
+  it("送れていない全消しは、普通の未送信と区別して警告できる", async () => {
+    store.set("cooksync:uid", "u1");
+    const mod = await openPage();
+    mod.setServerList(FRIDGE, () => [item("a")]);
+    await settle();
+
+    netOk = false;
+    await mod.clearAllServer();
+    await settle();
+    const reopened = await newModule();
+    expect(reopened.__debugState().forced.length).toBeGreaterThan(0);
+  });
+});
+
+describe("中-15 セッション切れのあと、60秒ごとに叩き続けない", () => {
+  it("403のあとはポーリングが1回もリクエストを出さない", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      store.set("cooksync:uid", "u1");
+      const mod = await newModule();
+      mod.__startForTest(); // 画面が表示された＝ポーリング開始
+      mod.retryNow();
+      await vi.advanceTimersByTimeAsync(50);
+
+      (globalThis as Record<string, unknown>).fetch = vi.fn(async () => {
+        getCount += 1;
+        return { ok: false, status: 403, json: async () => ({ error: "forbidden" }) };
+      });
+      mod.setServerList(FRIDGE, () => [item("a")]);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(mod.__debugState().authRequired).toBe(true);
+
+      const before = getCount;
+      await vi.advanceTimersByTimeAsync(5 * 60_000); // 5分放置＝ポーリング5回ぶん
+      expect(getCount).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("GET→PUT の隙間に別端末が書いても踏み潰さない（版番号／CAS）", () => {
+  it("こちらのPUTが、その隙間の追加を消さない", async () => {
+    store.set("cooksync:uid", "u1");
+    server.set("u1", { [FRIDGE]: [item("shared")] });
+    const mod = await openPage();
+
+    // これから送る。その GET を返した直後に、PCが1件足す。
+    afterGet = () =>
+      otherDeviceWrite("u1", FRIDGE, [item("shared"), item("from-pc")]);
+    mod.setServerList(FRIDGE, (p: unknown[]) => [...p, item("from-phone")]);
+    await settle();
+
+    const ids = (server.get("u1")![FRIDGE] as { id: string }[]).map((x) => x.id);
+    expect(ids).toContain("from-pc"); // ★これが消えていたのが残リスクの正体
+    expect(ids).toContain("from-phone");
+    expect(mod.__debugState().dirty).toHaveLength(0);
+  });
+
+  it("409を受けても、手元の未送信は失われず自動でやり直す", async () => {
+    store.set("cooksync:uid", "u1");
+    server.set("u1", { [FRIDGE]: [item("shared")] });
+    const mod = await openPage();
+
+    afterGet = () => otherDeviceWrite("u1", FRIDGE, [item("shared"), item("pc")]);
+    mod.setServerList(FRIDGE, (p: unknown[]) => [...p, item("phone")]);
+    await settle();
+
+    // 「もう一度送ってね」を出さずに完遂している
+    expect(mod.__debugState().offline).toBe(false);
+    expect(shown(mod)).toHaveLength(3);
+  });
+
+  it("版番号を返さないサーバー相手でも今までどおり動く（後方互換）", async () => {
+    store.set("cooksync:uid", "u1");
+    (globalThis as Record<string, unknown>).fetch = vi.fn(
+      async (url: string, init?: { method?: string; body?: string }) => {
+        if (!init || (init.method ?? "GET") === "GET") {
+          return { ok: true, status: 200, json: async () => ({}) }; // headers 無し
+        }
+        const body = JSON.parse(init.body!) as { key: string; value: unknown[]; rev?: number };
+        expect(body.rev).toBeUndefined(); // 版を知らないなら送らない
+        const cur = server.get("u1") ?? {};
+        cur[body.key] = body.value;
+        server.set("u1", cur);
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      },
+    );
+    const mod = await newModule();
+    mod.setServerList(FRIDGE, () => [item("a")]);
+    await settle();
+    expect(server.get("u1")![FRIDGE]).toHaveLength(1);
   });
 });

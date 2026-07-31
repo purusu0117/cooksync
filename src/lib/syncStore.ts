@@ -35,9 +35,11 @@
 //  5. **匿名→アカウントの引き継ぎは明示的に行う**（setUid が印を残し、次の同期で移行）。
 //     ただし引き継ぐのは「匿名のまま貯めたキャッシュ」だけ。ログイン済みの誰かの
 //     データが、別の人の新規アカウントに紛れ込まないようにしてある。
-//
-// サーバー(/api/store)には CAS(比較交換)が無いので、GET→PUT の隙間に別端末が書くと
-// 最後の書き手が勝つ。窓は数百msなので実害はほぼ無いが、原理的な残リスクとして記す。
+//  6. **PUT は版番号つき（compare-and-set）**。GET で受け取った版を添えて送り、
+//     合わなければサーバーが409を返す＝**書かない**。こちらは GET からやり直して
+//     マージし直す。これが無いと「GET→PUTの数百msの隙間に別端末が書いた分」を
+//     こちらのPUTが踏み潰していた（2026-08-01 監査2周目の残リスク）。
+//     版番号を持たない既存データは rev 0 として扱われるので、移行は不要。
 
 import { useCallback, useSyncExternalStore } from "react";
 import {
@@ -172,6 +174,13 @@ export function setUid(id: string): void {
   if (prev === id) return;
   // 引き継いでよいのは「匿名のまま貯めたキャッシュ」だけ。
   // ログイン済みの人のデータが、次に登録した別人のアカウントへ混ざるのを防ぐ。
+  //
+  // ⚠️ `cacheIsAnonymous` は**同期が成功したときにしか更新されない**時期があり、
+  //    圏外でログアウトすると `false` のまま端末に焼き付いた。その状態で匿名のまま
+  //    貯めたデータは、次の登録で allow=false → resetLocalCache() され、
+  //    **無言で全部消えた**（監査 中-11・実測）。
+  //    いまは resetLocalCache() が「キャッシュは空＝匿名」を必ず立て直すので、
+  //    ログアウト（＝uid振り直し＝リセット経路）を通った時点で真になる。
   const allow = cacheIsAnonymous && !isLoggedIn();
   s.setItem(UID_KEY, id);
   identitySwitched = allow;
@@ -191,6 +200,8 @@ interface Meta {
   uid: string;
   anon: boolean;
   dirty: string[];
+  /** マージせず空で上書きする＝「すべてリセット」がまだ送れていないキー（監査 中-14） */
+  forced: string[];
   migrate: boolean;
 }
 
@@ -200,6 +211,7 @@ function persistMeta(): void {
     uid: getUid(),
     anon: cacheIsAnonymous,
     dirty: [...dirty],
+    forced: [...forced],
     migrate: identitySwitched,
   } satisfies Meta);
 }
@@ -218,6 +230,10 @@ function resetLocalCache(): void {
     ls()?.removeItem(BASE_PREFIX + store.key);
   }
   dirty.clear();
+  forced.clear();
+  // ★空にした以上、ここから先に貯まるのは「まだ誰のものでもない匿名のデータ」。
+  //   これを立て忘れていたせいで、圏外ログアウト後に貯めた分が登録時に消えていた（中-11）。
+  cacheIsAnonymous = true;
 }
 
 /**
@@ -236,6 +252,11 @@ function primeFromCache(): void {
     persistMeta();
     return;
   }
+
+  // 「すべてリセット」が圏外で送れないまま落ちた場合、リロードを挟んでも
+  // **同じ結果になる**ようにする。ここを覚えていなかったので、リロードすると
+  // 全消しがただのマージに化けて中途半端な状態になっていた（監査 中-14）。
+  for (const k of meta?.forced ?? []) forced.add(k);
 
   for (const store of ALL_STORES) {
     const cached = store.load();
@@ -336,22 +357,55 @@ class HttpError extends Error {
   }
 }
 
-async function fetchAll(): Promise<Record<string, unknown>> {
+/** 409＝別端末が先に書いた。**やり直せば必ず解決する**ので、他の失敗と区別する。 */
+class ConflictError extends Error {
+  constructor(readonly rev: number) {
+    super("revision conflict");
+  }
+}
+
+const REV_HEADER = "X-CookSync-Rev";
+
+/**
+ * レスポンスから版番号を取り出す。
+ * 版番号を返さないサーバー（デプロイ途中の古い版）とも共存できるよう、
+ * 取れなければ `null`＝「CASしない」に倒す。**動かなくなるより緩く動く**。
+ */
+function revOf(res: unknown): number | null {
+  const h = (res as { headers?: { get?: (k: string) => string | null } }).headers;
+  const raw = typeof h?.get === "function" ? h.get(REV_HEADER) : null;
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function fetchAll(): Promise<{ data: Record<string, unknown>; rev: number | null }> {
   const res = await fetch(`/api/store?u=${encodeURIComponent(getUid())}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new HttpError(res.status, `store GET ${res.status}`);
-  return (await res.json()) as Record<string, unknown>;
+  return { data: (await res.json()) as Record<string, unknown>, rev: revOf(res) };
 }
 
-async function putKey(key: string, value: unknown[]): Promise<void> {
+/**
+ * 1キーを送る。`rev` を添えると、サーバーはその版と一致するときだけ書く。
+ * 一致しなければ 409＝**何も書かれていない**ので、こちらは読み直してやり直す。
+ * 戻り値は書き込み後の版番号（次のPUTで使う）。
+ */
+async function putKey(
+  key: string,
+  value: unknown[],
+  rev: number | null,
+): Promise<number | null> {
   const res = await fetch("/api/store", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, value, u: getUid() }),
+    body: JSON.stringify({ key, value, u: getUid(), ...(rev === null ? {} : { rev }) }),
   });
+  if (res.status === 409) throw new ConflictError(revOf(res) ?? 0);
   // ★旧実装は res.ok を見ていなかったので、4xx/5xx が「成功」として捨てられていた
   if (!res.ok) throw new HttpError(res.status, `store PUT ${res.status}`);
+  return revOf(res);
 }
 
 function markDirty(key: string): void {
@@ -377,8 +431,10 @@ function clearDirty(key: string, confirmed: unknown[]): void {
  *  - それ以外  ：サーバーの内容を取り込む（別端末の変更が反映される）
  * 失敗すると例外を投げ、呼び出し元がバックオフ再送を組む。
  */
-async function syncNow(): Promise<void> {
-  const server = await fetchAll();
+async function syncOnce(): Promise<void> {
+  const { data: server, rev } = await fetchAll();
+  // GET で見た版。PUTごとに1つ進むので、成功のたびに手元でも進める。
+  let knownRev = rev;
   const serverBlank = Object.keys(server).length === 0;
 
   if (serverBlank) {
@@ -414,8 +470,12 @@ async function syncNow(): Promise<void> {
         ? (mem.get(key) ?? [])
         : mergeLists(baseline.get(key) ?? [], mem.get(key) ?? [], sv);
       try {
-        await putKey(key, merged);
+        knownRev = await putKey(key, merged, knownRev);
       } catch (e) {
+        // 別端末が先に書いた＝手元のマージ結果は古い前提で作られている。
+        // ここで他のキーを送り続けると同じ踏み潰しをやるので、**即座に打ち切って**
+        // GET からやり直す。dirty は残したままなので、送り残しは失われない。
+        if (e instanceof ConflictError) throw e;
         failure = failure ?? e;
         continue;
       }
@@ -440,6 +500,25 @@ async function syncNow(): Promise<void> {
   authRequired = false;
   lastError = null;
   notify();
+}
+
+/**
+ * 409（版ずれ）は「別端末が先に書いた」だけなので、**その場で読み直してやり直す**。
+ * ユーザーに再操作させない（[[system-reliability]]）。
+ * 数回で収束しなければ通常の失敗として扱い、バックオフ再送に任せる。
+ */
+const CONFLICT_RETRIES = 3;
+
+async function syncNow(): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      await syncOnce();
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && i < CONFLICT_RETRIES) continue;
+      throw e;
+    }
+  }
 }
 
 // 上限つき指数バックオフ。上限に達しても、復帰イベント（online/表示復帰）で必ず再開する。
@@ -525,6 +604,12 @@ function wireEvents(): void {
   // 両方の端末を開きっぱなしにしている時のための保険（表示中のときだけ）
   pollTimer = setInterval(() => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    // ⚠️ セッション切れ(401/403)のあとも叩き続けていた（監査 中-15）。
+    //    待っても直らない相手に60秒ごとにリクエストを投げ、端末の電池とサーバーの
+    //    枠を捨てるだけ。復帰はログインし直したとき（storage/focus イベント）に任せる。
+    if (authRequired) return;
+    // バックオフ中に割り込むと、指数バックオフが実質60秒の定期再送に化ける。
+    if (retryTimer) return;
     if (!syncing) scheduleSync(0);
   }, 60_000);
   (pollTimer as unknown as { unref?: () => void }).unref?.();
@@ -618,6 +703,7 @@ export async function clearAllServer(): Promise<void> {
     forced.add(store.key);
     applyWrite(store.key, []);
   }
+  persistMeta(); // ★圏外で送れないままリロードされても「全消し」は覚えている（中-14）
   await runSync();
 }
 
@@ -636,6 +722,12 @@ export interface SyncState {
   authRequired: boolean;
   /** まだ送れていない変更の数 */
   pending: number;
+  /**
+   * 「すべてリセット」がまだ送れていない。
+   * これは普通の未送信と意味が違う（マージせず空で上書きする＝**別端末で
+   * その間に追加された分も消える**）ので、送る前に必ず知らせる（監査 中-14）。
+   */
+  pendingReset: boolean;
   error: string | null;
 }
 
@@ -645,17 +737,20 @@ let cachedState: SyncState = {
   offline: false,
   authRequired: false,
   pending: 0,
+  pendingReset: false,
   error: null,
 };
 
 function currentState(): SyncState {
   const hasCache = ALL_STORES.some((s) => (mem.get(s.key) ?? []).length > 0);
+  const pendingReset = forced.size > 0;
   if (
     cachedState.hydrated === hydrated &&
     cachedState.hasCache === hasCache &&
     cachedState.offline === offline &&
     cachedState.authRequired === authRequired &&
     cachedState.pending === dirty.size &&
+    cachedState.pendingReset === pendingReset &&
     cachedState.error === lastError
   ) {
     return cachedState;
@@ -666,6 +761,7 @@ function currentState(): SyncState {
     offline,
     authRequired,
     pending: dirty.size,
+    pendingReset,
     error: lastError,
   };
   return cachedState;
@@ -677,6 +773,7 @@ const SERVER_STATE: SyncState = {
   offline: false,
   authRequired: false,
   pending: 0,
+  pendingReset: false,
   error: null,
 };
 
@@ -696,7 +793,24 @@ export function useSyncState(): SyncState {
 
 /** テスト用：モジュール状態を覗く（本番コードからは使わない） */
 export function __debugState() {
-  return { hydrated, offline, dirty: [...dirty], mem, baseline };
+  return {
+    hydrated,
+    offline,
+    authRequired,
+    anon: cacheIsAnonymous,
+    dirty: [...dirty],
+    forced: [...forced],
+    mem,
+    baseline,
+  };
+}
+
+/**
+ * テスト用：画面が1つでも表示された状態にする（＝復帰イベントと60秒ポーリングを配線する）。
+ * 本番では useServerList / useSyncState の購読時に同じ経路を通る。
+ */
+export function __startForTest(): void {
+  wireEvents();
 }
 
 /** テスト用：この「ページ」を閉じる。再送タイマーを止める（本番コードからは使わない） */

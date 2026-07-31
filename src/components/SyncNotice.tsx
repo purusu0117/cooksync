@@ -8,15 +8,47 @@
 // なので文言は必ず「いま起きていること」＋「勝手に直す」を両方書く。
 // 手動の再試行ボタンは、待ちたくない人のための近道であって、必須の操作ではない。
 
-import { CloudOff, LogIn, RefreshCw } from "lucide-react";
+import { AlertTriangle, CloudOff, LogIn, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { retryNow, useSyncState } from "@/lib/syncStore";
 
 export default function SyncNotice() {
-  const { offline, authRequired, pending, hydrated } = useSyncState();
+  const { offline, authRequired, pending, pendingReset, hydrated } = useSyncState();
 
   // 通信できていて、送り残しも無い＝いつも通り。何も出さない。
   if (!offline && pending === 0) return null;
+
+  // ⚠️ 「すべてリセット」がまだ送れていない状態。普通の未送信と扱いが違う。
+  //    送られた瞬間、**その間に別の端末で追加された分もまとめて消える**。
+  //    黙って実行すると「知らないうちに消えた」になるので、先に必ず出す（監査 中-14）。
+  if (pendingReset) {
+    return (
+      <div
+        role="status"
+        className="mb-4 flex items-start gap-2.5 rounded-2xl border border-red-300 bg-red-50 px-4 py-3"
+      >
+        <AlertTriangle size={16} strokeWidth={2.2} className="mt-0.5 shrink-0 text-red-700" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-red-900">
+            「すべてリセット」がまだ送信されていません
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-red-900/80">
+            接続が戻ると自動で送られ、サーバーのデータが空になります。
+            そのとき、リセット後に<strong className="font-semibold">他の端末で追加した分</strong>
+            も一緒に消えます。残したいものがある端末では、送信される前に控えを取ってください。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={retryNow}
+          className="inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-full px-3 text-xs font-semibold text-red-900 transition hover:bg-red-100 active:scale-95"
+        >
+          <RefreshCw size={13} strokeWidth={2.4} />
+          今すぐ送信
+        </button>
+      </div>
+    );
+  }
   // 起動直後の一瞬（まだ1回目の通信が終わっていないだけ）で騒がない
   if (!hydrated && !offline) return null;
 
