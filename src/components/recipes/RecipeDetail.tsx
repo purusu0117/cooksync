@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ArrowUp,
   Check,
@@ -16,7 +16,7 @@ import {
   Soup,
   Sparkles,
 } from "lucide-react";
-import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
+import { ingredientMatches, type RecipeIngredient, type RecipeStep } from "@/lib/recipe";
 import { scaleMeasures } from "@/lib/recipeScale";
 import { subtractAmount, parseAmount } from "@/lib/portion";
 import { toBuyableFor, convertAmount } from "@/lib/packaging";
@@ -91,11 +91,30 @@ export default function RecipeDetail({ id }: Props) {
     mealId: string;
   } | null>(null);
   const [flashKey, setFlashKey] = useState<string | null>(null);
-  const recipe = recipes.find((r) => r.id === id) ?? null;
-  const isStored = stored.some((r) => r.id === id);
+  /*
+    ============================================================================
+    ★この画面は「1文字打つたびに全部やり直す」構造だった（2026-08-01 の監査で判明）
+    ============================================================================
+    useMemo を import だけして1つも使っておらず、材料の在庫判定・工程の分割・
+    保存方法・タイマー候補が **すべて毎レンダーで再計算** されていた。
+    在庫判定 stockOf は「材料15品 × 冷蔵庫100件」の総当たりで、しかも
+    材料表と「足りない材料」の2か所から呼ばれるので二重に走っていた。
+    ここから下の派生値は、元になった配列が変わったときだけ作り直す。
+
+    ⚠️ フックは早期 return（レシピが見つからない／読み込み中）より **前** に置く。
+       あとから足すときも必ずこのブロックに入れること。
+  */
+  const recipe = useMemo(() => recipes.find((r) => r.id === id) ?? null, [recipes, id]);
+  const isStored = useMemo(() => stored.some((r) => r.id === id), [stored, id]);
   // 「作った回数」は🍳作ったボタンで記録した分だけ（献立に入れただけ=made:falseは数えない）
-  const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
-  const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
+  const madeCount = useMemo(
+    () => meals.filter((m) => m.recipeId === id && m.made).length,
+    [meals, id],
+  );
+  const stars = useMemo(
+    () => ratings.find((r) => r.recipeId === id)?.stars ?? 0,
+    [ratings, id],
+  );
 
   // 調理の進捗（1作業ごとのチェック）。端末ローカルに保存し、開き直しても残る。
   const checkedTasks = useCookProgress(id);
@@ -134,41 +153,47 @@ export default function RecipeDetail({ id }: Props) {
   // 在庫を「種類＋数量」で判定。必要量(scaled)と冷蔵庫の同単位合計を比べる。
   //  enough=足りる / short=あるが足りない / none=在庫なし。
   //  単位が違う・読めない時は安全側で enough(あるものとみなす)。
-  function stockOf(name: string, scaledAmount: string): {
-    status: "enough" | "short" | "none";
-    need?: number;
-    have?: number;
-    unit?: string;
-  } {
-    const matches = fridge.filter((f) => ingredientMatches(f.name, name));
-    if (matches.length === 0) return { status: "none" };
-    const need = parseAmount(scaledAmount);
-    if (!need.ok) return { status: "enough" };
-    const nu = need.unit.trim();
-    let have = 0;
-    let comparable = false;
-    for (const f of matches) {
-      // 「1パック」の在庫とレシピの「5個」も、販売単位の辞書で換算して比べる
-      const converted = convertAmount(f.name, f.quantity, nu);
-      if (converted != null) {
-        have += converted;
-        comparable = true;
-        continue;
+  const stockOf = useCallback(
+    (
+      name: string,
+      scaledAmount: string,
+    ): {
+      status: "enough" | "short" | "none";
+      need?: number;
+      have?: number;
+      unit?: string;
+    } => {
+      const matches = fridge.filter((f) => ingredientMatches(f.name, name));
+      if (matches.length === 0) return { status: "none" };
+      const need = parseAmount(scaledAmount);
+      if (!need.ok) return { status: "enough" };
+      const nu = need.unit.trim();
+      let have = 0;
+      let comparable = false;
+      for (const f of matches) {
+        // 「1パック」の在庫とレシピの「5個」も、販売単位の辞書で換算して比べる
+        const converted = convertAmount(f.name, f.quantity, nu);
+        if (converted != null) {
+          have += converted;
+          comparable = true;
+          continue;
+        }
+        const h = parseAmount(f.quantity);
+        if (h.ok && h.unit.trim() === nu) {
+          have += h.num;
+          comparable = true;
+        }
       }
-      const h = parseAmount(f.quantity);
-      if (h.ok && h.unit.trim() === nu) {
-        have += h.num;
-        comparable = true;
-      }
-    }
-    if (!comparable) return { status: "enough" };
-    return {
-      status: have >= need.num ? "enough" : "short",
-      need: need.num,
-      have,
-      unit: nu,
-    };
-  }
+      if (!comparable) return { status: "enough" };
+      return {
+        status: have >= need.num ? "enough" : "short",
+        need: need.num,
+        have,
+        unit: nu,
+      };
+    },
+    [fridge],
+  );
 
   function addMissingToShopping() {
     if (!recipe) return;
@@ -235,43 +260,50 @@ export default function RecipeDetail({ id }: Props) {
     }
   }
 
-  // 「作った」の対象＝レシピに使う食材で、冷蔵庫にあるもの（調味料含む）
-  function matchedFridge(): FridgeItem[] {
+  // 「作った」の対象＝レシピに使う食材で、冷蔵庫にあるもの（調味料含む）。
+  // ★以前は関数で、モーダルを描くたびに2回呼ばれていた（在庫100件×材料15品の総当たりが二重）。
+  const matchedFridge = useMemo<FridgeItem[]>(() => {
     if (!recipe) return [];
     return fridge.filter((f) =>
       recipe.ingredients.some((ing) => ingredientMatches(f.name, ing.name)),
     );
-  }
+  }, [fridge, recipe]);
 
   // その冷蔵庫アイテムが「調味料系」か（一致する材料が全て basicSeasoning）
-  function isSeasoningItem(f: FridgeItem): boolean {
-    if (!recipe) return false;
-    const matched = recipe.ingredients.filter((ing) =>
-      ingredientMatches(f.name, ing.name),
-    );
-    return matched.length > 0 && matched.every((ing) => ing.basicSeasoning);
-  }
+  const isSeasoningItem = useCallback(
+    (f: FridgeItem): boolean => {
+      if (!recipe) return false;
+      const matched = recipe.ingredients.filter((ing) =>
+        ingredientMatches(f.name, ing.name),
+      );
+      return matched.length > 0 && matched.every((ing) => ing.basicSeasoning);
+    },
+    [recipe],
+  );
 
   // レシピが使う基本調味料の名前（常備＝在庫は減らさないが、記録として表示）
-  function usedSeasonings(): string[] {
+  const usedSeasonings = useMemo<string[]>(() => {
     if (!recipe) return [];
     return recipe.ingredients.filter((ing) => ing.basicSeasoning).map((i) => i.name);
-  }
+  }, [recipe]);
 
   // この冷蔵庫アイテムに対してレシピが使う量（選択人数に換算）
-  function recipeAmountFor(f: FridgeItem): string {
-    if (!recipe) return "";
-    const ing = recipe.ingredients.find((i) => ingredientMatches(f.name, i.name));
-    if (!ing) return "";
-    return scaleMeasures(ing.amount, (servings ?? recipe.servings) / (recipe.servings || 1));
-  }
+  const recipeAmountFor = useCallback(
+    (f: FridgeItem): string => {
+      if (!recipe) return "";
+      const ing = recipe.ingredients.find((i) => ingredientMatches(f.name, i.name));
+      if (!ing) return "";
+      return scaleMeasures(ing.amount, (servings ?? recipe.servings) / (recipe.servings || 1));
+    },
+    [recipe, servings],
+  );
 
   function openMade() {
     if (!recipe) return;
     const init: Record<string, UseChoice> = {};
     // 調味料は既定で「残す」（常備を消さない）。それ以外は、レシピ使用分を引いて残量が出せるなら
     // 既定「レシピ分」（使った分だけ引いて残りを在庫に）、出せなければ「使い切った」。
-    matchedFridge().forEach((f) => {
+    matchedFridge.forEach((f) => {
       if (isSeasoningItem(f)) {
         init[f.id] = "keep";
         return;
@@ -356,6 +388,74 @@ export default function RecipeDetail({ id }: Props) {
     });
   }
 
+  // 人数スケール（servings=null のときはレシピ基準のまま）
+  const baseServings = recipe ? recipe.servings || 1 : 1;
+  const viewServings = servings ?? baseServings;
+  const factor = viewServings / baseServings;
+  const viewIngredients = useMemo<RecipeIngredient[]>(() => {
+    if (!recipe) return [];
+    return factor === 1
+      ? recipe.ingredients
+      : recipe.ingredients.map((i) => ({ ...i, amount: scaleMeasures(i.amount, factor) }));
+  }, [recipe, factor]);
+  const viewSteps = useMemo<RecipeStep[]>(() => {
+    if (!recipe) return [];
+    return factor === 1
+      ? recipe.steps
+      : recipe.steps.map((s) => ({ ...s, text: scaleMeasures(s.text, factor) }));
+  }, [recipe, factor]);
+  const viewKcal = recipe?.kcal ? Math.round(recipe.kcal * factor) : recipe?.kcal;
+
+  // 手順を「1作業＝1チェック」に割る（人数換算後のテキストから作るので分量も追従する）
+  const tasks = useMemo(() => toCookTasks(viewSteps), [viewSteps]);
+  const doneCount = tasks.filter((t) => checkedTasks[t.key]).length;
+  const storage = useMemo(() => (recipe ? storageList(recipe) : []), [recipe]);
+  const hasStorage = storage.length > 0;
+
+  // 材料のグループ分け（表示順そのまま）。材料が変わらない限り作り直さない。
+  const groupedIngredients = useMemo(
+    () => groupIngredients(viewIngredients),
+    [viewIngredients],
+  );
+
+  /*
+    材料1品ごとの在庫判定。
+    ★材料表と「足りない材料」の両方が同じ判定を欲しがるので、**1回だけ**作って共有する。
+      キーは材料オブジェクトそのもの（groupIngredients は同じ参照を配り直すだけなので一致する）。
+      基本調味料は常備扱いで判定しない＝null（従来の `i.basicSeasoning ? null : stockOf(...)`
+      と同じ）。
+  */
+  const stockByIngredient = useMemo(() => {
+    const m = new Map<RecipeIngredient, ReturnType<typeof stockOf> | null>();
+    for (const i of viewIngredients) {
+      m.set(i, i.basicSeasoning ? null : stockOf(i.name, i.amount));
+    }
+    return m;
+  }, [viewIngredients, stockOf]);
+
+  // 足りない材料（在庫なし＋量が足りない）。「不足を買い物へ」が拾うのと同じ条件で数え、
+  // 基本調味料は除く。数量は「店で買える単位」に直しておく（そのまま注文先に貼れるように）。
+  const missingIngredients = useMemo(
+    () =>
+      viewIngredients
+        .filter((i) => !i.basicSeasoning)
+        .filter((i) => stockByIngredient.get(i)?.status !== "enough")
+        .map((i) => ({ name: i.name, amount: toBuyableFor(i.name, i.amount).amount })),
+    [viewIngredients, stockByIngredient],
+  );
+
+  const timerSuggestions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          viewSteps.flatMap((s) =>
+            Array.from(s.text.matchAll(/(\d+)\s*分/g)).map((m) => Number(m[1])),
+          ),
+        ),
+      ).filter((n) => n > 0 && n <= 120),
+    [viewSteps],
+  );
+
   // ★「保存レシピをまだ読めていない」と「本当に存在しない」を必ず区別する。
   //   以前は区別が無かったので、**調理中に電波の弱い場所でリロードすると
   //   「レシピが見つかりませんでした」になって手順が丸ごと消えた**。
@@ -380,26 +480,6 @@ export default function RecipeDetail({ id }: Props) {
     );
   }
 
-  // 人数スケール（servings=null のときはレシピ基準のまま）
-  const baseServings = recipe.servings || 1;
-  const viewServings = servings ?? baseServings;
-  const factor = viewServings / baseServings;
-  const viewIngredients =
-    factor === 1
-      ? recipe.ingredients
-      : recipe.ingredients.map((i) => ({ ...i, amount: scaleMeasures(i.amount, factor) }));
-  const viewSteps =
-    factor === 1
-      ? recipe.steps
-      : recipe.steps.map((s) => ({ ...s, text: scaleMeasures(s.text, factor) }));
-  const viewKcal = recipe.kcal ? Math.round(recipe.kcal * factor) : recipe.kcal;
-
-  // 手順を「1作業＝1チェック」に割る（人数換算後のテキストから作るので分量も追従する）
-  const tasks = toCookTasks(viewSteps);
-  const doneCount = tasks.filter((t) => checkedTasks[t.key]).length;
-  const storage = storageList(recipe);
-  const hasStorage = storage.length > 0;
-
   // 「保存方法」から、いま作業中（未チェックの先頭）の場所へ戻る
   function backToCurrentTask() {
     const key = currentTaskKey(tasks, checkedTasks);
@@ -411,21 +491,6 @@ export default function RecipeDetail({ id }: Props) {
     setFlashKey(key);
     window.setTimeout(() => setFlashKey(null), 1600);
   }
-
-  // 足りない材料（在庫なし＋量が足りない）。「不足を買い物へ」が拾うのと同じ条件で数え、
-  // 基本調味料は除く。数量は「店で買える単位」に直しておく（そのまま注文先に貼れるように）。
-  const missingIngredients = viewIngredients
-    .filter((i) => !i.basicSeasoning)
-    .filter((i) => stockOf(i.name, i.amount).status !== "enough")
-    .map((i) => ({ name: i.name, amount: toBuyableFor(i.name, i.amount).amount }));
-
-  const timerSuggestions = Array.from(
-    new Set(
-      viewSteps.flatMap((s) =>
-        Array.from(s.text.matchAll(/(\d+)\s*分/g)).map((m) => Number(m[1])),
-      ),
-    ),
-  ).filter((n) => n > 0 && n <= 120);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-0 pb-8">
@@ -561,12 +626,12 @@ export default function RecipeDetail({ id }: Props) {
               "塩・しょうゆ・スパイス・にんにく・わさび等の調味料は倍にすると濃くなりがち。表示量より控えめ（7〜8割）から入れて、味を見て足すのがおすすめ。"}
           </p>
         )}
-        {groupIngredients(viewIngredients).map(([group, list]) => (
+        {groupedIngredients.map(([group, list]) => (
           <div key={group} className="mb-3 last:mb-0">
             <p className="mb-1 text-xs font-semibold text-ink-soft">{group}</p>
             <ul className="flex flex-col gap-1">
               {list.map((i, idx) => {
-                const st = i.basicSeasoning ? null : stockOf(i.name, i.amount);
+                const st = stockByIngredient.get(i) ?? null;
                 const shortText =
                   st?.status === "short" &&
                   st.need != null &&
@@ -869,13 +934,13 @@ export default function RecipeDetail({ id }: Props) {
               使った冷蔵庫の食材を更新します（あとで「取り消す」で元に戻せます）。「レシピ分」を選ぶと、使った分だけ引いて残りを在庫に残します。
             </p>
 
-            {matchedFridge().length === 0 ? (
+            {matchedFridge.length === 0 ? (
               <p className="mt-4 rounded-xl bg-paper p-3 text-sm text-ink-soft">
                 この料理に使う食材は冷蔵庫に見つかりませんでした。記録だけ行います。
               </p>
             ) : (
               <ul className="mt-4 flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
-                {matchedFridge().map((f) => (
+                {matchedFridge.map((f) => (
                   <li key={f.id} className="rounded-xl bg-paper p-3">
                     <div className="mb-1.5 flex items-baseline gap-2">
                       <span className="font-medium text-ink">{f.name}</span>
@@ -928,14 +993,14 @@ export default function RecipeDetail({ id }: Props) {
               </ul>
             )}
 
-            {usedSeasonings().length > 0 && (
+            {usedSeasonings.length > 0 && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
                 <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800">
                   <Soup size={13} strokeWidth={2} />
                   使った調味料（常備のため在庫はそのまま）
                 </p>
                 <p className="mt-0.5 text-xs text-ink">
-                  {usedSeasonings().join("・")}
+                  {usedSeasonings.join("・")}
                 </p>
               </div>
             )}

@@ -122,8 +122,14 @@ const SYNONYM_REPLACERS: [string, string][] = (() => {
   return list.sort((a, b) => b[0].length - a[0].length);
 })();
 
-/** 材料名をマッチング用に正規化（表記ゆれ・全角空白・括弧書き・かな/漢字を吸収） */
-export function normalizeName(name: string): string {
+/**
+ * 材料名の正規化の実体（キャッシュなし）。
+ *
+ * 正規表現4本＋別表記42件の全走査なので、1回あたりは軽くても呼ばれる回数が桁違いになる。
+ * ベンチ（scripts/bench-core.mjs）が「キャッシュ有無」を同じ入力で比べられるよう公開している。
+ * **本番コードは必ず normalizeName（キャッシュ付き）を使うこと。**
+ */
+export function normalizeNameUncached(name: string): string {
   let s = kataToHira(
     name
       .toLowerCase()
@@ -136,6 +142,34 @@ export function normalizeName(name: string): string {
     if (s.includes(variant)) s = s.split(variant).join(canon);
   }
   return s;
+}
+
+/**
+ * 正規化結果のキャッシュ。
+ *
+ * なぜ安全か：normalizeNameUncached は **純粋関数**（引数だけから戻り値が決まり、
+ * 外部状態を読まない・書かない・日時や乱数に触らない）。同じ入力なら必ず同じ出力なので、
+ * 記憶しておいても挙動は1ミリも変わらない。回帰テストで固定してある
+ * （src/lib/__tests__/recipeNormalizeCache.test.ts）。
+ *
+ * なぜ要るか：材料マッチングは「レシピの材料 × 冷蔵庫の在庫」の総当たりで、
+ * レシピ200件×材料12品×在庫100件＝24万回の ingredientMatches＝**48万回**呼ばれる。
+ * 出てくる名前の種類はせいぜい数百なので、ほぼ全部がキャッシュヒットになる。
+ *
+ * 上限：食材名は有限だが、AI生成レシピが延々と新しい名前を作る可能性はあるので、
+ * 上限に達したら丸ごと捨てる（LRUにするほどの偏りは無い。捨てても正しさは変わらない）。
+ */
+const NORMALIZE_CACHE_LIMIT = 5000;
+const normalizeCache = new Map<string, string>();
+
+/** 材料名をマッチング用に正規化（表記ゆれ・全角空白・括弧書き・かな/漢字を吸収） */
+export function normalizeName(name: string): string {
+  const hit = normalizeCache.get(name);
+  if (hit !== undefined) return hit;
+  const out = normalizeNameUncached(name);
+  if (normalizeCache.size >= NORMALIZE_CACHE_LIMIT) normalizeCache.clear();
+  normalizeCache.set(name, out);
+  return out;
 }
 
 // 料理名の飾り（同じ料理を別名に見せてしまう語）。比較前に落とす。

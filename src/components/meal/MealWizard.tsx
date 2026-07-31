@@ -43,7 +43,7 @@ import {
   ratingStore,
 } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
-import { rankCandidates } from "@/lib/ranking";
+import { rankCandidates, starsMapOf } from "@/lib/ranking";
 import { toBuyableFor } from "@/lib/packaging";
 import { matchesQuery } from "@/lib/recipeFilter";
 import {
@@ -55,9 +55,10 @@ import {
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
-import { getUid } from "@/lib/syncStore";
+import { getUid, useSyncState } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
 import { readApiError, useUsage } from "@/lib/usage";
+import EmptyState, { EMPTY_STATES } from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 import DishIcon from "@/components/DishIcon";
@@ -117,11 +118,25 @@ export default function MealWizard() {
   const [ratings] = usePersistentList(ratingStore);
   const usage = useUsage();
   const guide = useGuide();
+  const sync = useSyncState();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
-  // 買い物方針：stock=冷蔵庫の在庫だけで作る / buy=買い物OK（在庫に縛られない）
-  const [shopMode, setShopMode] = useState<"stock" | "buy">("stock");
+  /*
+   * 買い物方針：stock=冷蔵庫の在庫だけで作る / buy=買い物OK（在庫に縛られない）
+   *
+   * ★ 在庫ゼロなら "buy" に倒す（2026-08-01）。
+   *   既定の "stock" のまま在庫0件で進むと、**在庫縛りなのに在庫が無い**提案になり、
+   *   初見の人は手応えのない結果に着地して離脱する。初回の到達点は
+   *   「最初の献立が出た」なので、在庫が無いなら買い物前提に倒しておく。
+   *
+   *   本人が選んだ／スナップショットから復元した場合は、その選択が必ず優先される
+   *   （null＝まだ誰も選んでいない、なので導出でしか埋まらない）。
+   *   ※ effect で setState すると cascading render になるので、導出で持つ。
+   */
+  const [shopModeChoice, setShopMode] = useState<"stock" | "buy" | null>(null);
+  const shopMode: "stock" | "buy" =
+    shopModeChoice ?? (sync.hydrated && fridge.length === 0 ? "buy" : "stock");
   const [slots, setSlots] = useState<{ date: string; slot: MealSlot }[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [slotIndex, setSlotIndex] = useState(0);
@@ -145,9 +160,11 @@ export default function MealWizard() {
     [fridge],
   );
 
-  // 登録済みの星評価（未評価は0）
-  const starsOf = (rid: string) =>
-    ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
+  // 登録済みの星評価（未評価は0）。
+  // ★候補ランキングは全レシピぶんこれを引くので、毎回 find() で全走査させない。
+  //   同じ recipeId が複数あったときは、従来の find() と同じく**先勝ち**。
+  const starsMap = useMemo(() => starsMapOf(ratings), [ratings]);
+  const starsOf = (rid: string) => starsMap.get(rid) ?? 0;
 
   // 現在のスロットのランキング（既に選んだレシピは除外）
   const ranked = useMemo(() => {
@@ -161,8 +178,7 @@ export default function MealWizard() {
         recipeName: p.recipe.name,
       })),
     ];
-    const ratingOf = (rid: string) =>
-      ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
+    const ratingOf = (rid: string) => starsMap.get(rid) ?? 0;
     return rankCandidates(
       recipes,
       fridge,
@@ -175,7 +191,7 @@ export default function MealWizard() {
       .filter((r) => r.score > -500)
       // 「気分」の自由入力でも絞る（肉系/魚/さっぱり等のざっくりした言葉に対応）
       .filter((r) => matchesQuery(r.recipe, wish));
-  }, [recipes, fridge, recent, picks, filters, ratings, wish]);
+  }, [recipes, fridge, recent, picks, filters, starsMap, wish]);
 
   function toggleFilter<K extends keyof RecipeTags>(key: K, val: RecipeTags[K]) {
     setFilters((f) => ({ ...f, [key]: f[key] === val ? undefined : val }));
@@ -684,6 +700,13 @@ export default function MealWizard() {
       {/* Step 1: タイミング */}
       {phase === "timing" && (
         <section className="animate-pop-in">
+          {/*
+            在庫ゼロで来た人を行き止まりにしない。
+            「食材を登録してください」で止めるのではなく、買い物前提でそのまま進めると伝える。
+          */}
+          {sync.hydrated && fridge.length === 0 && (
+            <EmptyState content={EMPTY_STATES.meal} className="mb-5" />
+          )}
           <h2 className="mb-3 text-sm font-bold text-ink">どの食事を決める？</h2>
           <div className="grid grid-cols-2 gap-3">
             {TIMINGS.map((t) => (
@@ -983,8 +1006,13 @@ export default function MealWizard() {
 
               <p className="mt-3 mb-1 text-xs font-bold text-ink">材料</p>
               <ul className="flex flex-col gap-0.5">
+                {/*
+                  key は「行の中身」から作る。index だと、AIが候補を出し直したときに
+                  React が「同じ行が中身だけ変わった」とみなして差分更新するので、
+                  別のレシピの材料が混ざって見えることがある。
+                */}
                 {aiPreview.ingredients.map((i, idx) => (
-                  <li key={idx} className="flex justify-between text-xs">
+                  <li key={`${i.name}-${i.amount}-${idx}`} className="flex justify-between text-xs">
                     <span className="text-ink">{i.name}</span>
                     <span className="text-ink-soft">{i.amount}</span>
                   </li>
@@ -994,7 +1022,7 @@ export default function MealWizard() {
               <p className="mt-3 mb-1 text-xs font-bold text-ink">作り方</p>
               <ol className="flex flex-col gap-1.5">
                 {aiPreview.steps.map((s, idx) => (
-                  <li key={idx} className="text-xs leading-relaxed text-ink">
+                  <li key={`${s.title}-${idx}`} className="text-xs leading-relaxed text-ink">
                     <span className="font-semibold">{idx + 1}. {s.title}</span>
                     <br />
                     {s.text}
@@ -1213,8 +1241,9 @@ export default function MealWizard() {
               献立が決まりました
             </h2>
             <ul className="flex flex-col gap-1 text-sm text-ink">
-              {picks.map((p, i) => (
-                <li key={i}>
+              {/* 献立は「日付＋昼夜」で1枠に1つ。index より枠そのものを key にする方が正確 */}
+              {picks.map((p) => (
+                <li key={`${p.date}-${p.slot}`}>
                   <span className="font-semibold">
                     {p.date === todayISO() ? "今日" : "翌日"}の{p.slot}
                   </span>
@@ -1275,9 +1304,9 @@ export default function MealWizard() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            {picks.map((p, i) => (
+            {picks.map((p) => (
               <a
-                key={i}
+                key={`${p.date}-${p.slot}`}
                 href={`/recipes/${p.recipe.id}`}
                 className="rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-brand-dark ring-1 ring-line transition hover:ring-brand"
               >

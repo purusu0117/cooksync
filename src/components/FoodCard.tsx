@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Apple, Check, Pencil, Scissors } from "lucide-react";
 import { CATEGORY_ICON } from "./categoryIcon";
 import {
@@ -28,9 +29,13 @@ function halveQuantity(q: string): string {
   return q ? `${q}（半分）` : "半分";
 }
 
-export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
-  const left = daysUntil(item.expiresOn);
-  const freshness = freshnessOf(item.expiresOn);
+function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
+  // ★「今日」は1枚につき1回だけ求める。
+  //   daysUntil / freshnessOf は既定引数で todayISO()＝new Date() を各々呼ぶので、
+  //   何も渡さないと1枚あたり2回、100件で200回 Date を作ることになる。
+  const today = todayISO();
+  const left = daysUntil(item.expiresOn, today);
+  const freshness = freshnessOf(item.expiresOn, today);
   const ui = FRESHNESS_UI[freshness];
 
   function handleCut() {
@@ -109,3 +114,22 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
     </li>
   );
 }
+
+/**
+ * 冷蔵庫カードは1画面に100枚並ぶ。1枚触っただけで100枚とも作り直すのは無駄なので memo する。
+ *
+ * ★比較関数で **item だけ** を見て、3つのハンドラの同一性は無視している。理由：
+ *   親（FridgeApp）の deleteItem / updateItem は毎レンダー作り直される普通の関数宣言で、
+ *   既定の浅い比較だと毎回「変わった」と判定されて memo が1回も効かない。
+ *   一方この3つは中身が
+ *       setItems(prev => …)  ／  setEditing
+ *   だけで、**レンダーごとの値を一切捕まえていない**（stale closure が原理的に起きない）。
+ *   つまり古い関数を握り続けても結果は同じなので、無視して安全。
+ *   setItems 自体は useServerList の useCallback([key]) で同一性が固定されている。
+ *
+ * ⚠️ FridgeApp 側でハンドラが props や state を参照するようになったら、この比較関数は
+ *    古い値を掴んだままになる。**その時は比較関数を消して（既定の浅い比較に戻して）、
+ *    代わりに FridgeApp 側で useCallback すること。** 回帰テストで意図を固定してある
+ *    （src/components/__tests__/foodCardMemo.test.tsx）。
+ */
+export default memo(FoodCard, (prev, next) => prev.item === next.item);

@@ -7,7 +7,7 @@
 //
 // 絞り込みは “よく使う3つ＋詳細は折りたたみ” の二段構え（UIを散らかさないため）。
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -22,6 +22,7 @@ import {
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { fridgeStore, mealStore, ratingStore } from "@/lib/storage";
 import { bucketOf } from "@/lib/food";
+import { madeCountMapOf, starsMapOf } from "@/lib/ranking";
 import {
   ingredientMatches,
   type Cuisine,
@@ -71,10 +72,21 @@ export default function RecipeList() {
   const [unmadeOnly, setUnmadeOnly] = useState(false); // まだ作ってない
   const [favOnly, setFavOnly] = useState(false); // ★4以上
 
-  const starsOf = (rid: string) =>
-    ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
-  const madeCountOf = (rid: string) =>
-    meals.filter((m) => m.recipeId === rid && m.made).length;
+  /*
+    ★星評価と「作った回数」は Map にしてから引く。
+      以前は recipeId ごとに ratings.find() / meals.filter() で全走査していた。
+      レシピ一覧は1行ずつこれを呼び、さらに並び替えの比較関数からも呼ぶので、
+      献立履歴が1年分（約700件）貯まると 200件 × 走査700 が何重にも走る。
+      作るのは1回、引くのは O(1) にする。
+  */
+  const starsMap = useMemo(() => starsMapOf(ratings), [ratings]);
+  const madeCountMap = useMemo(() => madeCountMapOf(meals), [meals]);
+
+  const starsOf = useCallback((rid: string) => starsMap.get(rid) ?? 0, [starsMap]);
+  const madeCountOf = useCallback(
+    (rid: string) => madeCountMap.get(rid) ?? 0,
+    [madeCountMap],
+  );
 
   const fridgeNames = useMemo(() => fridge.map((f) => f.name), [fridge]);
   // 🔴🟡＝早く使い切りたい食材
@@ -136,7 +148,6 @@ export default function RecipeList() {
       if (favOnly && starsOf(r.id) < 4) return false;
       return matchesQuery(r, query);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recipes,
     query,
@@ -151,8 +162,8 @@ export default function RecipeList() {
     favOnly,
     missingCount,
     expiringNames,
-    meals,
-    ratings,
+    madeCountOf,
+    starsOf,
   ]);
 
   const sorted = useMemo(() => {
@@ -161,8 +172,7 @@ export default function RecipeList() {
     if (sort === "made") list.sort((a, b) => madeCountOf(b.id) - madeCountOf(a.id));
     if (sort === "new") list.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sort, ratings, meals]);
+  }, [filtered, sort, starsOf, madeCountOf]);
 
   const chip = (active: boolean) =>
     `rounded-full border px-3 py-1 text-xs font-medium transition ${
@@ -401,7 +411,12 @@ function FilterRow({
   );
 }
 
-function RecipeRow({
+/*
+  1行ぶんの表示。props は「レシピ本体（配列から来るのでレシピが変わらない限り同一）＋数値3つ」
+  だけなので、既定の浅い比較でそのまま memo できる。
+  絞り込みや並び替えを触っても、中身が変わらなかった行は作り直さずに済む。
+*/
+const RecipeRow = memo(function RecipeRow({
   recipe: r,
   stars,
   made,
@@ -460,4 +475,4 @@ function RecipeRow({
       </span>
     </Link>
   );
-}
+});
