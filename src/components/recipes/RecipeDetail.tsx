@@ -396,6 +396,13 @@ export default function RecipeDetail({ id }: Props) {
     window.setTimeout(() => setFlashKey(null), 1600);
   }
 
+  // 足りない材料（在庫なし＋量が足りない）。「不足を買い物へ」が拾うのと同じ条件で数え、
+  // 基本調味料は除く。数量は「店で買える単位」に直しておく（そのまま注文先に貼れるように）。
+  const missingIngredients = viewIngredients
+    .filter((i) => !i.basicSeasoning)
+    .filter((i) => stockOf(i.name, i.amount).status !== "enough")
+    .map((i) => ({ name: i.name, amount: toBuyableFor(i.name, i.amount).amount }));
+
   const timerSuggestions = Array.from(
     new Set(
       viewSteps.flatMap((s) =>
@@ -584,6 +591,21 @@ export default function RecipeDetail({ id }: Props) {
           </div>
         ))}
       </section>
+
+      {/*
+        材料表のすぐ下＝「在庫あり／不足」を見た直後に置く。
+        上の「不足を買い物へ」とは役割が違うので、そこを説明文で言い切って競合させない。
+          上のボタン … 自分で買いに行く。不足をアプリの買い物リストに入れる
+          こちら     … 買いに行けない。不足をネットで注文して届けてもらう
+        提携先が未設定のあいだは ShoppablePanel 側で何も描かれないので、既存の見た目は変わらない。
+      */}
+      <ShoppablePanel
+        placement="recipe"
+        count={missingIngredients.length}
+        title={`足りない材料${missingIngredients.length}件を、ネットで注文して届けてもらう`}
+        description="買いに行くなら上の「不足を買い物へ」でリストに入ります。今から行けないときは、こちらから届けてもらえます。"
+        copyText={shoppingListText(missingIngredients)}
+      />
 
       {/* 行程：1タブ＝1作業。チェックしながら進められる */}
       <section id="cook-steps" className="mb-6">

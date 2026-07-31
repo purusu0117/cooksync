@@ -10,6 +10,8 @@
 import { timingSafeEqual } from "crypto";
 import { redis } from "@/lib/kv";
 import { avgYenPerCall, monthYenSpent, readCostSummary } from "@/lib/aiCost";
+import { PARTNERS } from "@/lib/affiliate";
+import { readAffiliateSummary } from "@/lib/affiliateStats";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +63,25 @@ async function costBlock(month: string) {
   };
 }
 
+/**
+ * 「まとめて買う」導線のクリック内訳。原価（cost）と並べて見るためにここに出す。
+ * AI原価が支出、こちらが収入側の先行指標。どちらか片方だけ見ても収支の判断はできない。
+ *
+ * ⚠️ clicks は**成果件数ではない**。報酬が確定するのはASPの管理画面。
+ *    CVR＝ASPの成果数 ÷ ここの clicks で見る。
+ */
+async function affiliateBlock(month: string) {
+  const ids = PARTNERS.map((p) => p.id);
+  const s = await readAffiliateSummary(month, ids);
+  return {
+    month: s.month,
+    clicks: s.clicks,
+    byPartner: s.byPartner,
+    // 未設定の送客先は画面に出ないので、押されていない理由の切り分けに使う
+    configured: PARTNERS.filter((p) => !!process.env[p.envKey]).map((p) => p.id),
+  };
+}
+
 export async function GET(request: Request) {
   if (!keyMatches(new URL(request.url).searchParams.get("key"))) {
     return Response.json({ error: "forbidden" }, { status: 403 });
@@ -72,6 +93,7 @@ export async function GET(request: Request) {
       note: "local (no redis)",
       users: 0,
       cost: await costBlock(monthNow),
+      affiliate: await affiliateBlock(monthNow),
     });
   }
 
@@ -117,6 +139,7 @@ export async function GET(request: Request) {
     users: accounts.length,
     aiThisMonth,
     cost: await costBlock(month),
+    affiliate: await affiliateBlock(month),
     accounts: accounts.sort(
       (a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0),
     ),
