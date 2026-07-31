@@ -1,74 +1,150 @@
 # CookSync 公開（デプロイ）手順
 
-ローカル個人運用 → 一般公開（6人テスト〜）への移行手順。
-**コード側はこのファイルの「差し替え箇所」に印を付けてある。手動（鍵・課金・サービス契約）の部分だけ大翔が実施すれば公開できる状態。**
+ローカル個人運用 → 一般公開への移行手順。
+
+> **2026-07-31 全面更新。** 以前の版は「Postgres を用意して seam (A)(B)(C) を実装する」という
+> 前提で書かれていたが、**その3つは実装済み**で、保存先も Postgres ではなく **Upstash Redis** になった。
+> 古い記述に従うと要らない作業をすることになるので書き直した。
 
 ---
 
-## 0. 公開に必要な「決めること」
-| 項目 | 推奨 | 理由 |
+## 0. 何が要るか
+
+| 項目 | 使うもの | 状態 |
 |---|---|---|
-| ホスティング | **Vercel**（無料枠） | Next.js最適。ただしサーバーレス＝**ディスクに保存できない**→DB必須 |
-| DB | **Vercel Postgres** か **Supabase**（無料枠） | 現状のローカルJSON(`.data/store.json`)はVercelでは消える |
-| AIテキスト/研究/校正/写真認識 | **Anthropic API**（従量・有料キー） | ローカルの `claude` CLI は公開サーバーで使えない |
-| レシピ画像生成 | 任意（OpenAI画像 等）or **当面オフ** | HiggsField(MCP)は公開サーバー不可。なくても絵文字で動く |
-| 決済 | **Stripe**（プレミアム課金時） | 無料枠だけなら後回しOK |
-| 通知(Web Push) | 現状のVAPID実装のまま動く | `.data/vapid.json`はDBに移すと安定 |
+| ホスティング | **Vercel**（無料枠） | サーバーレス＝ディスクに保存できない前提で作ってある |
+| データ保存 | **Upstash Redis**（無料枠） | `src/lib/kv.ts`。環境変数が無ければ自動でローカルJSONに落ちる |
+| AI | **Anthropic API**（CookSync専用Workspaceのキー） | `src/lib/ai.ts`。キーがあればAPI、無ければローカルの `claude` CLI |
+| 認証 | メール+パスワード（scrypt）＋**Googleログイン** | Googleは環境変数を入れれば有効化 |
+| 通知(Web Push) | VAPID鍵（環境変数） | 未設定でもアプリは動く（通知だけ出ない） |
+| 決済 | Stripe / StoreKit | **未実装**。プレミアムは今のところ運用フラグ |
+
+**Postgres は使わない。** `DATABASE_URL` は不要。
 
 ---
 
-## 1. 環境変数（`.env.local` / Vercel の Environment Variables）
-`.env.example` をコピーして設定：
-- `ANTHROPIC_API_KEY` … Anthropic APIキー（**手動取得**）。これが入ると ai.ts はAPI経由に切替わる想定（下記 seam）。
-- `DATABASE_URL` … Postgres接続URL（**手動でDB作成**）。
-- `IMAGE_API_KEY`（任意）… 画像生成を使う場合。
-- VAPID鍵は初回自動生成だが、公開時は `.data` ではなく環境変数/DBへ移すこと。
+## 1. コード側の準備状況
+
+以前 seam (A)(B)(C) として残していた3点は**すべて実装済み**：
+
+| | 内容 | 実装 |
+|---|---|---|
+| (A) AI実行 | キーがあれば Anthropic API、無ければローカル `claude` CLI | `src/lib/ai.ts` の `USE_API` |
+| (B) データ保存 | ユーザーごとに分離して Redis へ | `src/app/api/store/route.ts` + `src/lib/kv.ts` |
+| (C) 無料枠の enforce | **サーバー側**で判定（クライアントは表示のみ） | `src/lib/quotaServer.ts` |
+
+一時ファイル（写真の読み取り）は `os.tmpdir()` を使うので Vercel でも動く。
 
 ---
 
-## 2. コードの「差し替え箇所」（seam）
-公開時に変更が要るのはこの2ファイルだけ。コード内に `// === DEPLOY SEAM ===` のコメントを付けてある。
+## 2. 環境変数
 
-### (A) AI実行 — `src/lib/ai.ts`
-- 現在：ローカルの `claude` CLI をサブプロセス起動（Maxプラン枠・無料）。
-- 公開：`ANTHROPIC_API_KEY` がある時は **@anthropic-ai/sdk** に切り替える。
-  - `npm i @anthropic-ai/sdk`
-  - `askClaudeText / askClaudeForJson / askClaudeRecipes / askClaudeForJsonNoWeb / askClaudeVisionItems` を、キーがあればSDKの `messages.create` で実装（研究は `web_search` ツール、写真認識は画像をbase64で渡す）。
-  - `askClaudeImageUrl`（画像生成）は Anthropic では不可。画像プロバイダ（OpenAI画像等）を使うか、当面この機能だけ無効化（レシピは絵文字表示にフォールバック）。
-- ※ `ai.ts` だけ直せば Route Handler / UI は無改修。
+`.env.example` が唯一の正。ここでは**公開時に必須のものだけ**を挙げる。
 
-### (B) データ保存 — `src/app/api/store/route.ts`（＋ `/api/scan-fridge`, `/api/recipe-image` の一時ファイル）
-- 現在：単一JSON `.data/store.json`（単一ユーザー・認証なし・ローカルディスク）。
-- 公開：**DBに置き換え＋ユーザーごとに分離**。
-  - `readAll/setKey` を Postgres（`@vercel/postgres` 等）の read/write に差し替え。
-  - キーを `userId:storeKey` にしてユーザー分離。`useServerList` のキーにログインユーザーIDを前置。
-  - 認証：現状はクライアント内の簡易ログイン。公開は **本物の認証**（Auth.js / Supabase Auth）に置き換え、サーバー側でユーザー識別。
-  - `/api/scan-fridge`・`/api/recipe-image` の `.data/tmp`・`public/recipes` 書き込みも、Vercelでは不可 → 画像はオブジェクトストレージ（Vercel Blob / S3）へ。
+### 必須
 
-### (C) 無料枠の enforce — `src/lib/usage.ts`
-- 現在：クライアント側カウンタ（MVP）。
-- 公開：**サーバー側で enforce**（DBに使用回数を持ち、AIルートで超過チェック）。クライアントは表示のみ。
+| 変数 | 取得元 |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic Console の **CookSync Workspace** のキー |
+| `UPSTASH_REDIS_REST_URL` | Upstash のデータベース詳細 → REST API |
+| `UPSTASH_REDIS_REST_TOKEN` | 同上 |
+| `COOKSYNC_SESSION_SECRET` | 32バイトのランダム16進。**未設定だと本番はセッションを発行せず落ちる** |
+| `COOKSYNC_ADMIN_KEY` | 16文字以上。**未設定だと `/api/admin/stats` は誰も通さない**（fail closed） |
+| `COOKSYNC_IP_SALT` | 任意のランダム文字列。既定値は公開リポジトリに載っているので必ず設定する |
+
+生成コマンド:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### 強く推奨（コストの安全装置）
+
+| 変数 | 推奨値 | 意味 |
+|---|---|---|
+| `COOKSYNC_MONTHLY_BUDGET_YEN` | `3000` | CookSync自身の月間予算。**組織の支出上限とは別物**（後述） |
+| `COOKSYNC_MONTHLY_AI_CAP` | 既定300 | 月間のAI呼び出し回数の上限 |
+| `COOKSYNC_IP_DAILY_CAP` | 既定30 | 同一IPからの1日あたり上限 |
+
+### 任意
+
+| 変数 | 用途 |
+|---|---|
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Googleログイン。両方揃うとボタンが出る |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push。未設定でも本体は動く |
+| `COOKSYNC_AI_MODEL` / `_CHEAP` | モデルの上書き（既定 sonnet-5 / haiku-4-5） |
+
+VAPID鍵の生成:
+
+```bash
+node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)"
+```
+
+> ⚠️ **`ANTHROPIC_API_KEY` をローカルの `.env.local` に入れない。**
+> `ai.ts` はキーがあるとAPI課金経路に切り替わる。ローカルは `claude.exe` 経由＝Maxプラン枠で
+> **原価0**なので、入れると大翔自身の開発まで従量課金になる。キーは Vercel にだけ置く。
 
 ---
 
-## 3. 公開手順（手動パート）
-1. GitHubにpush（プライベートでOK）。
-2. DB作成（Vercel Postgres or Supabase）→ `DATABASE_URL` 取得。
-3. Anthropic APIキー取得 → `ANTHROPIC_API_KEY`。
-4. 上記 seam (A)(B)(C) を実装（鍵が揃ってからが確実。アシスタントに依頼可）。
-5. Vercelにインポート → Environment Variables 設定 → Deploy。
-6. 独自ドメイン（任意）。Tailscale Serve は不要になる。
-7. 6人に公開URLを配布 → 観察（[[cooksync-validation-test]] の台本）。
+## 3. 公開手順
+
+1. **GitHubにpush** — リポジトリは `purusu0117/cooksync`（**public**）
+2. **Upstash で Redis を作る**（無料枠・東京リージョン）→ REST URL と TOKEN を控える
+3. **Vercel にインポート** → Environment Variables に §2 の必須＋推奨を入れる → Deploy
+4. **本番ドメインが確定してから** Google OAuth を設定する
+   - Google Cloud Console → 認証情報 → OAuth 2.0 クライアントID（ウェブアプリケーション）
+   - 承認済みリダイレクトURI: `https://<本番ドメイン>/api/auth/google/callback`
+   - 取得した ID / Secret を Vercel に入れて再デプロイ
+5. 動作確認（§4）
 
 ---
 
-## 4. コスト見張り
-- AIは従量課金。`usage.ts` の `FREE_LIMITS` と、研究のモデルを **Sonnet/Haiku** に下げて原価を抑える。
-- 料理写真は1回生成して全ユーザーで使い回す（重複生成を防ぐ）。
-- 詳細は `.secretary/Decisions/2026-06-10-cooksync-monetization.md`。
+## 4. デプロイ後の確認
+
+| 確認 | 方法 | 期待 |
+|---|---|---|
+| 起動 | `https://<domain>/` | 200・ホームが出る |
+| データ保存 | 冷蔵庫に1品追加 → リロード | 消えない（Redisに入っている） |
+| 認証 | 新規登録 → 別ブラウザでログイン | 同じデータが見える |
+| Googleログイン | マイページのボタン | 設定済みなら表示・押すとGoogleへ |
+| 管理画面 | `/api/admin/stats?key=<COOKSYNC_ADMIN_KEY>` | 200。鍵なし・違う鍵は403 |
+| **原価の実測** | 上記の `cost` ブロック | `yenPerCall` が機能別に出る |
+| 枠 | 無料枠を使い切るまでAI機能を叩く | 429＋サーバーの文言が出る |
 
 ---
 
-## 現状
-- ローカル個人運用は完成・常時起動可（`start-cooksync.bat` / 自動再起動）。
-- 公開は **(A)(B)(C) の実装＋手動の鍵/DB/デプロイ** が残り。鍵・DBが用意できたらアシスタントが (A)(B)(C) を実装する。
+## 5. コストの見張り
+
+**Anthropic Console の支出上限は「組織」単位** なので、同じ組織の他プロジェクト（CashSync）と
+食い合う。そのため上限は3段構えにしてある：
+
+| 層 | どこ | 現在値 |
+|---|---|---|
+| 組織全体 | Anthropic Console | $50 |
+| CookSync Workspace | Anthropic Console | $20 |
+| **CookSync自身** | `COOKSYNC_MONTHLY_BUDGET_YEN` | ¥3,000 |
+
+3層目がアプリ側で完結するので、**組織の設定に依存せず CookSync だけを止められる**。
+1回の原価は機能で40倍違う（写真スキャン¥0.5 ↔ レシピ探索¥20）ので、回数上限だけでは
+上限として機能しない。金額で止めるのが本筋。
+
+実測は `/api/admin/stats?key=…` の `cost` ブロックで見る（機能別の「1回あたり」が出る）。
+
+原価を下げる仕組みは実装済み：
+
+- **共有レシピプール**（`src/lib/recipeCache.ts`）… 同じ条件の探索はAIを呼ばずに返す。
+  ヒット時は月間枠も消費しない。レシピが溜まるほど原価が下がる
+- **モデルの2段振り分け**（`src/lib/ai.ts`）… 定型タスクは Haiku 4.5（単価1/3）
+
+詳細な収益設計は `.secretary/Decisions/2026-07-31-cooksync-profitable-monetization.md`。
+
+---
+
+## 6. まだ残っていること
+
+- **決済**（Stripe / StoreKit 2）… プレミアムは現状 Redis の `cooksync:premium` に手動で入れる運用
+- **Sign in with Apple**（App Store配信時に必須）
+- **DeviceCheck / Play Integrity**（1端末1無料枠の担保）
+- **AdMob + SSV**（リワード動画。クライアントの「見た」を信じない検証が必須）
+- レシピ画像生成（`imageGen.ts` / `/api/recipe-image`）は**現在UIから未使用**。
+  公開版では動かないので、使うなら画像プロバイダの設定が要る
