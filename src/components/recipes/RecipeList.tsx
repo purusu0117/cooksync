@@ -33,6 +33,7 @@ import { kindsOf, matchesQuery, usesExpiring, type MainKind } from "@/lib/recipe
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 import DishIcon from "@/components/DishIcon";
+import VideoImport from "@/components/recipes/VideoImport";
 
 const CUISINES: Cuisine[] = ["和", "洋", "中", "アジアン"];
 const KINDS: MainKind[] = ["肉", "魚介", "野菜"];
@@ -174,6 +175,9 @@ export default function RecipeList() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
       <PageHeader title="レシピ" Icon={BookOpen} iconClass="text-accent" />
+
+      {/* 動画URL→レシピ化 */}
+      <VideoImport />
 
       {/* 検索：料理名・材料に加えて「肉系」「さっぱり」等のざっくりした言葉でも引ける */}
       <div className="relative mb-2">
