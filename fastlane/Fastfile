@@ -20,6 +20,40 @@ APP_SKU = "cooksync-ios"
 XCODEPROJ = "ios/App/App.xcodeproj"
 
 # Bundle ID とアプリレコードが無ければ作る（APIキー認証・冪等）。
+# Push Notifications の capability を Bundle ID に付ける。
+#
+# これが無いとビルドがこう落ちる（2026-08-01 実測）:
+#   Provisioning profile "com.daito.cooksync AppStore" doesn't include
+#   the Push Notifications capability. / doesn't include the aps-environment entitlement.
+#
+# 通常は Apple Developer の画面で手動チェックする作業だが、**App Store Connect API で付けられる**ので
+# 大翔に手作業をさせない。既に付いていれば何もしない（重複作成はエラーになるので握りつぶす）。
+# capability を足したらプロファイルは作り直しが要るので、呼び出し側で force 再生成すること。
+def ensure_push_capability(api_key)
+  require "spaceship"
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(APP_ID)
+  UI.user_error!("Bundle ID が見つかりません: #{APP_ID}") if bundle_id.nil?
+
+  existing = (bundle_id.get_capabilities rescue [])
+  has_push = existing.any? { |c| (c.capability_type rescue nil).to_s == "PUSH_NOTIFICATIONS" }
+  if has_push
+    UI.message("Push Notifications は既に有効です")
+    return false
+  end
+
+  begin
+    bundle_id.create_capability(Spaceship::ConnectAPI::BundleIdCapability::Type::PUSH_NOTIFICATIONS)
+    UI.success("Push Notifications を有効化しました（プロファイルを作り直します）")
+    true
+  rescue => e
+    # 付けられなくてもここでは止めない。build_app が本当のエラーを出す方が原因が分かりやすい。
+    UI.important("Push Notifications の有効化に失敗: #{e.message}")
+    false
+  end
+end
+
 def ensure_app_exists(api_key)
   require "spaceship"
   Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
@@ -93,6 +127,7 @@ platform :ios do
     # fastlane の produce アクションは APIキー認証に対応していない（Apple ID＋2FA前提）ため、
     # Spaceship を直接使う。既にあれば何もしない（冪等）＝手で作ってあっても問題ない。
     ensure_app_exists(api_key)
+    push_added = ensure_push_capability(api_key)
 
     # ビルド番号は GitHub Actions の実行番号（TestFlightは同じ番号を再アップロードできない）
     increment_build_number(
@@ -101,7 +136,14 @@ platform :ios do
     )
 
     # 署名は手動（xcodebuild の自動署名はAPIキー認証が通らないため）。
-    get_provisioning_profile(api_key: api_key, app_identifier: APP_ID, readonly: false)
+    # capability を足した直後は、既存プロファイルに aps-environment が入っていないので
+    # **必ず作り直す**（force: true）。そうしないと同じエラーで落ち続ける。
+    get_provisioning_profile(
+      api_key: api_key,
+      app_identifier: APP_ID,
+      readonly: false,
+      force: push_added,
+    )
     app_profile = lane_context[SharedValues::SIGH_NAME]
 
     # 署名設定は該当ターゲットにだけ書く（グローバルに渡すとSPM依存のビルドが壊れる）
