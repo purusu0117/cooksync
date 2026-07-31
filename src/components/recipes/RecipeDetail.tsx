@@ -31,6 +31,8 @@ import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
+import { useSyncState } from "@/lib/syncStore";
+import SyncNotice, { LoadingOrOffline } from "@/components/SyncNotice";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
@@ -73,6 +75,7 @@ function groupIngredients(ings: RecipeIngredient[]): [string, RecipeIngredient[]
 export default function RecipeDetail({ id }: Props) {
   const router = useRouter();
   const recipes = useAllRecipes();
+  const sync = useSyncState();
   const [stored, setStored] = usePersistentList(recipeStore);
   const [shopping, setShopping] = usePersistentList(shoppingStore);
   const [meals, setMeals] = usePersistentList(mealStore);
@@ -353,6 +356,19 @@ export default function RecipeDetail({ id }: Props) {
     });
   }
 
+  // ★「保存レシピをまだ読めていない」と「本当に存在しない」を必ず区別する。
+  //   以前は区別が無かったので、**調理中に電波の弱い場所でリロードすると
+  //   「レシピが見つかりませんでした」になって手順が丸ごと消えた**。
+  //   （hydrate 前はサンプル6件しか見えないため、保存レシピは全部この分岐に落ちる）
+  //   いまは端末キャッシュから即復元されるので、通常はここに来ること自体が無い。
+  if (recipe === null && !sync.hydrated) {
+    return (
+      <div className="mx-auto w-full max-w-2xl px-4 py-12">
+        <LoadingOrOffline label="レシピ" />
+      </div>
+    );
+  }
+
   if (recipe === null) {
     return (
       <div className="mx-auto w-full max-w-2xl px-4 py-12 text-center">
@@ -413,6 +429,10 @@ export default function RecipeDetail({ id }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-0 pb-8">
+      {/* 調理中に圏外へ入ることが多い画面なので、状態を隠さず出す（手順は端末に残っている） */}
+      <div className="mt-3">
+        <SyncNotice />
+      </div>
       <header className="mt-2 mb-5">
         <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-ink">
           <DishIcon

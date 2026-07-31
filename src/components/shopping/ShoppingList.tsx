@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { shoppingStore, fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
+import { useSyncState } from "@/lib/syncStore";
+import SyncNotice, { LoadingOrOffline } from "@/components/SyncNotice";
 import type { ShoppingItem } from "@/lib/shopping";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { guessItem } from "@/lib/guess";
@@ -18,6 +20,7 @@ const fieldClass =
 export default function ShoppingList() {
   const [items, setItems] = usePersistentList(shoppingStore);
   const [, setFridge] = usePersistentList(fridgeStore);
+  const sync = useSyncState();
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -120,6 +123,8 @@ export default function ShoppingList() {
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader title="買い物リスト" Icon={ShoppingCart} iconClass="text-sky-500" />
 
+      <SyncNotice />
+
       <form onSubmit={add} className="mb-5 flex gap-2">
         <input
           className={`${fieldClass} min-w-0 flex-1`}
@@ -142,7 +147,10 @@ export default function ShoppingList() {
         </button>
       </form>
 
-      {items.length === 0 ? (
+      {/* 「空」と「まだ読めていない」を区別する（店頭で圏外になっても消えたように見せない） */}
+      {items.length === 0 && !sync.hydrated ? (
+        <LoadingOrOffline label="買い物リスト" />
+      ) : items.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
           <p className="text-sm font-semibold text-ink">買い物リストは空です</p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">

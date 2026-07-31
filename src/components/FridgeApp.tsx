@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Flame, Refrigerator } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGuide, setGuide } from "@/lib/guide";
 import {
   bucketOf,
@@ -17,6 +18,8 @@ import {
 } from "@/lib/food";
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
+import { useSyncState } from "@/lib/syncStore";
+import SyncNotice, { LoadingOrOffline } from "./SyncNotice";
 import { BUCKET_UI } from "./freshness";
 import PageHeader from "./PageHeader";
 import AddItemForm from "./AddItemForm";
@@ -32,6 +35,7 @@ export default function FridgeApp() {
   const router = useRouter();
   const guide = useGuide();
   const [items, setItems] = usePersistentList(fridgeStore);
+  const sync = useSyncState();
   const [editing, setEditing] = useState<FridgeItem | null>(null);
   const [mode, setMode] = useState<"single" | "bulk" | "photo">("single");
 
@@ -73,6 +77,8 @@ export default function FridgeApp() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader title="冷蔵庫" Icon={Refrigerator} iconClass="text-brand" />
+
+      <SyncNotice />
 
       {guide === "fridge" && (
         <div className="mb-5 rounded-2xl border border-brand/30 bg-brand-soft px-4 py-3.5">
@@ -179,7 +185,14 @@ export default function FridgeApp() {
         )}
       </div>
 
-      {sorted.length === 0 ? (
+      {/*
+        ★「空」と「まだ読めていない」を必ず区別する。
+          以前はこの分岐が2択しかなく、40件あってもコールドスタート中は
+          「まだ食材がありません」と出ていた（圏外なら永久にその表示）。
+      */}
+      {sorted.length === 0 && !sync.hydrated ? (
+        <LoadingOrOffline label="冷蔵庫" />
+      ) : sorted.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
           <p className="text-sm font-semibold text-ink">まだ食材がありません</p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
@@ -213,8 +226,18 @@ export default function FridgeApp() {
         />
       )}
 
-      <p className="mt-8 text-center text-xs text-ink-soft/70">
-        データはこの端末にだけ保存されます（個人用・localStorage）。今日は {todayISO()}。
+      {/*
+        ★以前ここは「データはこの端末にだけ保存されます（個人用・localStorage）」だった。
+          実際の保存先はサーバー（Upstash Redis）で端末間同期もしているので、これは**嘘**。
+          審査担当が最初に見る画面の文言が App Privacy の申告とずれるのはリジェクト事由。
+          プライバシーポリシー（/legal/privacy）の記述と揃えてある。
+      */}
+      <p className="mt-8 text-center text-xs leading-relaxed text-ink-soft/70">
+        データは端末に保存したうえで、サーバーにも保存して端末間で同期します（
+        <Link href="/legal/privacy" className="underline">
+          プライバシーポリシー
+        </Link>
+        ）。今日は {todayISO()}。
       </p>
     </div>
   );
