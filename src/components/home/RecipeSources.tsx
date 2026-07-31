@@ -90,15 +90,20 @@ export default function RecipeSources() {
 
   // ---- 写真 ----
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じ写真を選び直せるように
-    if (!file) return;
+    if (files.length === 0) return;
     reset();
     setLoading(true);
-    setStep("AIが写真を読み取り中…");
+    setStep(
+      files.length > 1
+        ? `${files.length}枚をAIが読み取り中…（順番も判定します）`
+        : "AIが写真を読み取り中…",
+    );
     try {
       const fd = new FormData();
-      fd.append("image", file);
+      // 同じキーで複数枚送る（サーバー側は getAll("image") で受ける）
+      for (const f of files) fd.append("image", f);
       const res = await fetch("/api/import-photo", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.recipe) {
@@ -108,6 +113,8 @@ export default function RecipeSources() {
         recipe: data.recipe,
         missing: data.missing,
         confidence: data.confidence,
+        photoOrder: data.photoOrder,
+        photoCount: data.photoCount,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "読み取りに失敗しました");
@@ -194,6 +201,7 @@ export default function RecipeSources() {
                 ref={fileRef}
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={onFile}
                 className="hidden"
               />
@@ -204,10 +212,11 @@ export default function RecipeSources() {
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:bg-line disabled:text-ink-soft"
               >
                 <Camera size={16} strokeWidth={2} />
-                写真を選ぶ・撮る
+                写真を選ぶ・撮る（複数可）
               </button>
               <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
-                レシピ本のページ、SNSのスクショ、手書きメモでOK。材料と手順が写っているほど正確です。
+                レシピ本のページ、SNSのスクショ、手書きメモでOK（8枚まで）。
+                <strong>順番はバラバラでも大丈夫</strong>— 調理の進み方から並べ直して手順にします。
               </p>
             </>
           )}

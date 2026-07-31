@@ -37,6 +37,10 @@ export interface ImportResult {
   confidence?: string;
   /** 出典の表示用（動画のときだけ） */
   source?: { title: string; channel: string; url: string };
+  /** 複数写真のとき、AIが判断した調理順（渡した画像の1始まりの番号） */
+  photoOrder?: number[];
+  /** 渡した写真の枚数 */
+  photoCount?: number;
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -128,6 +132,21 @@ export default function ImportedRecipePreview({
           }`}
         >
           {CONFIDENCE_LABEL[result.confidence] ?? result.confidence}
+        </p>
+      )}
+
+      {/* 複数写真：AIがどう並べ替えたかを見せる（順番が違えば大翔が気づける） */}
+      {(result.photoCount ?? 0) > 1 && (
+        <p className="mt-2 rounded-lg bg-paper px-2.5 py-1.5 text-[11px] leading-relaxed text-ink-soft">
+          写真{result.photoCount}枚をまとめました。
+          {result.photoOrder && result.photoOrder.length > 1 ? (
+            <>
+              調理順は <strong className="text-brand-dark">{result.photoOrder.join(" → ")}</strong>{" "}
+              枚目の順と判断しています（選んだ順が1・2・3…）。違っていたら保存後に手順を直してください。
+            </>
+          ) : (
+            "順番は写真の内容から判断しています。"
+          )}
         </p>
       )}
 

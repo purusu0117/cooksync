@@ -278,51 +278,76 @@ export async function askClaudeVisionItems(imagePath: string): Promise<string[]>
 
 /**
  * 写真（レシピ本・スクショ・手書きメモ・料理写真）からレシピJSONを読み取る。
+ * 複数枚を渡せる。**順番がバラバラでもよい**（調理の進行から並べ直させる）。
  * ⚠️ 写真に写っていない分量を推測で埋めさせない（[[mistakes]] 2026-05-22 の再発防止）。
  */
-export async function askClaudeVisionRecipe<T>(imagePath: string): Promise<T> {
+export async function askClaudeVisionRecipe<T>(imagePaths: string[]): Promise<T> {
+  const many = imagePaths.length > 1;
   const rules = [
-    "この画像から料理のレシピを読み取り、JSONにしてください。",
+    many
+      ? `${imagePaths.length}枚の画像は**同じ1つの料理**のものです。全部を突き合わせて1つのレシピにまとめ、JSONにしてください。`
+      : "この画像から料理のレシピを読み取り、JSONにしてください。",
     "",
+    ...(many
+      ? [
+          "【並び順について】",
+          "- 渡した画像の順番は**バラバラかもしれません**。調理が進む順に並べ直してから手順を書いてください。",
+          "- 並べ替えの手がかりは次の優先順で使う：",
+          "  ①写真に写っている番号・①②③・「STEP2」・ページ番号など明示的な順序表記",
+          "  ②食材の状態の進行（丸ごと→切った→炒めた→煮えた→盛り付け・完成）",
+          "  ③調理器具の変化（まな板→フライパン→鍋→器）、色や焼き色の付き方、水分の減り方",
+          "- 判断した並び順を photoOrder に「渡された画像の番号（1始まり）」で入れる。",
+          "  例：3枚目→1枚目→2枚目の順だと判断したら [3,1,2]。",
+          "- 各手順には、その根拠になった画像番号を fromPhoto に入れる。",
+          "- **順番が確信を持てない場合は、その手順の text の末尾に「（順序は要確認）」と書き、confidence を下げる。**",
+          "- 材料表のページと調理写真が混ざっている場合、材料は材料ページを正とする。",
+          "",
+        ]
+      : []),
     "【厳守】",
     "- **画像に書かれていないことを推測で埋めない。**分量が読めない材料は amount を「写真で確認できず」にする。",
     "- 文字が写っているレシピ（本・スクショ・メモ）なら、書かれた分量・手順をそのまま忠実に写す。勝手に単位を変えない。",
     "- 料理の写真だけで文字が無い場合は、見た目から分かる材料だけを挙げ、confidence を low にする。",
     "  分量は全て「写真で確認できず」にし、手順も推測で作らない（steps は空でよい）。",
+    "  ただし複数枚で調理過程が写っている場合は、**写真から見て取れる作業だけ**を順に書いてよい（想像で足さない）。",
     "- 読み取れなかった材料名を missing 配列に列挙する。",
     "- confidence は high（文字で材料も分量も読める）/ medium（一部読めない）/ low（写真からの推定）。",
-    "- 画像が料理と無関係なら {\"recipe\":null} を返す。",
+    '- 画像が料理と無関係なら {"recipe":null} を返す。',
     "",
     "出力は次のJSONだけ（前後に文章やコードフェンスを付けない）:",
-    '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low"}',
+    '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string,"fromPhoto":number}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low","photoOrder":[number]}',
   ].join("\n");
 
   if (USE_API) {
-    const buf = await fs.readFile(imagePath);
-    const media: "image/png" | "image/jpeg" = imagePath.endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    const blocks: Anthropic.ContentBlockParam[] = [];
+    for (let i = 0; i < imagePaths.length; i++) {
+      const buf = await fs.readFile(imagePaths[i]);
+      const media: "image/png" | "image/jpeg" = imagePaths[i].endsWith(".png")
+        ? "image/png"
+        : "image/jpeg";
+      if (many) blocks.push({ type: "text", text: `画像${i + 1}:` });
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: media, data: buf.toString("base64") },
+      });
+    }
+    blocks.push({ type: "text", text: rules });
     const msg = await api().messages.create({
       model: API_MODEL,
       max_tokens: 8192,
       system: SYSTEM_JSON,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: media, data: buf.toString("base64") },
-            },
-            { type: "text", text: rules },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content: blocks }],
     });
     return extractJson<T>(textOf(msg));
   }
 
-  const prompt = [`次の画像ファイルを Read ツールで開いてください: ${imagePath}`, "", rules].join("\n");
+  const list = imagePaths.map((p, i) => `画像${i + 1}: ${p}`).join("\n");
+  const prompt = [
+    `次の${imagePaths.length}枚の画像ファイルを Read ツールで**すべて**開いてください。`,
+    list,
+    "",
+    rules,
+  ].join("\n");
   const text = await runClaude(prompt, false, SYSTEM_VISION, ["Read"]);
   try {
     return extractJson<T>(text);
