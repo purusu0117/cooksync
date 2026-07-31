@@ -9,7 +9,7 @@
 // URL入力やファイル選択は **選んだときだけ開く**（常時出すと画面が散らかるため）。
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, ChefHat, ChevronRight, Link2, Loader2, Video } from "lucide-react";
 import ImportedRecipePreview, {
   type ImportResult,
@@ -29,6 +29,25 @@ export default function RecipeSources() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 動画からの取り込みは yt-dlp を起動できるローカル版だけ。公開サーバーでは必ず501になるので、
+  // 入口ごと出さない（押しても失敗する機能を審査担当者に触らせないため。ガイドライン2.1）。
+  const [videoEnabled, setVideoEnabled] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/health");
+        const h = (await res.json()) as { videoImport?: boolean };
+        if (alive) setVideoEnabled(!!h.videoImport);
+      } catch {
+        /* 取れなければ出さないまま（安全側） */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function reset() {
     if (pollRef.current) clearTimeout(pollRef.current);
@@ -164,14 +183,16 @@ export default function RecipeSources() {
       </Link>
 
       {/* ②③取り込み。押したときだけ入力欄を開く */}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <SourceCard
-          active={mode === "video"}
-          icon={<Video size={18} strokeWidth={2} />}
-          title="動画から作る"
-          desc="YouTube・TikTok"
-          onClick={() => choose("video")}
-        />
+      <div className={`mt-2 grid gap-2 ${videoEnabled ? "grid-cols-2" : "grid-cols-1"}`}>
+        {videoEnabled && (
+          <SourceCard
+            active={mode === "video"}
+            icon={<Video size={18} strokeWidth={2} />}
+            title="動画から作る"
+            desc="YouTube・TikTok"
+            onClick={() => choose("video")}
+          />
+        )}
         <SourceCard
           active={mode === "photo"}
           icon={<Camera size={18} strokeWidth={2} />}
