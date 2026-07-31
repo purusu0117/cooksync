@@ -1,11 +1,29 @@
 // 管理用：登録ユーザー数・実利用状況・**AI原価の実測**をひと目で確認（大翔専用）。
-// ?key=<秘密> で保護。COOKSYNC_ADMIN_KEY があればそちらを優先する。
+// ?key=<秘密> で保護する。
+//
+// ⚠️ 鍵をソースに書かない（2026-07-31 修正）。
+//    以前は `process.env.COOKSYNC_ADMIN_KEY || "cooksync-stats-7Qx2"` と既定値を持ち、
+//    「リポジトリはプライベートだから外に出ない」というコメントが付いていた。
+//    だが **このリポジトリは public** だった。環境変数を入れ忘れると、
+//    誰でも既定の鍵で全ユーザーのメールアドレスと利用状況を読めてしまう。
+//    → 既定値を廃止し、**未設定なら誰も通さない**（fail closed）。
+import { timingSafeEqual } from "crypto";
 import { redis } from "@/lib/kv";
 import { avgYenPerCall, monthYenSpent, readCostSummary } from "@/lib/aiCost";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_KEY = process.env.COOKSYNC_ADMIN_KEY || "cooksync-stats-7Qx2";
+/** 一致判定。長さの違いで早期returnしないよう、固定時間で比べる。 */
+function keyMatches(given: string | null): boolean {
+  const expected = process.env.COOKSYNC_ADMIN_KEY;
+  // 未設定・短すぎる鍵では**開けない**。管理画面が見えないだけで実害は無いが、
+  // 逆（誰でも見える）は個人情報の漏洩になるため。
+  if (!expected || expected.length < 16) return false;
+  if (!given) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 interface User {
   dataId: string;
@@ -44,8 +62,7 @@ async function costBlock(month: string) {
 }
 
 export async function GET(request: Request) {
-  const key = new URL(request.url).searchParams.get("key");
-  if (key !== ADMIN_KEY) {
+  if (!keyMatches(new URL(request.url).searchParams.get("key"))) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   const monthNow = new Date().toISOString().slice(0, 7);

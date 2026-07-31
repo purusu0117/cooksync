@@ -86,7 +86,9 @@ function day(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-/** IPは生で保存しない（個人情報）。ソルト付きハッシュで持つ。 */
+/** IPは生で保存しない（個人情報）。ソルト付きハッシュで持つ。
+ *  ⚠️ 既定ソルトは**公開リポジトリに載っている**ので、公開時は必ず
+ *     COOKSYNC_IP_SALT を設定すること。既定のままだとIPv4は総当たりで逆引きできる。 */
 function hashIp(ip: string): string {
   const salt = process.env.COOKSYNC_IP_SALT || "cooksync-default-salt";
   return createHash("sha256").update(salt).update(ip).digest("hex").slice(0, 24);
