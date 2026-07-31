@@ -75,7 +75,9 @@ export default function Onboarding() {
             onClick={finish}
             className="flex min-h-[44px] items-center gap-1 rounded-full px-3 text-xs font-medium text-ink-soft transition hover:bg-line/40"
           >
-            あとで
+            {/* 「あとで」だけだと、押したあと何が起きるか分からない。
+                動作（見てまわる）＋結果（このまま＝閉じてアプリに残る）を書く。 */}
+            あとで自分で見てまわる
             <X className="h-3.5 w-3.5" strokeWidth={2} />
           </button>
         </div>
@@ -111,7 +113,9 @@ export default function Onboarding() {
           }}
           className="mt-6 min-h-[44px] w-full rounded-full bg-brand py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
         >
-          いま家にあるものを入れる
+          {/* 動作（入れる）＋対象（家にあるもの）＋結果（献立が出る）。
+              「入れる」だけだと、入れた先に何があるのかが書かれていない。 */}
+          家にあるものを入れて献立を出す
         </button>
         <p className="mt-2 text-center text-xs text-ink-soft">
           登録もログインも要りません

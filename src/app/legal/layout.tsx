@@ -21,8 +21,10 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
         <Link href="/legal/terms" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           利用規約
         </Link>
+        {/* 行き先は /mypage なので「アプリへ戻る」だと着地先がずれる。
+            動作（戻る）＋対象（マイページ）を書く。 */}
         <Link href="/mypage" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
-          アプリへ戻る
+          マイページに戻る
         </Link>
       </nav>
     </div>

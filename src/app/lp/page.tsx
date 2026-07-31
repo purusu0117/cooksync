@@ -22,12 +22,15 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
+import { APP_NAME, APP_TAGLINE, APP_PROMISE } from "@/lib/brand";
+// 「あと3つ」の3は starter.ts の定数。LPだけ数字が古くなる事故を防ぐため直に取る。
+import { SUGGEST_THRESHOLD } from "@/lib/starter";
 
 export const metadata: Metadata = {
   title: `${APP_NAME}｜${APP_TAGLINE}`,
+  // 検索結果に出る2〜3行。前半＝初見に通じる悩み、後半＝比較検討層向けの差別化、の順。
   description:
-    "読み取れなかった分量は「読み取れなかった」と書く。参考にしたページのURLも必ず残す。冷蔵庫にあるものだけで作る在庫厳守モードと、手順の中の分量まで書き換わる人数換算つき。作ってから失敗しないレシピ・冷蔵庫アプリ。",
+    "今日なに作るかは、家にあるものだけで決まります。冷蔵庫の食材を入れると、それだけで作れる料理を提案し、足りない分は店で買える単位で買い物リストへ。読み取れなかった分量は「読み取れなかった」と書き、参考にしたページのURLも必ず残す、レシピ・冷蔵庫アプリ。",
 };
 
 /* ============================================================
@@ -35,6 +38,13 @@ export const metadata: Metadata = {
    （出典：ImportedRecipePreview.tsx / RecipeDetail.tsx /
      MealWizard.tsx / RecipeSources.tsx / lib/recipeScale.ts / lib/ai.ts）
    実装に無いことは書かない。書き足すときは必ずコードを見てから。
+
+   ★ 文言の置き場所（2026-08-01・Preferences/copywriting-audience.md）
+     ・ヒーロー＝**初見の人**。夕食の悩み1位「献立を考えること」65.8% を肯定形で言い当てる。
+       ここに「AIが勝手に、分量を変えない」（＝否定形・競合の失点が前提）を置いていたのが失敗。
+       初見の人は「AIが分量を変える」現象自体を知らないので意味が通らなかった。
+     ・#proof 以降＝**比較検討中の人**。ここまでスクロールした人は他アプリと比べている。
+       差別化（分量・出典・在庫厳守・人数換算）は捨てず、この位置に下ろした。
    ============================================================ */
 
 /** ヒーロー直下の「証拠」。アプリが実際に出す文言をそのまま並べる。 */
@@ -82,7 +92,7 @@ const PROOFS: {
         </span>
       </>
     ),
-    note: "AI提案は実在のレシピを参照し、URL付きの出典が無い候補は出しません。つくれぽ数・再生数が分かれば一緒に添えます。出典が空のときも見出しごと消さず「記録されていません」と正直に書きます。",
+    note: "AIには「実在のレシピを参照し、出典のない創作は禁止。出典が空の候補は出さない」と指示しています。つくれぽ数・再生数が分かれば一緒に添えます。それでも出典が付かなかったときは、見出しごと消さずに「このレシピには参考ページが記録されていません。」と正直に書きます。",
     tone: "brand",
   },
 ];
@@ -99,7 +109,8 @@ const PILLARS: {
     Icon: Refrigerator,
     eyebrow: "在庫厳守モード",
     title: "「冷蔵庫にあるものだけ」を、本当に守る。",
-    body: "献立提案の初期設定が「在庫だけで作る」。塩・しょうゆなどの基本調味料以外は、冷蔵庫に無い食材を使わせません。",
+    // 実装：MealWizard の shopMode。在庫が1つでもあれば初期選択は "stock"（0件のときだけ "buy"）。
+    body: "冷蔵庫に食材が入っていれば、献立提案は最初から「在庫だけで作る」で始まります。塩・しょうゆなどの基本調味料以外は、冷蔵庫に無い食材を使わせません。",
     points: [
       "買い足したい日は「買い物してもOK」に1タップで切り替え",
       "足りない分だけを「1パック」「1束」など店で買える単位で買い物リストへ",
@@ -238,28 +249,35 @@ export default function LandingPage() {
             priority
             className="mx-auto h-auto w-[210px]"
           />
+          {/* 初見の人が読む場所。製品を知らなくても意味が通る言葉だけを使う。 */}
           <h1 className="font-display mt-5 text-4xl font-extrabold leading-tight tracking-tight text-brand-dark sm:text-5xl">
-            AIが勝手に、
+            今日なに作るか、
             <br />
-            分量を変えない。
+            家にあるもので
+            {/* 393px幅だと「決まる。」が溢れて「る。」だけ次行に落ちる。狭い画面だけ3行に割る */}
+            <br className="sm:hidden" />
+            決まる。
           </h1>
           <p className="mx-auto mt-5 max-w-lg text-sm leading-relaxed text-ink-soft sm:text-base">
-            読み取れなかった材料は「読み取れなかった」と書く。
-            <br className="hidden sm:block" />
-            参考にしたページのURLも必ず残す。だから、作ってから失敗しない。
+            冷蔵庫にあるものを入れるだけ。
+            <br />
+            作れる料理と、足りない分の
+            <br className="sm:hidden" />
+            買い物リストが出ます。
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {/* ボタンは「動作＋対象＋結果」。どこへ行くかではなく、何が起きるかを書く。 */}
             <Link
               href="/"
               className="w-full rounded-full bg-brand px-8 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand/25 transition hover:bg-brand-dark active:scale-95 sm:w-auto"
             >
-              今すぐ始める（無料）
+              家にあるもので献立を出す（無料）
             </Link>
             <a
               href="#proof"
               className="w-full rounded-full border border-line bg-surface px-8 py-3.5 text-sm font-bold text-brand-dark transition hover:border-brand sm:w-auto"
             >
-              なぜ言い切れるのか
+              他のレシピアプリとの違いを見る
             </a>
           </div>
 
@@ -280,12 +298,15 @@ export default function LandingPage() {
       {/* ===== 証拠：実際にアプリが出す文言 ===== */}
       <section id="proof" className="px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-5xl">
-          <Kicker>Proof</Kicker>
+          {/* ここから下は「比較検討中の人」向け。ヒーローから下ろしてきた差別化を置く。
+              ただし「分量を変えない」だけでは通じないので、まず現象そのものを説明する。 */}
+          <Kicker>What makes it different</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            「たぶんこれくらい」を、書かない。
+            {APP_PROMISE}
           </h2>
-          <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-relaxed text-ink-soft">
-            レシピアプリで一番困るのは、材料が間違っていることです。
+          <p className="mx-auto mt-3 max-w-xl text-center text-sm leading-relaxed text-ink-soft">
+            レシピをAIに読み取らせると、はっきり読めなかった分量まで、それらしい数字で埋めてしまうことがあります。
+            「砂糖 大さじ1」が「小さじ1」に変わっていても、作りはじめてからでは戻せません。
             {APP_NAME}
             は、分からなかったことを分からないまま出します。以下は実際に画面に出る文言です。
           </p>
@@ -418,7 +439,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-5xl">
           <Kicker>Features</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            毎日の「何作ろう」を、なくす。
+            続けられるように、細かいところまで。
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f, i) => {
@@ -527,19 +548,22 @@ export default function LandingPage() {
       {/* ===== CTA ===== */}
       <section className="px-6 py-20">
         <div className="mx-auto max-w-3xl overflow-hidden rounded-[32px] bg-brand px-8 py-14 text-center text-white shadow-xl">
+          {/* 最後にもう一度、初見の言葉に戻す（ここまで読まずに飛んできた人もいる） */}
           <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
-            作る前に、疑わなくていい。
+            今日の晩ごはん、
+            <br className="sm:hidden" />
+            決めてしまおう。
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-white/90">
-            分からないことは分からないと書く。冷蔵庫にあるものだけで作る。
+            いま家にあるものを{SUGGEST_THRESHOLD}つ入れるだけで、今日の一品と買い物リストが出ます。
             <br className="hidden sm:block" />
-            それだけで、毎日の料理はずいぶん楽になります。
+            登録もログインも要りません。
           </p>
           <Link
             href="/"
             className="mt-8 inline-block rounded-full bg-white px-10 py-3.5 text-sm font-bold text-brand-dark shadow-lg transition hover:bg-paper active:scale-95"
           >
-            {APP_NAME} を始める
+            家にあるもので献立を出す
           </Link>
         </div>
       </section>
