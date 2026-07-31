@@ -1,32 +1,28 @@
 import UIKit
 import Capacitor
-import WebKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-    // remote URL 方式では WKWebView が本番Webのディスク/メモリキャッシュを保持し、
-    // 再起動しても古いWebのままになって"更新が届かない"問題があった。Cookie/localStorage は
-    // 消さない（ログイン保持）。起動時とバックグラウンド移行時の両方で消すことで、
-    // 「次回の起動は必ず最新Web」を確実にする（起動時消去だけだと読込と競合し1回遅れることがある）。
-    private func clearWebCache() {
-        let cacheTypes: Set<String> = [
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache,
-        ]
-        URLCache.shared.removeAllCachedResponses()
-        WKWebsiteDataStore.default().removeData(
-            ofTypes: cacheTypes,
-            modifiedSince: Date(timeIntervalSince1970: 0),
-            completionHandler: {}
-        )
-    }
-
+    // ⚠️ 以前ここに clearWebCache() があり、起動時とバックグラウンド移行時に
+    //    WKWebsiteDataStore（DiskCache / MemoryCache / OfflineWebApplicationCache）と
+    //    URLCache.shared を毎回まるごと消していた。
+    //
+    //    入れた理由（d07e7c8）は「remote URL 方式だと古いWebが残って更新が届かない」。
+    //    それ自体は当時は正しい対処だったが、オフライン対応を入れた今は逆効果だった:
+    //      - 端末に残っているキャッシュを毎回捨てるので、圏外で起動したときに
+    //        表示できるものが何も無くなる（＝真っ黒）。
+    //      - バックグラウンド移行のたびに消すため、そのセッションで温まった
+    //        キャッシュがアプリを切り替えるたびに全部無効になり、通信量も増える。
+    //
+    //    「常に最新」の役目は Service Worker（public/sw.js）が引き継いだ。
+    //    画面遷移はネットワーク優先＝オンラインなら必ず最新HTMLを取り、
+    //    失敗したときだけキャッシュを出す。/_next/static/* は内容が変わればURLも変わるので
+    //    古いものが使われることはない。つまり全消しは不要になったうえ、
+    //    オフライン対応と真正面からぶつかるので撤去した。
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        clearWebCache()
         return true
     }
 
@@ -36,8 +32,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // バックグラウンド移行時にもキャッシュを消しておく＝次回の起動が確実に最新Webになる。
-        clearWebCache()
+        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {

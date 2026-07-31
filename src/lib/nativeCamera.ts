@@ -51,6 +51,17 @@ function isCancel(e: unknown): boolean {
 function toJaError(e: unknown): NativePhotoError {
   const msg = String((e as Error)?.message ?? e);
   const lower = msg.toLowerCase();
+  // アプリの設定不備（Info.plist の利用説明が足りない等）。
+  // @capacitor/camera は getPhoto() の前に3つの利用説明キーを検査し、欠けていると
+  // "You are missing NSPhotoLibraryAddUsageDescription in your Info.plist file. ... Learn more: https://..."
+  // という英語＋URLで reject する。これをそのまま出すとユーザーには意味不明なうえ、
+  // 「直しようがないのに自分の操作ミスに見える」最悪の表示になる。
+  // ユーザー側では絶対に解消できないので、原因を伏せて「アプリ側の問題」と伝える。
+  if (lower.includes("info.plist") || lower.includes("usagedescription")) {
+    return new NativePhotoError(
+      "アプリの設定に問題があり、写真機能を開けませんでした。お手数ですが手入力で追加してください（アプリの更新で解消します）。",
+    );
+  }
   const denied =
     lower.includes("denied") ||
     lower.includes("permission") ||
@@ -66,9 +77,11 @@ function toJaError(e: unknown): NativePhotoError {
       "カメラの使用が許可されていません。iPhoneの「設定」→「CookSync」→「カメラ」から許可してください。",
     );
   }
-  return new NativePhotoError(
-    msg ? `写真を取得できませんでした（${msg}）` : "写真を取得できませんでした。もう一度お試しください。",
-  );
+  // 想定外のエラー。以前はここで生のメッセージを ( ) に入れてそのまま画面に出していたが、
+  // プラグインのメッセージは英語＋URLなので、ユーザーには読めないし対処もできない。
+  // 原因調査には要るので console にだけ残し、画面には日本語だけを出す。
+  if (msg) console.warn("[nativeCamera]", msg);
+  return new NativePhotoError("写真を取得できませんでした。もう一度お試しください。");
 }
 
 /**

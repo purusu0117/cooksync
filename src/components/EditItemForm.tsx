@@ -42,7 +42,14 @@ export default function EditItemForm({ item, onSave, onCancel }: Props) {
           e.preventDefault();
           save();
         }}
-        className="animate-pop-in max-h-[88vh] w-full max-w-md overflow-y-auto rounded-3xl border border-line bg-surface p-5 shadow-xl"
+        /*
+          max-h は vh ではなく dvh。vh は「キーボードが出ていないときの高さ」で固定されるため、
+          キーボードが出ると 88vh のカードが縮まず、下端の「賞味・消費期限」欄が
+          キーボードの下に隠れて触れなくなっていた（実機報告）。
+          dvh なら @capacitor/keyboard の resize:"native" で WebView が縮んだぶんカードも縮み、
+          overflow-y-auto でスクロールして入力欄まで到達できる。
+        */
+        className="animate-pop-in max-h-[88dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-line bg-surface p-5 shadow-xl"
       >
         <h2 className="mb-3 text-base font-bold text-ink">食材を編集</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

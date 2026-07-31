@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  capacitor.config.ts の server.errorPath から読まれる「読み込みに失敗したとき」の画面。
+  これが無いと WKWebView は失敗しても何も描かず、ダークモードでは真っ黒のままになる。
+
+  ここは capacitor://localhost から読まれるローカルファイルなので、
+  通信が完全に死んでいても必ず表示できる（CSS/SVGも全部インライン）。
+  Service Worker が入ったあとは public/offline.html 側が先に出るので、
+  この画面は「初回起動でまだSWが無い」「DNSごと落ちている」ときの最後の砦。
+-->
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CookSync｜つながっていません</title>
+    <style>
+      :root {
+        --paper: #f0ece1;
+        --ink: #2b2a22;
+        --sub: #6b6559;
+        --brand: #2f9e60;
+        --brand-dark: #1f6e42;
+        --line: #e6e0d2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px calc(20px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))
+          calc(20px + env(safe-area-inset-right));
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+        font-size: 15px;
+        line-height: 1.9;
+        -webkit-text-size-adjust: 100%;
+      }
+      .card {
+        width: 100%;
+        max-width: 380px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        text-align: center;
+      }
+      h1 {
+        font-size: 21px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        margin: 0;
+        color: var(--brand-dark);
+      }
+      p {
+        margin: 0;
+        color: var(--sub);
+        font-size: 14.5px;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto;
+        border-radius: 18px;
+        background: #e8f4ec;
+        display: grid;
+        place-items: center;
+      }
+      button {
+        min-height: 52px;
+        border: 0;
+        border-radius: 16px;
+        background: var(--brand);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      .note {
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+        font-size: 13.5px;
+        color: var(--sub);
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="mark" aria-hidden="true">
+        <svg
+          width="30"
+          height="30"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#1f6e42"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <rect x="6" y="3" width="12" height="18" rx="2" />
+          <path d="M6 10h12M9 6.5v2M9 13v2" />
+        </svg>
+      </div>
+      <h1>いま通信が届いていません</h1>
+      <p>
+        電波が戻れば、そのまま続きから使えます。<br />
+        登録した食材や買い物リストは消えていません。
+      </p>
+      <button type="button" id="retry">もう一度つないでみる</button>
+      <div class="note">
+        機内モードになっていないか、Wi-Fi / モバイル通信が有効かを確認してください。
+        電波の届く場所で一度開き直すと、以降はオフラインでも直前の画面を見られるようになります。
+      </div>
+    </div>
+    <script>
+      // ⚠️ この画面は capacitor://localhost で開かれているので location.reload() では
+      //    この画面を読み直すだけになる。本体URLへ明示的に戻す必要がある。
+      //    capacitor.config.ts の serverUrl（既定値）と合わせること。
+      //    CAPACITOR_SERVER_URL で読み込み先を変えるときはここも変える。
+      var APP_URL = "https://cooksync-one.vercel.app/";
+      document.getElementById("retry").addEventListener("click", function () {
+        location.replace(APP_URL);
+      });
+    </script>
+  </body>
+</html>

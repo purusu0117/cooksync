@@ -44,6 +44,12 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  // キーボードが出たらビューポート自体を縮める。
+  // body が overflow-hidden の「アプリシェル」構造なので、キーボードがコンテンツに
+  // 覆いかぶさる既定の挙動だと、下端の入力欄に届く手段が無くなる（＝入力不能）。
+  // iOSアプリ版は @capacitor/keyboard の resize:"native" が同じことをする。
+  // こちらは Web/PWA と Android 側の同じ問題に効く。
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

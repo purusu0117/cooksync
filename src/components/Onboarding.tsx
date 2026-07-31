@@ -96,7 +96,8 @@ export default function Onboarding() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 px-4 py-6 sm:items-center">
-      <div className="flex max-h-[88vh] w-full max-w-sm flex-col overflow-y-auto rounded-3xl bg-paper p-6 shadow-xl">
+      {/* max-h は EditItemForm と同じ理由で dvh（vh はキーボード表示中に縮まない） */}
+      <div className="flex max-h-[88dvh] w-full max-w-sm flex-col overflow-y-auto overscroll-contain rounded-3xl bg-paper p-6 shadow-xl">
         {/* スキップ */}
         <div className="mb-2 flex justify-end">
           <button

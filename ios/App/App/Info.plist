@@ -59,5 +59,31 @@
 	<!-- 写真ライブラリの説明。撮影済みの食材写真・レシピ写真を選ぶ（複数選択あり）ために必要。 -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>撮影済みの食材やレシピの写真を選んで読み取るために写真ライブラリへアクセスします。</string>
+	<!-- 写真ライブラリへの「追加」の説明。
+	     ⚠️ @capacitor/camera は getPhoto() を実行する前に
+	     NSCameraUsageDescription / NSPhotoLibraryUsageDescription / NSPhotoLibraryAddUsageDescription
+	     の3つが Info.plist に揃っているかを検査し、1つでも欠けていると撮影画面すら出さずに
+	     "You are missing ... in your Info.plist file." という英語＋URLで reject する
+	     （@capacitor/camera の CameraPlugin.swift checkUsageDescriptions）。
+	     このキーが無かったため、アプリ版の「写真から食材を追加」は実機で必ず失敗していた。 -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>読み取ったレシピや食材の画像を、あなたが保存を選んだときだけ写真ライブラリに追加します。</string>
+	<!-- WKWebView で Service Worker を動かすための宣言。
+	     ⚠️ CookSync は remote URL 方式（WKWebView が Vercel の本番サイトを直接読む）なので、
+	     アプリが app-bound domain を宣言し、かつ ios.limitsNavigationsToAppBoundDomains=true に
+	     しない限り、WKWebView では navigator.serviceWorker.register() が必ず失敗する。
+	     そのため OfflineReady の登録は無言で失敗し続け、public/sw.js のオフライン対応が
+	     アプリ版では一度も効いていなかった（＝機内モードで画面が真っ黒）。
+	     ・cooksync-one.vercel.app … server.url の読み込み先。ここのSWを有効にするのが目的
+	     ・localhost … Capacitor のローカル配信元（capacitor://localhost）。
+	       server.errorPath のオフライン画面もここから読むので必須。
+	     ※ 最大10件。CAPACITOR_SERVER_URL で読み込み先を変えるときはここにも足すこと。
+	     ※ 外部サイト（アフィリエイト等）は Capacitor が WebView 内遷移を止めて Safari で開くので
+	       このリストに入れる必要はない（WebViewDelegationHandler.decidePolicyFor）。 -->
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>cooksync-one.vercel.app</string>
+		<string>localhost</string>
+	</array>
 </dict>
 </plist>
