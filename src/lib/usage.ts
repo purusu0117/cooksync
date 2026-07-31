@@ -9,17 +9,64 @@
 //    数値は quotaServer.FREE_LIMITS と一致させること（ズレるとUIが嘘をつく）。
 
 import { usageStore, accountStore, type UsageRecord } from "./storage";
-import { AI_LABEL, FREE_LIMITS, PREMIUM_LIMITS, type AiKind } from "./aiLimits";
+import {
+  AI_LABEL,
+  FREE_LIMITS,
+  PREMIUM_LIMITS,
+  QUOTA_PERIOD_LABEL,
+  QUOTA_RESET_LABEL,
+  daysUntilQuotaReset,
+  weekKey,
+  type AiKind,
+} from "./aiLimits";
 import { usePersistentList } from "./useStore";
 import { todayISO } from "./food";
 
-// 枠の数字は src/lib/aiLimits.ts に一本化した（ここに書くとサーバー側とズレる）。
+// 枠の数字と期間は src/lib/aiLimits.ts に一本化した（ここに書くとサーバー側とズレる）。
 export type { AiKind } from "./aiLimits";
 export { FREE_LIMITS, PREMIUM_LIMITS, AI_LABEL } from "./aiLimits";
 // AI_LABEL はこのファイル内でも使うので値としてimportしてある
 
+/** @deprecated 枠は週次になった。期間キーは currentPeriod() を使う。
+ *  （旧レコードの読み取り・移行の説明のために残してある） */
 export function currentMonth(): string {
   return todayISO().slice(0, 7); // "2026-06"
+}
+
+/**
+ * 表示カウンタの**期間キー**。サーバー(quotaServer.period)と同じ aiLimits.weekKey を読む。
+ *
+ * ⚠️ ここで `todayISO()`（端末ローカル日付）から週を作ってはいけない。
+ *    サーバーはUTCで動くので、端末のタイムゾーン次第で週がズレて
+ *    「画面は残り2回なのにサーバーは0回」になる。weekKey は両側でJSTに寄せている。
+ */
+export function currentPeriod(): string {
+  return weekKey();
+}
+
+/**
+ * あと何日で枠が戻るか。「また来る理由」を画面に出すために使う。
+ * ⚠️ 断るときは残量ではなく**いつ戻るか**を伝える。それが再訪の約束になる。
+ */
+export function resetHint(now: Date = new Date()): string {
+  const d = daysUntilQuotaReset(now);
+  return d === 1 ? `明日（${QUOTA_RESET_LABEL}）に戻ります` : `${QUOTA_RESET_LABEL}に戻ります`;
+}
+
+/**
+ * マイページの残量メーターの見出しと説明。
+ *
+ * ⚠️ **MyPage.tsx はまだ「今月のAI利用」「毎月1日リセット」と書いてある**（＝枠は週次なので嘘）。
+ *    あのファイルは文言部門が並行で触っているのでこちらからは変更していない。
+ *    差し替えは import 2つで済むよう、ここに文言を用意してある：
+ *      <h2>{QUOTA_METER_TITLE}</h2> ／ <p>{quotaMeterNote(usage.premium)}</p>
+ */
+export const QUOTA_METER_TITLE = `${QUOTA_PERIOD_LABEL}のAI利用`;
+
+export function quotaMeterNote(premium: boolean): string {
+  return premium
+    ? `プレミアム：たっぷり使えます（公平利用のため上限あり）。毎週${QUOTA_RESET_LABEL}リセット。`
+    : `無料枠は毎週${QUOTA_RESET_LABEL}にリセットされます。使い切っても、次の${QUOTA_RESET_LABEL}にはまた使えます。`;
 }
 
 /** サーバーが429で返す枠情報（quotaServer.quotaResponse の `quota`）。 */
@@ -39,8 +86,8 @@ export interface ServerQuota {
  */
 export function quotaMessage(kind: AiKind, limit: number, premium: boolean): string {
   return premium
-    ? `今月の${AI_LABEL[kind]}が上限（${limit}回）に達しました。来月またご利用ください。`
-    : `今月の無料枠（${AI_LABEL[kind]} ${limit}回）を使い切りました。`;
+    ? `${QUOTA_PERIOD_LABEL}の${AI_LABEL[kind]}が上限（${limit}回）に達しました。${QUOTA_RESET_LABEL}になると、また${limit}回使えます。`
+    : `${QUOTA_PERIOD_LABEL}の無料枠（${AI_LABEL[kind]} ${limit}回）を使い切りました。${QUOTA_RESET_LABEL}になると、また${limit}回使えます。`;
 }
 
 /**
@@ -59,11 +106,28 @@ export function readApiError(
   return { message, quota: d.quota };
 }
 
+/**
+ * 月次→週次の移行方針（**既存ユーザーの記録を1件も消さない**）
+ *
+ * UsageRecord は `{ month: string; research; scan; import? }` という形で
+ * localStorage＋サーバー同期に載っている。`month` は**ただの期間キー文字列**なので、
+ * 週次では同じ欄に `W2026-07-27` を入れる。型もストアも変えない＝
+ * `storage.ts` / `syncStore.ts`（データ保全部門の担当）に一切手を入れずに移行できる。
+ *
+ * 既存の月次レコード（`2026-08`）は **消さずにそのまま残す**。
+ *   - 消さないので、万一この変更を巻き戻しても月次の数字が正しく復元される
+ *   - 現在の週キーには一致しないので、移行直後の残量は「週の枠まるごと」から始まる
+ *     ＝ **移行によって使えなくなる人は1人も出ない**（枠切れの人はむしろその場で解放される）
+ *   - 逆に移行の週だけ最大「月枠の残り＋週枠」を使えるが、
+ *     出ていく金額は月間予算(COOKSYNC_MONTHLY_BUDGET_YEN)とIP日次上限で従来どおり頭打ち
+ *
+ * この性質は usage.test.ts / quotaServer.test.ts で固定している。
+ */
 export function useUsage() {
   const [records, setRecords] = usePersistentList(usageStore);
   const [accounts] = usePersistentList(accountStore);
   const premium = accounts[0]?.premium ?? false;
-  const month = currentMonth();
+  const month = currentPeriod();
   const rec: UsageRecord =
     records.find((r) => r.month === month) ?? {
       month,
@@ -85,7 +149,8 @@ export function useUsage() {
   function canUse(kind: AiKind): boolean {
     return (rec[kind] ?? 0) < limits[kind];
   }
-  // 今月のレコードを1つだけ書き換える共通処理（無ければ作る）
+  // 今週のレコードを1つだけ書き換える共通処理（無ければ作る）。
+  // ⚠️ others に**古い月次レコードも含まれる**＝そのまま残る。消さないのが移行方針。
   function update(kind: AiKind, next: (n: number) => number): void {
     setRecords((prev) => {
       const others = prev.filter((r) => r.month !== month);

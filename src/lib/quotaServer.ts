@@ -5,9 +5,14 @@
 //   公開したら「1人が無限にAIを叩ける」状態になり、原価を全部こちらが被る。
 //
 // 3つの軸で止める（1つ破られても次で止まる）:
-//   ① uidごとの月間枠     … 通常のユーザー体験としての上限
+//   ① uidごとの**週間**枠  … 通常のユーザー体験としての上限（2026-08-01に月次から変更）
 //   ② IPごとの日次上限     … uidを作り直して枠をリセットする回避を潰す
 //   ③ 全体の月間上限       … 最終防衛線（/api/research に既存のものをここへ集約）
+//
+// ⚠️ **①だけが週次。②は日次、③④(予算)は月次のまま。**
+//    ①はユーザー体験の話（「また来週使える」と言えるようにする）で、
+//    ③④は「1ヶ月に出ていく金額」の話。混ぜると、週の変わり目に予算が4回リセットされて
+//    月の支出が4倍になる。期間を変えたのはユーザー枠だけ、というのがこの変更の要点。
 //
 // ⚠️ 現状 uid はクライアントが持つUUID（localStorage）なので **偽装できる**。
 //    ①だけでは不十分で、だから②③がある。uidが偽装不能になるのは
@@ -19,9 +24,16 @@ import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "./kv";
 import { EST_YEN, monthYenSpent } from "./aiCost";
-import { FREE_LIMITS, PREMIUM_LIMITS, type AiKind } from "./aiLimits";
+import {
+  FREE_LIMITS,
+  PREMIUM_LIMITS,
+  QUOTA_PERIOD_LABEL,
+  QUOTA_RESET_LABEL,
+  weekKey,
+  type AiKind,
+} from "./aiLimits";
 
-// 枠の数字は src/lib/aiLimits.ts に一本化（画面表示側 usage.ts と同じものを読む）。
+// 枠の数字と期間の定義は src/lib/aiLimits.ts に一本化（画面表示側 usage.ts と同じものを読む）。
 export type { AiKind } from "./aiLimits";
 export { FREE_LIMITS, PREMIUM_LIMITS } from "./aiLimits";
 
@@ -80,17 +92,36 @@ function day(): string {
 }
 
 /**
- * AI利用カウンタのキーに使う月（当月・前月）。**month() と同じ基準（UTC）で作る。**
+ * ユーザー枠のカウンタキーに使う**期間**。2026-08-01 から週（JSTの月曜始まり）。
+ * 定義は aiLimits.weekKey に置いてある（クライアント表示 usage.ts と**同じ関数**を読む）。
+ */
+function period(): string {
+  return weekKey();
+}
+
+/** ユーザー枠キーのTTL。1週ぶん + 前週を見返す余地 + 時差の安全マージン。 */
+const USER_QUOTA_TTL_SEC = 21 * 24 * 3600;
+
+/**
+ * AI利用カウンタのキーに使う**期間サフィックスの一覧**。アカウント削除で使う。
  *
- * ⚠️ アカウント削除側で `new Date(y, m-1, 1).toISOString()` と書いていたため、
+ * ⚠️ 名前は `recentUsageMonths` のままだが、**月次キーと週次キーの両方**を返す。
+ *    2026-08-01にユーザー枠を月次→週次へ移したとき、ここを月だけのままにしていると
+ *    **アカウント削除で新しい週次カウンタが消し残る**（＝削除したはずの利用履歴が残る）。
+ *    呼び出し側（/api/account/delete）は「返ってきた分だけ消す」作りなので、
+ *    ここを広げるだけで削除側は無改修で追随する。
+ *
+ * ⚠️ 月の計算は month() と同じ基準（UTC）で作る。
+ *    アカウント削除側で `new Date(y, m-1, 1).toISOString()` と書いていたため、
  *    JSTの1日0時がUTCで前日に巻き戻り、**常に「2ヶ月前」**を指していた。
  *    結果、前月のカウンタが一度も消えず残っていた（2026-08-01 監査 H-10(b)）。
- *    月の計算はここに一本化して、キーを作る側と消す側がズレないようにする。
  */
 export function recentUsageMonths(): string[] {
   const now = new Date();
   const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  return [month(), prev.toISOString().slice(0, 7)];
+  // 週次キーは直近4週ぶん（TTL 21日で自然消滅する範囲を全部カバーする）
+  const weeks = [0, 1, 2, 3].map((i) => weekKey(new Date(now.getTime() - i * 7 * 86_400_000)));
+  return [month(), prev.toISOString().slice(0, 7), ...weeks];
 }
 
 /** IPは生で保存しない（個人情報）。ソルト付きハッシュで持つ。
@@ -196,6 +227,14 @@ function denyIp(limit: number, premium: boolean): QuotaResult {
     message: "この回線からのAI利用が今日の上限に達しました。明日またお試しください。",
   };
 }
+/**
+ * 枠切れの文言。**「いつ戻るか」を必ず書く。**
+ *
+ * 月次のころは「来月またご利用ください」＝最悪3週間先で、実質「もう来なくていい」だった。
+ * 週次にした一番の目的は、断るときに **「月曜にまた2回使えます」と言えること**。
+ * 断り文句を再訪の約束に変える。
+ * ⚠️ この文言は usage.quotaMessage と1字一句そろえること（テストで固定してある）。
+ */
 function denyUser(kind: AiKind, limit: number, premium: boolean): QuotaResult {
   return {
     ok: false,
@@ -205,8 +244,8 @@ function denyUser(kind: AiKind, limit: number, premium: boolean): QuotaResult {
     remaining: 0,
     premium,
     message: premium
-      ? `今月の${KIND_LABEL[kind]}が上限（${limit}回）に達しました。来月またご利用ください。`
-      : `今月の無料枠（${KIND_LABEL[kind]} ${limit}回）を使い切りました。`,
+      ? `${QUOTA_PERIOD_LABEL}の${KIND_LABEL[kind]}が上限（${limit}回）に達しました。${QUOTA_RESET_LABEL}になると、また${limit}回使えます。`
+      : `${QUOTA_PERIOD_LABEL}の無料枠（${KIND_LABEL[kind]} ${limit}回）を使い切りました。${QUOTA_RESET_LABEL}になると、また${limit}回使えます。`,
   };
 }
 
@@ -227,7 +266,8 @@ export async function consume(
     return { ok: true, used: 0, limit, remaining: limit, premium };
   }
 
-  const m = month();
+  const m = month(); // ③全体の回数・④予算は**月**のまま（金額の話なので週にしない）
+  const p = period(); // ①ユーザー枠は**週**
   const d = day();
   const ipk = hashIp(clientIp(request));
   const id = uid && uid !== "anon" ? uid : `ip-${ipk}`; // 未ログインはIP単位で数える
@@ -243,10 +283,12 @@ export async function consume(
   //    原価が1円も出ていないのに 300回で**全ユーザーのAI機能が月末まで止まった**
   //    （2026-08-01 監査 H-2）。1人の連打で全員を巻き込むのは防御ではなく自爆。
   if (redis) {
-    // ① uidごとの月間枠（一番内側＝その人だけの話）
-    const uk = `cooksync:usage:${id}:${m}`;
+    // ① uidごとの週間枠（一番内側＝その人だけの話）
+    // 旧・月次キー（cooksync:usage:<id>:2026-08）は放置してよい。TTL 70日で自然に消え、
+    // 新しい週次キーとは名前が違うので**取り違えない**。移行のために消す作業は不要。
+    const uk = `cooksync:usage:${id}:${p}`;
     const used = await redis.hincrby(uk, kind, 1);
-    if (used === 1) await redis.expire(uk, 70 * 24 * 3600);
+    if (used === 1) await redis.expire(uk, USER_QUOTA_TTL_SEC);
     if (used > limit) {
       await redis.hincrby(uk, kind, -1); // 使わせないので戻す
       return denyUser(kind, limit, premium);
@@ -278,7 +320,7 @@ export async function consume(
   // ローカルでの強制（動作確認用）。Redis分岐と同じ順序・同じ文言を返す。
   // ローカルは read-modify-write なので、**通ったときだけ**まとめて書けばロールバック不要。
   const db = await readLocal();
-  const ukey = `${id}:${m}`;
+  const ukey = `${id}:${p}`;
   const rec = (db.usage[ukey] ??= {});
   const used = (rec[kind] ?? 0) + 1;
   if (used > limit) return denyUser(kind, limit, premium);
@@ -401,16 +443,16 @@ export async function checkIpOnly(request: Request): Promise<boolean> {
 /** AI呼び出しが失敗したときに枠を戻す（ユーザーに損をさせない）。 */
 export async function refund(uid: string, kind: AiKind, request: Request): Promise<void> {
   if (!quotaEnforced()) return;
-  const m = month();
+  const p = period();
   const ipk = hashIp(clientIp(request));
   const id = uid && uid !== "anon" ? uid : `ip-${ipk}`;
   try {
     if (redis) {
-      await redis.hincrby(`cooksync:usage:${id}:${m}`, kind, -1);
+      await redis.hincrby(`cooksync:usage:${id}:${p}`, kind, -1);
       return;
     }
     const db = await readLocal();
-    const rec = db.usage[`${id}:${m}`];
+    const rec = db.usage[`${id}:${p}`];
     if (rec && rec[kind]) rec[kind] = Math.max(0, rec[kind] - 1);
     await writeLocal(db);
   } catch {
@@ -430,9 +472,9 @@ export async function peek(uid: string): Promise<{
   if (!quotaEnforced() || !uid || uid === "anon") {
     return { premium, limits, used: empty };
   }
-  const m = month();
+  const p = period();
   if (redis) {
-    const h = await redis.hgetall<Record<string, number>>(`cooksync:usage:${uid}:${m}`);
+    const h = await redis.hgetall<Record<string, number>>(`cooksync:usage:${uid}:${p}`);
     return {
       premium,
       limits,
@@ -444,7 +486,7 @@ export async function peek(uid: string): Promise<{
     };
   }
   const db = await readLocal();
-  const rec = db.usage[`${uid}:${m}`] ?? {};
+  const rec = db.usage[`${uid}:${p}`] ?? {};
   return {
     premium,
     limits,
@@ -462,7 +504,7 @@ export function quotaResponse(q: QuotaResult, kind: AiKind): Response {
     {
       error:
         q.message ??
-        `今月の${KIND_LABEL[kind]}の枠（${q.limit}回）を使い切りました。`,
+        `${QUOTA_PERIOD_LABEL}の${KIND_LABEL[kind]}の枠（${q.limit}回）を使い切りました。`,
       quota: {
         kind,
         reason: q.reason,

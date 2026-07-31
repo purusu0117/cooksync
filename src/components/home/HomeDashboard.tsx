@@ -1,14 +1,21 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Apple, ChevronRight, User } from "lucide-react";
+import { Apple, Camera, ChevronRight, User } from "lucide-react";
 import { bucketOf } from "@/lib/food";
+import { starsMapOf } from "@/lib/ranking";
 import { CATEGORY_ICON } from "@/components/categoryIcon";
 import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
+import { useSyncState } from "@/lib/syncStore";
+import { SUGGEST_THRESHOLD, remainingToSuggest } from "@/lib/starter";
 import DishIcon from "@/components/DishIcon";
 import RecipeSources from "@/components/home/RecipeSources";
+import ResumeCooking from "@/components/home/ResumeCooking";
+import WeeklyRecap from "@/components/home/WeeklyRecap";
+import EmptyState, { EMPTY_STATES } from "@/components/EmptyState";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 export default function HomeDashboard() {
@@ -16,15 +23,38 @@ export default function HomeDashboard() {
   const [fridge] = usePersistentList(fridgeStore);
   const [shopping] = usePersistentList(shoppingStore);
   const [ratings] = usePersistentList(ratingStore);
+  const sync = useSyncState();
 
-  const starsOf = (id: string) =>
-    ratings.find((r) => r.recipeId === id)?.stars ?? 0;
-  // 高評価を優先（同点は元の順）
-  const recommended = [...recipes]
-    .sort((a, b) => starsOf(b.id) - starsOf(a.id))
-    .slice(0, 6);
-  const todo = shopping.filter((s) => !s.checked);
-  const shortage = todo.slice(0, 4).map((s) => s.name);
+  /*
+    ★おすすめは useMemo で固定する。
+      以前は毎レンダーで「レシピ全件をコピー → 全件ソート、しかも比較関数の中から
+      ratings.find() で全走査」していた。**表示に使うのは先頭6件だけ**なのに、
+      冷蔵庫や買い物リストが1件変わってホームが再描画されるたび、
+      レシピ200件ぶんのソートを丸ごとやり直していた。
+      レシピと評価が変わっていないなら計算しない、が正しい。
+
+      並びは従来どおり「星の高い順、同点は元の順」。Array#sort は安定ソートなので、
+      同点の並びは recipes の順序のまま変わらない。
+  */
+  const recommended = useMemo(() => {
+    const starsMap = starsMapOf(ratings);
+    const starsOf = (id: string) => starsMap.get(id) ?? 0;
+    return [...recipes].sort((a, b) => starsOf(b.id) - starsOf(a.id)).slice(0, 6);
+  }, [recipes, ratings]);
+
+  const shortage = useMemo(
+    () =>
+      shopping
+        .filter((s) => !s.checked)
+        .slice(0, 4)
+        .map((s) => s.name),
+    [shopping],
+  );
+
+  // 初回の一等地。冷蔵庫が3つ未満のあいだは「最初の1アクション」をいちばん上に置く。
+  // ★ hydrated を必ず見る（読み込み前は fridge が空なので、既存ユーザーにも一瞬出てしまう）。
+  const left = remainingToSuggest(fridge.length);
+  const showFirstStep = sync.hydrated && left > 0;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-5">
@@ -51,8 +81,43 @@ export default function HomeDashboard() {
         {APP_TAGLINE}読み取れなかった分量は、そう書きます。
       </p>
 
+      {/*
+        初回の一等地。ここに「レシピをつくる」を先に出すと、在庫ゼロの人は
+        AI提案を押しても手応えのない結果に着地する。まず食材3つに連れて行く。
+      */}
+      {showFirstStep && (
+        <Link
+          href="/fridge"
+          className="mb-7 flex items-center gap-3 rounded-2xl border border-brand/30 bg-brand-soft p-4 transition hover:shadow-md active:scale-[0.99]"
+        >
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-surface">
+            <Camera size={24} strokeWidth={1.9} className="text-brand" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-brand-dark">
+              まず、いま家にあるものを{SUGGEST_THRESHOLD}つ
+            </span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">
+              冷蔵庫を1枚撮るか、よく買うものをタップするだけ。
+              {fridge.length > 0 && `あと${left}つで今日の献立を出せます。`}
+            </span>
+          </span>
+          <ChevronRight size={20} className="shrink-0 text-brand" />
+        </Link>
+      )}
+
+      {/*
+        作りかけがあるときだけ、**一番上**に出す。
+        途中で手を止めた人にとっては「今日ここで何をするか」がこれ以外に無いので、
+        レシピを探す導線より先に置く。無い日は何も描かれない。
+      */}
+      <ResumeCooking />
+
       {/* レシピをつくる（AI提案／動画／写真） */}
       <RecipeSources />
+
+      {/* 今週の記録（作った記録がある人にだけ出る／AIを使わない） */}
+      <WeeklyRecap />
 
       {/* おすすめレシピ */}
       <section className="mb-7">
@@ -94,12 +159,7 @@ export default function HomeDashboard() {
       <section className="mb-7">
         <SectionTitle title="冷蔵庫リスト" href="/fridge" />
         {fridge.length === 0 ? (
-          <Link
-            href="/fridge"
-            className="flex items-center justify-center rounded-2xl border border-dashed border-line bg-surface/60 py-6 text-sm text-ink-soft"
-          >
-            冷蔵庫に食材を追加する →
-          </Link>
+          <EmptyState content={EMPTY_STATES.homeFridge} />
         ) : (
           <div className="no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1">
             {fridge.slice(0, 12).map((item) => {
@@ -124,26 +184,29 @@ export default function HomeDashboard() {
         )}
       </section>
 
-      {/* 不足→買い物リストに追加（オレンジ） */}
+      {/* 買い物リスト（オレンジ） */}
       <section className="mb-7">
-        <h2 className="mb-2.5 text-base font-bold text-brand-dark">買い物リストに追加</h2>
-        <div className="rounded-2xl border border-accent/30 bg-accent-soft p-4">
-          <p className="text-sm font-bold leading-relaxed text-accent-dark">
-            {shortage.length > 0 ? (
-              <>不足：{shortage.join("、")}</>
-            ) : (
-              <span className="font-medium text-ink-soft">
-                不足はありません。献立を決めると、足りない分だけ店で買える単位で追加されます。
-              </span>
-            )}
-          </p>
-          <Link
-            href="/shopping"
-            className="mt-3 block rounded-full bg-brand py-2.5 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
-          >
-            買い物リストに追加
-          </Link>
-        </div>
+        <h2 className="mb-2.5 text-base font-bold text-brand-dark">買い物リスト</h2>
+        {/*
+          ★ 空のときは「不足はありません」＋「買い物リストに追加」ボタンだった。
+            押しても空のリストに着くだけで、次に何をすればいいかが分からなかった。
+            空なら次の1手（献立を決める）に送る。
+        */}
+        {shortage.length === 0 ? (
+          <EmptyState content={EMPTY_STATES.homeShopping} />
+        ) : (
+          <div className="rounded-2xl border border-accent/30 bg-accent-soft p-4">
+            <p className="text-sm font-bold leading-relaxed text-accent-dark">
+              買うもの：{shortage.join("、")}
+            </p>
+            <Link
+              href="/shopping"
+              className="mt-3 flex min-h-[44px] items-center justify-center rounded-full bg-brand text-center text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+            >
+              買い物リストを開く
+            </Link>
+          </div>
+        )}
       </section>
 
       {/* 余りものから作れるレシピ */}

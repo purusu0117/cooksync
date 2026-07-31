@@ -1,5 +1,15 @@
 "use client";
 
+// 買い物リスト。**店の中で、片手で、カートを押しながら使う画面**として作る。
+//
+// 根拠：このアプリで価値を感じる瞬間の1位は「帰宅途中 50.4%」「買い物中 50.1%」。
+// 夜に机で開く画面ではない。だから店で困ることを順に潰してある：
+//   ① 売り場順に並べる  … 追加順のままだと店内を行ったり来たりする（src/lib/aisle.ts）
+//   ② 行ごと押せる      … 20pxの四角は歩きながら狙えない。行全体を56pxのボタンにする
+//   ③ 残り件数を上に出す… 「あと何個で帰れるか」が店で一番知りたい数字
+//   ④ 主要ボタンは下端  … 上端は親指が届かない。「冷蔵庫に入れる」は下に固定する
+//   ⑤ 追加欄はリストの下… 店では「見る・チェックする」が主で入力は従。上を占有させない
+
 import { useMemo, useState } from "react";
 import { shoppingStore, fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
@@ -8,14 +18,17 @@ import SyncNotice, { LoadingOrOffline } from "@/components/SyncNotice";
 import type { ShoppingItem } from "@/lib/shopping";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { guessItem } from "@/lib/guess";
+import { groupByAisle } from "@/lib/aisle";
 import { Check, ShoppingCart, X } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import AppIcon from "@/components/AppIcon";
 import ShoppablePanel from "@/components/shopping/ShoppablePanel";
+import EmptyState, { EMPTY_STATES } from "@/components/EmptyState";
 import { shoppingListText } from "@/lib/affiliate";
 
+// タップ領域 44px（iPhoneの下限）を確保する
 const fieldClass =
-  "rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
+  "min-h-[44px] rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
 
 export default function ShoppingList() {
   const [items, setItems] = usePersistentList(shoppingStore);
@@ -31,6 +44,9 @@ export default function ShoppingList() {
     }),
     [items],
   );
+
+  // 売り場ごとにまとめる。中身の順番は追加順のまま（＝レシピから入った順に読める）。
+  const aisles = useMemo(() => groupByAisle(todo, (i) => i.name), [todo]);
 
   function add(e: React.FormEvent) {
     e.preventDefault();
@@ -80,40 +96,52 @@ export default function ShoppingList() {
     setItems((prev) => prev.filter((i) => !i.checked));
   }
 
+  /**
+   * 1行。**行全体がチェックのボタン**（min-h-14＝56px）。
+   * カートを押しながら片手で押すので、小さな四角を狙わせない。
+   * 削除(×)だけは別ボタンなので、右端に離したうえで44px幅を確保する。
+   */
   function row(i: ShoppingItem) {
     return (
-      <li
-        key={i.id}
-        className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 shadow-sm"
-      >
+      <li key={i.id} className="flex items-stretch gap-1">
         <button
           type="button"
           onClick={() => toggle(i.id)}
-          aria-label="チェック"
-          className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border text-xs transition ${
-            i.checked ? "border-brand bg-brand text-white" : "border-line bg-paper"
+          aria-pressed={i.checked}
+          className={`flex min-h-14 flex-1 items-center gap-3 rounded-xl border px-3 py-3 text-left shadow-sm transition active:scale-[0.99] ${
+            i.checked
+              ? "border-line bg-paper"
+              : "border-line bg-surface hover:border-brand/40"
           }`}
         >
-          {i.checked && <Check size={13} strokeWidth={3} />}
+          <span
+            className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 transition ${
+              i.checked ? "border-brand bg-brand text-white" : "border-line bg-paper"
+            }`}
+          >
+            {i.checked && <Check size={17} strokeWidth={3} />}
+          </span>
+          <span
+            className={`min-w-0 flex-1 ${i.checked ? "text-ink-soft line-through" : "text-ink"}`}
+          >
+            <span className="block truncate text-base leading-tight font-semibold">
+              {i.name}
+              {i.amount && (
+                <span className="ml-2 text-sm font-medium text-ink-soft">{i.amount}</span>
+              )}
+            </span>
+            {i.note && (
+              <span className="mt-0.5 block truncate text-xs text-ink-soft">{i.note}</span>
+            )}
+          </span>
         </button>
-        <span
-          className={`flex-1 truncate text-sm ${
-            i.checked ? "text-ink-soft line-through" : "text-ink"
-          }`}
-        >
-          {i.name}
-          {i.amount && <span className="ml-1.5 text-ink-soft">{i.amount}</span>}
-          {i.note && (
-            <span className="ml-1.5 text-xs text-ink-soft/80">（{i.note}）</span>
-          )}
-        </span>
         <button
           type="button"
           onClick={() => remove(i.id)}
-          aria-label="削除"
-          className="shrink-0 rounded-lg p-1.5 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
+          aria-label={`${i.name}をリストから消す`}
+          className="grid w-11 shrink-0 place-items-center rounded-xl text-ink-soft transition hover:bg-red-50 hover:text-red-600"
         >
-          <X size={15} strokeWidth={2} />
+          <X size={18} strokeWidth={2} />
         </button>
       </li>
     );
@@ -125,7 +153,60 @@ export default function ShoppingList() {
 
       <SyncNotice />
 
-      <form onSubmit={add} className="mb-5 flex gap-2">
+      {/* 「あと何個で帰れるか」。店で一番知りたい数字なので、リストの直前に置く */}
+      {todo.length > 0 && (
+        <p className="mb-3 text-sm font-semibold text-ink">
+          あと{todo.length}個
+          {done.length > 0 && (
+            <span className="ml-2 text-xs font-medium text-ink-soft">
+              （{done.length}個かごに入れました）
+            </span>
+          )}
+        </p>
+      )}
+
+      {/* 「空」と「まだ読めていない」を区別する（店頭で圏外になっても消えたように見せない） */}
+      {items.length === 0 && !sync.hydrated ? (
+        <LoadingOrOffline label="買い物リスト" />
+      ) : items.length === 0 ? (
+        <EmptyState content={EMPTY_STATES.shopping} />
+      ) : (
+        <div className="flex flex-col gap-5">
+          {/* 売り場ごと。見出しは小さくても**固まっていること**が効く */}
+          {aisles.map((g) => (
+            <div key={g.category}>
+              <p className="mb-1.5 text-xs font-bold tracking-wide text-ink-soft">
+                {g.label}
+              </p>
+              <ul className="flex flex-col gap-2">{g.items.map(row)}</ul>
+            </div>
+          ))}
+
+          {done.length > 0 && (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-xs font-bold tracking-wide text-ink-soft">
+                  かごに入れた（{done.length}）
+                </p>
+                <button
+                  type="button"
+                  onClick={clearChecked}
+                  className="min-h-[44px] rounded-full border border-line px-4 text-xs font-medium text-ink-soft transition hover:bg-paper"
+                >
+                  消す
+                </button>
+              </div>
+              <ul className="flex flex-col gap-2">{done.map(row)}</ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/*
+        追加欄は**リストの下**。店では「見る・チェックする」が主で入力は従なので、
+        画面の一等地（上）を入力欄に使わない。下にあるほうが片手でも打ちやすい。
+      */}
+      <form onSubmit={add} className="mt-6 flex gap-2">
         <input
           className={`${fieldClass} min-w-0 flex-1`}
           value={name}
@@ -141,56 +222,11 @@ export default function ShoppingList() {
         <button
           type="submit"
           disabled={!name.trim()}
-          className="shrink-0 whitespace-nowrap rounded-xl bg-brand px-4 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
+          className="min-h-[44px] shrink-0 rounded-xl bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white transition hover:bg-brand-dark active:scale-95 disabled:bg-line disabled:text-ink-soft"
         >
           追加
         </button>
       </form>
-
-      {/* 「空」と「まだ読めていない」を区別する（店頭で圏外になっても消えたように見せない） */}
-      {items.length === 0 && !sync.hydrated ? (
-        <LoadingOrOffline label="買い物リスト" />
-      ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-ink">買い物リストは空です</p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            「献立を決める」でレシピを選ぶと、足りない材料がここに自動で入ります。
-            <br />
-            下の欄から手動で追加することもできます。
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          <ul className="flex flex-col gap-2">{todo.map(row)}</ul>
-          {done.length > 0 && (
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-ink-soft">
-                  購入済み（{done.length}）
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={moveCheckedToFridge}
-                    className="inline-flex items-center gap-1 rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-dark active:scale-95"
-                  >
-                    <AppIcon name="fridge" size={14} />
-                    冷蔵庫へ入れる
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearChecked}
-                    className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-soft transition hover:bg-paper"
-                  >
-                    消す
-                  </button>
-                </div>
-              </div>
-              <ul className="flex flex-col gap-2">{done.map(row)}</ul>
-            </div>
-          )}
-        </div>
-      )}
 
       {/*
         まとめて注文する導線。**リストの一番下**に置く。
@@ -205,6 +241,26 @@ export default function ShoppingList() {
         description="お店に行かなくても、ネットスーパーや食材宅配で受け取れます。リストをコピーしてから開くと、注文先で探すのが楽になります。"
         copyText={shoppingListText(todo)}
       />
+
+      {/*
+        帰宅後の一手。**下端に固定**する（親指が届く場所）。
+        かごに入れたものがあるときだけ出るので、普段はリストの邪魔をしない。
+      */}
+      {done.length > 0 && (
+        <div className="sticky bottom-0 -mx-4 mt-4 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur-md">
+          <button
+            type="button"
+            onClick={moveCheckedToFridge}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand text-sm font-bold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+          >
+            <AppIcon name="fridge" size={18} />
+            買った{done.length}個を冷蔵庫に入れる
+          </button>
+          <p className="mt-1.5 text-center text-xs text-ink-soft">
+            期限の目安を付けて冷蔵庫リストに移します
+          </p>
+        </div>
+      )}
     </div>
   );
 }

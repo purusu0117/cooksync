@@ -12,6 +12,7 @@ import {
   refund,
 } from "../quotaServer";
 import { logAiCost } from "../aiCost";
+import { weekKey } from "../aiLimits";
 import { quotaMessage, readApiError } from "../usage";
 
 // 枠はローカルではデフォルト無効（大翔のローカルは原価0のため）。
@@ -282,6 +283,98 @@ describe("H-10(b) 利用カウンタの月キー", () => {
       .slice(0, 7);
     expect(prev).toBe(expectedPrev);
     expect(prev).not.toBe(cur);
+  });
+
+  it("**週次キーも返す**（アカウント削除で新しいカウンタを消し残さない）", () => {
+    const keys = recentUsageMonths();
+    // 削除側(/api/account/delete)は返ってきた分だけ消すので、
+    // ここに今週のキーが含まれていないと、削除後も利用回数が残る。
+    expect(keys).toContain(weekKey());
+    expect(keys.filter((k) => k.startsWith("W")).length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+// ---- 月次 → 週次 の移行（2026-08-01） ----
+//
+// 「月8回」だと月初に使い切った人は3週間なにもできない＝開かなくなる。
+// 週次にすると原価は変わらないのに「毎週月曜に戻ってくる理由」ができる。
+// ここで守るのは **既存ユーザーが移行で損をしないこと** と
+// **古い月次データを消さないこと**（＝巻き戻せること）。
+describe("月次→週次の移行", () => {
+  const month = new Date().toISOString().slice(0, 7);
+
+  async function seedOldMonthly(uid: string, used: Record<string, number>) {
+    await fs.mkdir(path.dirname(FILE), { recursive: true });
+    await fs.writeFile(
+      FILE,
+      JSON.stringify({
+        usage: { [`${uid}:${month}`]: used },
+        ip: {},
+        global: {},
+        premium: [],
+      }),
+      "utf8",
+    );
+  }
+  async function readDb() {
+    return JSON.parse(await fs.readFile(FILE, "utf8")) as {
+      usage: Record<string, Record<string, number>>;
+    };
+  }
+
+  it("月次で使い切っていた人も、切り替わった直後から使える（誰も締め出さない）", async () => {
+    await seedOldMonthly("migA", { research: 99, scan: 99, import: 99 });
+    const q = await consume("migA", "research", req("10.6.0.1"));
+    expect(q.ok).toBe(true);
+    expect(q.used).toBe(1); // 週の枠は新品から始まる
+  });
+
+  it("古い月次レコードを消さない（巻き戻しても数字が残っている）", async () => {
+    await seedOldMonthly("migB", { research: 7 });
+    await consume("migB", "research", req("10.6.0.2"));
+    const db = await readDb();
+    expect(db.usage[`migB:${month}`]).toEqual({ research: 7 });
+  });
+
+  it("新しいカウンタは週キーに書かれ、月次レコードとは別枠になる", async () => {
+    await seedOldMonthly("migC", { research: 7 });
+    await consume("migC", "research", req("10.6.0.3"));
+    const db = await readDb();
+    const wk = `migC:${weekKey()}`;
+    expect(db.usage[wk]).toEqual({ research: 1 });
+    expect(wk).not.toBe(`migC:${month}`);
+  });
+
+  it("peek は週のカウンタを返す（画面のメーターがサーバーと一致する）", async () => {
+    await seedOldMonthly("migD", { research: 99 });
+    await consume("migD", "research", req("10.6.0.4"));
+    expect((await peek("migD")).used.research).toBe(1);
+    expect((await peek("migD")).limits.research).toBe(FREE_LIMITS.research);
+  });
+
+  it("週の枠を使い切ったら「月曜に戻る」と伝える（断り文句を再訪の約束にする）", async () => {
+    const r = req("10.6.0.5");
+    for (let i = 0; i < FREE_LIMITS.research; i++) await consume("migE", "research", r);
+    const over = await consume("migE", "research", r);
+    expect(over.ok).toBe(false);
+    expect(over.message).toContain("今週");
+    expect(over.message).toContain("月曜");
+    expect(over.message).toContain(String(FREE_LIMITS.research));
+    // 月次時代の「来月またご利用ください」は残っていない
+    expect(over.message).not.toContain("来月");
+  });
+
+  it("予算・全体上限は**月のまま**（週ごとにリセットされない）", async () => {
+    // 週の枠と一緒に予算まで週次にすると、月の支出が4倍になる。
+    process.env.COOKSYNC_MONTHLY_BUDGET_YEN = "10";
+    await logAiCost("research", {
+      model: "claude-sonnet-5",
+      inputTokens: 11_000,
+      outputTokens: 3_600,
+      webSearches: 3,
+    });
+    const q = await consume("budgetWeekly", "research", req("10.6.0.6"));
+    expect(q.reason).toBe("budget"); // 週が変わっても予算は月で見ている
   });
 });
 
