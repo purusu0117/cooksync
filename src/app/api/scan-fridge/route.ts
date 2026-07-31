@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeVisionItems } from "@/lib/ai";
+import { consume, quotaResponse, refund } from "@/lib/quotaServer";
 
 // 冷蔵庫の写真 → AIが食材名を抽出。期限・カテゴリはクライアント側で推定する。
 export const dynamic = "force-dynamic";
@@ -9,12 +10,17 @@ export const maxDuration = 180;
 
 export async function POST(request: Request) {
   let tmp = "";
+  const uid = request.headers.get("x-cooksync-uid") || "anon";
   try {
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) {
       return Response.json({ error: "image required" }, { status: 400 });
     }
+
+    // AIを呼ぶ前に枠を確認する（サーバー側が唯一の判定者）
+    const q = await consume(uid, "scan", request);
+    if (!q.ok) return quotaResponse(q, "scan");
     const buf = Buffer.from(await file.arrayBuffer());
     // Vercelは書き込み可能なのが /tmp のみ。os.tmpdir() でローカルとも両対応。
     const dir = path.join(os.tmpdir(), "cooksync-scan");
@@ -23,8 +29,13 @@ export async function POST(request: Request) {
     tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.${ext}`);
     await fs.writeFile(tmp, buf);
 
-    const items = await askClaudeVisionItems(tmp);
-    return Response.json({ items });
+    try {
+      const items = await askClaudeVisionItems(tmp);
+      return Response.json({ items });
+    } catch (e) {
+      await refund(uid, "scan", request).catch(() => {}); // 失敗したら枠を戻す
+      throw e;
+    }
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "scan failed" },

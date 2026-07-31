@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ingredientMatches, isSameDish, normalizeName } from "../recipe";
+import { ingredientMatches, isSameDish, normalizeDishName, normalizeName } from "../recipe";
 
 describe("normalizeName 表記ゆれ", () => {
   it("漢字・かな・カタカナの違いを同一視する", () => {
@@ -50,5 +50,13 @@ describe("isSameDish（AI提案の重複除去）", () => {
   });
   it("短い語の包含では同一と判定しない", () => {
     expect(isSameDish("丼", "親子丼")).toBe(false);
+  });
+  // 回帰：飾り語の除去は kataToHira の後に走るため、カタカナ語はひらがな形が必要だった。
+  // 「レシピ」だけを列挙していた頃は既に「れしぴ」化していて除去できなかった。
+  it("カタカナの飾り語（レシピ）を落とせる", () => {
+    expect(normalizeDishName("青椒肉絲レシピ")).toBe(normalizeDishName("青椒肉絲"));
+    expect(normalizeDishName("ハンバーグの作り方レシピ")).toBe(
+      normalizeDishName("ハンバーグ"),
+    );
   });
 });

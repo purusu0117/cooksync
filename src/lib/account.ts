@@ -1,11 +1,16 @@
-// 個人ローカルアプリのアカウント。端末内(localStorage)にのみ保存される簡易版。
-// ※本格的な認証ではない（パスワードは平文・端末内のみ）。公開時はサーバー認証へ。
+// 端末内(localStorage)に持つアカウント表示情報。認証そのものは /api/auth（サーバー）が行う。
+//
+// ⚠️ password は **保存しない**（2026-07-31に廃止）。
+//    以前は平文で localStorage に置いていたが、認証はサーバーが行うので端末に持つ必要がない。
+//    型は既存データの読み込み互換のためだけに optional で残してある。書き込みには使わない。
 
 export interface Account {
   name: string;
   email: string;
-  password: string;
+  /** @deprecated 平文保存していた名残。新規には書き込まない。 */
+  password?: string;
   createdAt: number;
   loggedIn: boolean;
-  premium?: boolean; // true=AI無制限。未設定/false=無料枠（月◯回）
+  /** true=プレミアム（枠が大きい）。無制限ではなくフェアユース上限あり。 */
+  premium?: boolean;
 }

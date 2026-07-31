@@ -2,10 +2,17 @@
 // どの端末/コンテキストからでも同じデータ(dataId)に辿り着けるようにする。
 //  - 公開：Redis hash `cooksync:users`（field=email, value=JSON）
 //  - ローカル：.data/users.json
-// ※MVP：パスワードは平文比較（既存モデル踏襲）。本番強化時はハッシュ化。
+//
+// パスワードは scrypt でハッシュ化して保存する（2026-07-31に平文保存から移行）。
+// 既存ユーザーの平文レコードは、次回ログイン成功時に自動でハッシュへ移行する。
+//
+// ⚠️ このメール+パスワード方式は暫定。捨てアドで無限にアカウントを作れるため、
+//    公開時は Google OAuth / Sign in with Apple に置き換える。
+//    → .secretary/Decisions/2026-07-31-cooksync-profitable-monetization.md §4
 import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "@/lib/kv";
+import { hashPassword, verifyPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -81,18 +88,35 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       }
+      if (password.length < 8) {
+        return Response.json(
+          { error: "パスワードは8文字以上にしてください。" },
+          { status: 400 },
+        );
+      }
       const dataId = globalThis.crypto.randomUUID();
-      await putUser(em, { dataId, name: name.trim(), password, createdAt: Date.now() });
+      await putUser(em, {
+        dataId,
+        name: name.trim(),
+        password: await hashPassword(password),
+        createdAt: Date.now(),
+      });
       return Response.json({ ok: true, dataId, name: name.trim(), email: em });
     }
 
     // login
     const u = await getUser(em);
-    if (!u || u.password !== password) {
+    // ユーザーが居なくても照合処理は走らせる（応答時間の差でメール存在を推測されないように）
+    const { ok, needsUpgrade } = await verifyPassword(password, u?.password ?? "");
+    if (!u || !ok) {
       return Response.json(
         { error: "メールアドレスかパスワードが違います。" },
         { status: 401 },
       );
+    }
+    // 平文で保存されていた旧レコードを、この機会にハッシュへ移行する
+    if (needsUpgrade) {
+      await putUser(em, { ...u, password: await hashPassword(password) }).catch(() => {});
     }
     return Response.json({ ok: true, dataId: u.dataId, name: u.name, email: em });
   } catch (e) {

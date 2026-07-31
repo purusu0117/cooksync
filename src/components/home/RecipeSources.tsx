@@ -14,6 +14,7 @@ import { Camera, ChefHat, ChevronRight, Link2, Loader2, Video } from "lucide-rea
 import ImportedRecipePreview, {
   type ImportResult,
 } from "@/components/recipes/ImportedRecipePreview";
+import { getUid } from "@/lib/syncStore";
 
 type Mode = "video" | "photo" | null;
 
@@ -104,7 +105,11 @@ export default function RecipeSources() {
       const fd = new FormData();
       // 同じキーで複数枚送る（サーバー側は getAll("image") で受ける）
       for (const f of files) fd.append("image", f);
-      const res = await fetch("/api/import-photo", { method: "POST", body: fd });
+      const res = await fetch("/api/import-photo", {
+        method: "POST",
+        headers: { "x-cooksync-uid": getUid() },
+        body: fd,
+      });
       const data = await res.json();
       if (!res.ok || !data.recipe) {
         throw new Error(data.error || "レシピを読み取れませんでした");
@@ -215,7 +220,7 @@ export default function RecipeSources() {
                 写真を選ぶ・撮る（複数可）
               </button>
               <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
-                レシピ本のページ、SNSのスクショ、手書きメモでOK（8枚まで）。
+                レシピ本のページ、SNSのスクショ、手書きメモでOK（4枚まで）。
                 <strong>順番はバラバラでも大丈夫</strong>— 調理の進み方から並べ直して手順にします。
               </p>
             </>

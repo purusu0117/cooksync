@@ -97,6 +97,8 @@ export interface UsageRecord {
   month: string; // "2026-06"
   research: number;
   scan: number;
+  /** 写真・動画からレシピを起こした回数 */
+  import?: number;
   /** 旧「AI写真生成」の使用回数。機能を廃止したので新規には書かない（既存データ互換のため型だけ残す） */
   image?: number;
 }

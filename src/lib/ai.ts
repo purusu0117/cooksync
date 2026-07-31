@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiCost, usageFrom } from "./aiCost";
 
 const TIMEOUT_MS = 240_000; // Web研究は時間がかかるので長め
 
@@ -19,8 +20,13 @@ const TIMEOUT_MS = 240_000; // Web研究は時間がかかるので長め
 // ANTHROPIC_API_KEY がある＝公開サーバー想定 → Anthropic API を使う。
 // 無い＝大翔のローカル（Maxプラン枠の claude CLI）を使う。UI/Route は無改修。
 const USE_API = !!process.env.ANTHROPIC_API_KEY;
-// コスト方針（monetization decision）に従い既定はSonnet。環境変数で上書き可。
-const API_MODEL = process.env.COOKSYNC_AI_MODEL || "claude-sonnet-4-6";
+
+// モデルは**タスクの難しさで振り分ける**（全部Sonnetにすると原価が数倍になる）。
+//   MAIN  … レシピ探索・写真からレシピ（品質が売りそのもの。ここは削らない）
+//   CHEAP … 食材名の読み取り・校正・整形（定型で短い。Haikuで十分＝1/3の単価）
+// 実測の裏取りは .data/ai-cost.json（logAiCost）。
+const MAIN_MODEL = process.env.COOKSYNC_AI_MODEL || "claude-sonnet-5";
+const CHEAP_MODEL = process.env.COOKSYNC_AI_MODEL_CHEAP || "claude-haiku-4-5";
 
 let _client: Anthropic | null = null;
 function api(): Anthropic {
@@ -37,43 +43,51 @@ function textOf(msg: Anthropic.Message): string {
 const SYSTEM_VISION_API =
   "You are a food-recognition API. Look at the image and output ONLY the requested JSON object (no prose, no code fences).";
 
-/** API: テキスト1往復（Webなし） */
+/** API: テキスト1往復（Webなし）。校正・整形なので安いモデルで足りる。 */
 async function apiText(system: string, prompt: string): Promise<string> {
   const msg = await api().messages.create({
-    model: API_MODEL,
+    model: CHEAP_MODEL,
     max_tokens: 4096,
     system,
     messages: [{ role: "user", content: prompt }],
   });
+  await logAiCost("text", usageFrom(CHEAP_MODEL, msg));
   return textOf(msg).trim();
 }
 
-/** API: Web検索ツール付きで研究（pause_turn は数回まで継続） */
+/** API: Web検索ツール付きで研究（pause_turn は数回まで継続）。
+ *  web_search_20260209 ＝ dynamic filtering 版。検索結果をコード実行で絞ってから
+ *  コンテキストに入れるので、基本版より入力トークンが大幅に減る（原価の主因がここ）。 */
 async function apiResearch(prompt: string): Promise<string> {
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
   const params = {
-    model: API_MODEL,
+    model: MAIN_MODEL,
     max_tokens: 16000,
     system: SYSTEM_JSON,
     tools: [{ type: "web_search_20260209" as const, name: "web_search" as const }],
   };
   let msg = await api().messages.create({ ...params, messages });
+  await logAiCost("research", usageFrom(MAIN_MODEL, msg));
   let guard = 0;
   while (msg.stop_reason === "pause_turn" && guard++ < 4) {
     messages.push({ role: "assistant", content: msg.content });
     msg = await api().messages.create({ ...params, messages });
+    // 継続分も課金されるので必ず足す（ここを漏らすと実測が過小になる）
+    await logAiCost("research", usageFrom(MAIN_MODEL, msg));
   }
   return textOf(msg);
 }
 
-/** API: 画像（base64）から食材名 */
+/** API: 画像（base64）から食材名。
+ *  「写っている食材の名前を挙げる」だけの定型タスクなので CHEAP で足りる。
+ *  Haiku 4.5 は画像1枚あたりのトークン上限も低い（〜1,568）ので二重に安い。 */
 async function apiVisionItems(imagePath: string): Promise<string[]> {
   const buf = await fs.readFile(imagePath);
   const media: "image/png" | "image/jpeg" = imagePath.endsWith(".png")
     ? "image/png"
     : "image/jpeg";
   const msg = await api().messages.create({
-    model: API_MODEL,
+    model: CHEAP_MODEL,
     max_tokens: 1024,
     system: SYSTEM_VISION_API,
     messages: [
@@ -92,6 +106,7 @@ async function apiVisionItems(imagePath: string): Promise<string[]> {
       },
     ],
   });
+  await logAiCost("scan", usageFrom(CHEAP_MODEL, msg));
   const obj = extractJson<{ items?: unknown }>(textOf(msg));
   const items = Array.isArray(obj.items) ? obj.items : [];
   return items
@@ -332,12 +347,14 @@ export async function askClaudeVisionRecipe<T>(imagePaths: string[]): Promise<T>
       });
     }
     blocks.push({ type: "text", text: rules });
+    // 分量の読み取り精度がそのまま品質なので、ここは MAIN を使う（Haikuに落とさない）
     const msg = await api().messages.create({
-      model: API_MODEL,
+      model: MAIN_MODEL,
       max_tokens: 8192,
       system: SYSTEM_JSON,
       messages: [{ role: "user", content: blocks }],
     });
+    await logAiCost("import", usageFrom(MAIN_MODEL, msg));
     return extractJson<T>(textOf(msg));
   }
 

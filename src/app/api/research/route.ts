@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { askClaudeRecipes } from "@/lib/ai";
 import { sendPush } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
+import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
+import { addToPool, takeFromPool } from "@/lib/recipeCache";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -123,24 +125,33 @@ function buildPrompt(b: ResearchBody): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ResearchBody;
+    const uid = body.u || "anon";
 
-    // ① 全体の月間AI上限（コスト暴走の安全ネット）。公開(redis)時のみ。大翔のローカルは対象外。
-    if (redis) {
-      const cap = Number(process.env.COOKSYNC_MONTHLY_AI_CAP) || 300;
-      const month = new Date().toISOString().slice(0, 7); // YYYY-MM
-      const k = `cooksync:aiquota:${month}`;
-      const n = await redis.incr(k);
-      if (n === 1) await redis.expire(k, 40 * 24 * 3600);
-      if (n > cap) {
+    // ── ① まず共有プールを引く（AI原価0）────────────────────────────
+    // 同じ条件のレシピを誰かが既に生成していれば、APIを叩かずに返せる。
+    // 原価が出ない以上、月間枠は消費させない（連打だけIP上限で止める）。
+    const hit = await takeFromPool(body);
+    if (hit) {
+      if (!(await checkIpOnly(request))) {
         return Response.json(
-          { error: "今月のAI提案が上限に達しました。来月またご利用ください。" },
+          { error: "この回線からのAI利用が今日の上限に達しました。" },
           { status: 429 },
         );
       }
+      const jobId = globalThis.crypto.randomUUID();
+      await setJob(jobId, {
+        status: "done",
+        recipes: hit.recipes,
+        createdAt: Date.now(),
+      });
+      return Response.json({ jobId, cached: true });
     }
 
+    // ── ② プールに無い＝生成する。ここで初めて枠を消費する ──────────
+    const q = await consume(uid, "research", request);
+    if (!q.ok) return quotaResponse(q, "research");
+
     const prompt = buildPrompt(body);
-    const uid = body.u || "anon";
     const jobId = globalThis.crypto.randomUUID();
     await setJob(jobId, { status: "running", createdAt: Date.now() });
 
@@ -148,6 +159,8 @@ export async function POST(request: Request) {
       try {
         const recipes = await askClaudeRecipes(prompt);
         await setJob(jobId, { status: "done", recipes, createdAt: Date.now() });
+        // 次に同じ条件で探す人のためにプールへ貯める（原価が下がっていく）
+        await addToPool(body, recipes).catch(() => {});
         const names = recipes
           .map((r) => (r as { name?: string }).name)
           .filter(Boolean)
@@ -159,6 +172,8 @@ export async function POST(request: Request) {
           url: "/meal",
         }).catch(() => {});
       } catch (e) {
+        // 生成に失敗したのに枠だけ減るのは理不尽なので戻す
+        await refund(uid, "research", request).catch(() => {});
         await setJob(jobId, {
           status: "error",
           error: e instanceof Error ? e.message : "AI research failed",

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Camera, X } from "lucide-react";
 import { guessItem } from "@/lib/guess";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
-import { useUsage, FREE_LIMITS } from "@/lib/usage";
+import { useUsage } from "@/lib/usage";
+import { getUid } from "@/lib/syncStore";
 
 interface Props {
   onAddMany: (items: FridgeItem[]) => void;
@@ -23,7 +24,7 @@ export default function PhotoAddForm({ onAddMany }: Props) {
     if (!file) return;
     if (!usage.canUse("scan")) {
       setError(
-        `今月の写真で在庫登録の無料枠（${FREE_LIMITS.scan}回）を使い切りました。来月1日にリセットされます。`,
+        `今月の写真で在庫登録の枠（${usage.limitOf("scan")}回）を使い切りました。来月1日にリセットされます。`,
       );
       return;
     }
@@ -35,7 +36,11 @@ export default function PhotoAddForm({ onAddMany }: Props) {
     try {
       const fd = new FormData();
       fd.append("image", file);
-      const res = await fetch("/api/scan-fridge", { method: "POST", body: fd });
+      const res = await fetch("/api/scan-fridge", {
+        method: "POST",
+        headers: { "x-cooksync-uid": getUid() },
+        body: fd,
+      });
       const data = await res.json();
       if (!res.ok || !Array.isArray(data.items) || data.items.length === 0) {
         throw new Error(data.error || "食材を認識できませんでした。明るく撮り直すか、手入力をお試しください。");

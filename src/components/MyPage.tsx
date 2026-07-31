@@ -14,7 +14,7 @@ import {
 } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
-import { useUsage, FREE_LIMITS, AI_LABEL, type AiKind } from "@/lib/usage";
+import { useUsage, AI_LABEL, type AiKind } from "@/lib/usage";
 import { ChefHat, HelpCircle } from "lucide-react";
 import PageHeader from "./PageHeader";
 import { OPEN_EVENT } from "./Onboarding";
@@ -79,11 +79,11 @@ export default function MyPage() {
       // 本人のデータIDへ切り替えてアカウントを保存
       setUid(data.dataId);
       window.localStorage.setItem("cooksync:session", "1");
+      // パスワードは端末に保存しない（認証はサーバーが持つ）
       setAccs([
         {
           name: name.trim(),
           email: email.trim().toLowerCase(),
-          password,
           createdAt: Date.now(),
           loggedIn: true,
         },
@@ -360,34 +360,35 @@ export default function MyPage() {
         <h2 className="mb-1 text-sm font-bold text-ink">今月のAI利用</h2>
         <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
           {usage.premium
-            ? "プレミアム：AI機能は無制限です。"
-            : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで無制限（準備中）。"}
+            ? "プレミアム：たっぷり使えます（公平利用のため上限あり）。毎月1日リセット。"
+            : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで大幅に増えます（準備中）。"}
         </p>
         <ul className="flex flex-col gap-2.5">
-          {(["research", "scan"] as AiKind[]).map((k) => {
+          {(["research", "scan", "import"] as AiKind[]).map((k) => {
             const used = usage.used(k);
-            const limit = FREE_LIMITS[k];
-            const pct = usage.premium ? 0 : Math.min(100, (used / limit) * 100);
+            const limit = usage.limitOf(k);
+            const pct = Math.min(100, (used / limit) * 100);
             return (
               <li key={k}>
                 <div className="mb-1 flex items-center justify-between text-xs">
                   <span className="text-ink">{AI_LABEL[k]}</span>
                   <span className="font-medium text-ink-soft">
-                    {usage.premium ? "無制限" : `${used} / ${limit}`}
+                    {used} / {limit}
                   </span>
                 </div>
-                {!usage.premium && (
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper">
-                    <div
-                      className={`h-full rounded-full ${pct >= 100 ? "bg-accent" : "bg-brand"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                )}
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper">
+                  <div
+                    className={`h-full rounded-full ${pct >= 100 ? "bg-accent" : "bg-brand"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
               </li>
             );
           })}
         </ul>
+        <p className="mt-2.5 text-[11px] leading-relaxed text-ink-soft">
+          同じ条件のレシピが既に見つかっている場合は、AIを使わずに返すので枠を消費しません。
+        </p>
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">

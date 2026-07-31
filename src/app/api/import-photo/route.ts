@@ -8,15 +8,19 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { askClaudeVisionRecipe } from "@/lib/ai";
+import { consume, quotaResponse, refund } from "@/lib/quotaServer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** 1回に読ませる上限（多すぎるとAIが混乱し時間もかかる） */
-const MAX_IMAGES = 8;
+/** 1回に読ませる上限。
+ *  多すぎるとAIが混乱し時間もかかる＋原価が枚数に比例して伸びる
+ *  （高解像度画像は1枚あたり最大4,784トークン＝8枚で1回¥22、4枚なら¥13）。 */
+const MAX_IMAGES = 4;
 
 export async function POST(request: Request) {
   const tmps: string[] = [];
+  const uid = request.headers.get("x-cooksync-uid") || "anon";
   try {
     const form = await request.formData();
     const files = form.getAll("image").filter((f): f is File => f instanceof File);
@@ -34,6 +38,10 @@ export async function POST(request: Request) {
       return Response.json({ error: "画像の合計が大きすぎます（30MBまで）。" }, { status: 400 });
     }
 
+    // AIを呼ぶ前に枠を確認する（サーバー側が唯一の判定者）
+    const q = await consume(uid, "import", request);
+    if (!q.ok) return quotaResponse(q, "import");
+
     // Vercelは /tmp のみ書き込み可。os.tmpdir() でローカルとも両対応。
     const dir = path.join(os.tmpdir(), "cooksync-recipe-photo");
     await fs.mkdir(dir, { recursive: true });
@@ -45,14 +53,22 @@ export async function POST(request: Request) {
       tmps.push(tmp);
     }
 
-    const out = await askClaudeVisionRecipe<{
+    let out: {
       recipe?: unknown;
       missing?: unknown;
       confidence?: unknown;
       photoOrder?: unknown;
-    }>(tmps);
+    };
+    try {
+      out = await askClaudeVisionRecipe(tmps);
+    } catch (e) {
+      await refund(uid, "import", request).catch(() => {}); // 失敗したら枠を戻す
+      throw e;
+    }
 
     if (!out.recipe) {
+      // 読み取れなかったのは実質失敗なので枠を戻す
+      await refund(uid, "import", request).catch(() => {});
       return Response.json(
         {
           error:

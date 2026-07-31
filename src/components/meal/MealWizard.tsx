@@ -57,7 +57,7 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
-import { useUsage, FREE_LIMITS } from "@/lib/usage";
+import { useUsage } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 import DishIcon from "@/components/DishIcon";
@@ -348,7 +348,7 @@ export default function MealWizard() {
     if (aiLoading) return;
     if (!usage.canUse("research")) {
       setAiError(
-        `今月のAIレシピ探索の無料枠（${FREE_LIMITS.research}回）を使い切りました。来月1日にリセットされます。`,
+        `今月のAIレシピ探索の枠（${usage.limitOf("research")}回）を使い切りました。来月1日にリセットされます。`,
       );
       return;
     }

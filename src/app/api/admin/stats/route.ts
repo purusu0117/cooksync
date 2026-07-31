@@ -1,10 +1,11 @@
-// 管理用：登録ユーザー数と実利用状況をひと目で確認（大翔専用）。
-// ?key=<秘密> で保護。リポジトリはプライベートなのでソース内の鍵は外部に出ない。
+// 管理用：登録ユーザー数・実利用状況・**AI原価の実測**をひと目で確認（大翔専用）。
+// ?key=<秘密> で保護。COOKSYNC_ADMIN_KEY があればそちらを優先する。
 import { redis } from "@/lib/kv";
+import { avgYenPerCall, monthYenSpent, readCostSummary } from "@/lib/aiCost";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_KEY = "cooksync-stats-7Qx2"; // 後で外す/環境変数化してよい
+const ADMIN_KEY = process.env.COOKSYNC_ADMIN_KEY || "cooksync-stats-7Qx2";
 
 interface User {
   dataId: string;
@@ -12,16 +13,52 @@ interface User {
   createdAt?: number;
 }
 
+/** 原価は「1回いくらか」が分かる形で返す（プランの前提を実測で検算するため） */
+async function costBlock(month: string) {
+  const c = await readCostSummary(month);
+  const per: Record<string, { calls: number; yenTotal: number; yenPerCall: number }> = {};
+  for (const [feature, s] of Object.entries(c.byFeature)) {
+    per[feature] = {
+      calls: s.calls,
+      yenTotal: Number(s.yen.toFixed(1)),
+      yenPerCall: Number(avgYenPerCall(s).toFixed(2)),
+    };
+  }
+  // CookSync自身の月間予算に対して今どこにいるか（組織全体の上限とは別物）
+  const budget = Number(process.env.COOKSYNC_MONTHLY_BUDGET_YEN) || 3000;
+  const spent = await monthYenSpent(month);
+  return {
+    month: c.month,
+    calls: c.total.calls,
+    yenTotal: Number(c.total.yen.toFixed(1)),
+    yenPerCall: Number(avgYenPerCall(c.total).toFixed(2)),
+    webSearches: c.total.webSearches,
+    budget: {
+      yen: budget,
+      spentYen: Number(spent.toFixed(1)),
+      remainingYen: Number(Math.max(0, budget - spent).toFixed(1)),
+      usedPct: Number(((spent / budget) * 100).toFixed(1)),
+    },
+    byFeature: per,
+  };
+}
+
 export async function GET(request: Request) {
   const key = new URL(request.url).searchParams.get("key");
   if (key !== ADMIN_KEY) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
+  const monthNow = new Date().toISOString().slice(0, 7);
   if (!redis) {
-    return Response.json({ note: "local (no redis)", users: 0 });
+    // ローカルはClaude CLI経由＝原価0だが、API modeで動かしたときの実測は残る
+    return Response.json({
+      note: "local (no redis)",
+      users: 0,
+      cost: await costBlock(monthNow),
+    });
   }
 
-  const month = new Date().toISOString().slice(0, 7);
+  const month = monthNow;
   const aiThisMonth =
     (await redis.get<number>(`cooksync:aiquota:${month}`)) ?? 0;
   const usersHash =
@@ -62,6 +99,7 @@ export async function GET(request: Request) {
   return Response.json({
     users: accounts.length,
     aiThisMonth,
+    cost: await costBlock(month),
     accounts: accounts.sort(
       (a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0),
     ),
