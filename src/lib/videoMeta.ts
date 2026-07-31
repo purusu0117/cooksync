@@ -20,7 +20,7 @@ export interface VideoMeta {
   description: string;
   webpageUrl: string;
   /** どこから取れたか。UIとログで「何を根拠にしたか」を出すために持つ */
-  via: ("oembed" | "watch-page")[];
+  via: ("oembed" | "watch-page" | "yt-dlp" | "captions")[];
 }
 
 const UA =

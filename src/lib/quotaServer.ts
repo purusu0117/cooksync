@@ -22,18 +22,29 @@ import { EST_YEN, monthYenSpent } from "./aiCost";
 
 export type AiKind = "research" | "scan" | "import";
 
-/** 無料ユーザーの月間枠。原価の裏付けは上記Decisionノートの§3。 */
+/**
+ * 無料ユーザーの月間枠。
+ *
+ * ⚠️ **research はキャッシュミスのときしか減らない**（/api/research の①で共有プールを引き、
+ *    当たれば原価0なので枠を消費しない）。つまりここの数字は「新規生成の回数」。
+ *
+ * 実測原価（1回あたり）: research ¥19.6 / scan ¥0.53 / import ¥12.8
+ * 旧値は 3 / 5 / 2 だったが、日常使いには少なすぎて「課金しないと使えないアプリ」に
+ * なっていた（大翔の指摘・2026-07-31）。原価に対して安全な範囲まで引き上げる。
+ * 全体の損失は COOKSYNC_MONTHLY_BUDGET_YEN（既定¥3,000）で頭打ちになるので、
+ * ここを緩めても青天井にはならない。
+ */
 export const FREE_LIMITS: Record<AiKind, number> = {
-  research: 3, // AIレシピ探索（原価が一番高い）
-  scan: 5, // 写真で在庫登録
-  import: 2, // 写真/動画からレシピ
+  research: 8, // 新規生成のみ。キャッシュヒットは無制限。最悪 ¥157/月
+  scan: 25, // 原価が桁違いに安い（¥0.53）ので絞る意味が薄い。最悪 ¥13/月
+  import: 5, // ¥12.8 × 5 = 最悪 ¥64/月
 };
 
 /** プレミアムのフェアユース上限（無制限にすると原価が手取りを超えるので必ず置く）。 */
 export const PREMIUM_LIMITS: Record<AiKind, number> = {
-  research: 30,
-  scan: 150,
-  import: 8,
+  research: 60,
+  scan: 300,
+  import: 20,
 };
 
 export const KIND_LABEL: Record<AiKind, string> = {

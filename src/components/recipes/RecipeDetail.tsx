@@ -404,26 +404,7 @@ export default function RecipeDetail({ id }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-0 pb-8">
-      {/*
-        戻る導線は画面の一番上に固定する。
-        以前は本文の先頭に置いた薄い灰色のテキストリンクだったので、
-        手順まで下にスクロールすると画面外に出てしまい、iPhoneでは戻れなくなっていた。
-        タップ領域は52px（Appleの最小44ptより大きく）確保して、料理中に濡れた手でも押せるようにする。
-      */}
-      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-2 border-b border-line bg-paper/95 px-2 backdrop-blur-md">
-        <Link
-          href="/recipes"
-          className="flex min-h-[52px] shrink-0 items-center gap-1 rounded-xl px-2 text-[15px] font-bold text-brand-dark transition active:bg-brand-soft"
-        >
-          <ChevronLeft size={22} strokeWidth={2.6} />
-          レシピ一覧
-        </Link>
-        <span className="min-w-0 flex-1 truncate pr-2 text-right text-sm font-semibold text-ink-soft">
-          {recipe.name}
-        </span>
-      </div>
-
-      <header className="mb-5">
+      <header className="mt-2 mb-5">
         <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-ink">
           <DishIcon
             name={recipe.name}
@@ -934,6 +915,23 @@ export default function RecipeDetail({ id }: Props) {
           </div>
         </div>
       )}
+
+      {/*
+        戻る導線は **画面の下** に固定する。
+        iPhoneは片手だと上端に指が届かないので、上に置くと「一生戻れない」状態になる
+        （大翔の実機報告・2026-07-31）。sticky bottom-0 で、タブバーのすぐ上に常に出す。
+        position:fixed を使わないのは、iOSのラバーバンドで document ごと動いてしまうため
+        （このアプリはボトムタブも同じ理由で通常フローに置いている）。
+      */}
+      <div className="sticky bottom-0 z-20 -mx-4 mt-6 border-t border-line bg-paper/95 px-4 pt-2 pb-2 backdrop-blur-md">
+        <Link
+          href="/recipes"
+          className="flex min-h-[52px] w-full items-center justify-center gap-1.5 rounded-2xl bg-surface text-[15px] font-bold text-brand-dark shadow-sm transition active:scale-[.98] active:bg-brand-soft"
+        >
+          <ChevronLeft size={22} strokeWidth={2.6} />
+          レシピ一覧へ戻る
+        </Link>
+      </div>
     </div>
   );
 }

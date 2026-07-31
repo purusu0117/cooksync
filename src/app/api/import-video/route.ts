@@ -1,12 +1,17 @@
 // YouTube / TikTok のURLからレシピを起こす。
 //
-// **取り方は素のHTTPだけ**（src/lib/videoMeta.ts）。以前は yt-dlp を uvx でサブプロセス起動して
-// いたが、Vercelでは起動できず公開環境では機能ごと隠すことになっていた。
-// 開発者のPCをワーカーにする案も出たが、配信するアプリの可用性を私物環境に依存させるのは論外。
-// 素のfetchで取れる範囲に作り直し、ローカルも本番も**同じ経路**にした。
+// 取得は2系統。**ローカルは最強・配信版は安全側**（大翔の方針・2026-07-31）。
+//
+//   1. ローカル版 … src/lib/videoLocal.ts（yt-dlp）。概要欄に加えて**字幕**まで取れる。
+//   2. 配信版     … src/lib/videoMeta.ts（素のHTTP）。oEmbed＋ページHTMLで**概要欄まで**。
+//
+// なぜ配信版で字幕を取らないか：素のfetchでは timedtext が0バイトで返り、取るには
+// yt-dlp 相当の署名トークン生成＝YouTubeの私的APIを叩く必要がある。これは利用規約に
+// 抵触するため、App Storeで配信するものには入れない。ローカルは大翔の私用なので入れる。
 //
 //  - 概要欄(description)：料理系の投稿者は材料と分量をここに全部書いていることが多い＝一番正確
-//  - 字幕：**取れなくなった**（timedtextは0バイトで返る）。取れない前提で組む。
+//  - 字幕：自動生成のため誤変換が非常に多い（実測「ピーマン丼」→「ショー開催t1どん」）。
+//    流れの参考にはするが、分量の根拠には使わせない。
 //
 // ⚠️ 方針：取れた情報だけでレシピにする。**分からない分量をAIの一般知識で埋めない**。
 //    概要欄が取れなかったときは、タイトルと投稿者からAIにWeb検索させて出典を明示させる。
@@ -14,6 +19,7 @@
 import { after } from "next/server";
 import { askClaudeForJson } from "@/lib/ai";
 import { fetchVideoMeta, isSupportedVideoUrl, type VideoMeta } from "@/lib/videoMeta";
+import { tryLocalRich } from "@/lib/videoLocal";
 import { redis } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +63,7 @@ function friendlyError(raw: string): string {
   return "レシピの取り込みに失敗しました。別の動画URLでお試しください。";
 }
 
-function buildPrompt(info: VideoMeta): string {
+function buildPrompt(info: VideoMeta, captions: string): string {
   const hasDesc = info.description.trim().length > 0;
   return [
     "あなたは料理動画を家庭用レシピに書き起こすアシスタントです。次の動画の情報から、レシピをJSONで作ってください。",
@@ -69,9 +75,14 @@ function buildPrompt(info: VideoMeta): string {
     "■ 概要欄（投稿者本人が書いた説明。材料と分量が書かれていることが多く、最も信頼できる）:",
     hasDesc ? info.description.slice(0, 6000) : "（取得できませんでした）",
     "",
-    // 字幕は YouTube 側で塞がれて取れなくなった。取れない前提で、
-    // 足りない分は「憶測」ではなく「Web検索で出典を見つける」方向に倒す。
-    "■ 字幕: 取得できません（動画配信側の仕様変更のため）。音声の内容は分かりません。",
+    // 配信版では字幕が取れない（塞がれている）。ローカル版は yt-dlp で取れるので、
+    // 取れたときだけ渡す。どちらの場合も「憶測で埋めない」方針は変えない。
+    captions
+      ? [
+          "■ 字幕（自動生成のため誤変換が非常に多い。手順の流れの参考にはするが、食材名・分量の根拠にはしない）:",
+          captions.slice(0, 12000),
+        ].join("\n")
+      : "■ 字幕: 取得できません。音声の内容は分かりません。",
     "",
     "【厳守】",
     "- **書かれていないことを推測で埋めない。** 分量が分からない材料は amount を「動画で明示なし」にする。",
@@ -108,20 +119,26 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        const info = await fetchVideoMeta(url);
+        // ローカル版は yt-dlp で概要欄＋字幕まで取る（最も精度が高い）。
+        // 配信版(Vercel)では null が返るので、素のHTTPで概要欄だけ取る方に落ちる。
+        const rich = await tryLocalRich(url, jobId);
+        const info = rich?.meta ?? (await fetchVideoMeta(url));
+        const captions = rich?.captions ?? "";
         await setJob(jobId, {
           status: "running",
-          // 何を根拠にしているかを進捗にも出す（概要欄が取れないと精度が落ちるため）
-          step: info.description
-            ? "AIがレシピに書き起こし中…（概要欄あり）"
-            : "AIが出典を検索中…（概要欄が取得できず）",
+          // 何を根拠にしているかを進捗にも出す（根拠が薄いと精度が落ちるため）
+          step: captions
+            ? "AIがレシピに書き起こし中…（概要欄＋字幕）"
+            : info.description
+              ? "AIがレシピに書き起こし中…（概要欄あり）"
+              : "AIが出典を検索中…（概要欄が取得できず）",
           createdAt: Date.now(),
         });
         const out = await askClaudeForJson<{
           recipe?: unknown;
           missing?: unknown;
           confidence?: unknown;
-        }>(buildPrompt(info));
+        }>(buildPrompt(info, captions));
         await setJob(jobId, {
           status: "done",
           recipe: out.recipe,

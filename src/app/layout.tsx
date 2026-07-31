@@ -63,9 +63,16 @@ export default function RootLayout({
       */}
       <body className="flex h-dvh flex-col overflow-hidden">
         <div className="app-bg" aria-hidden />
+        {/*
+          viewportFit:"cover" で画面いっぱいに描いているので、上端は Dynamic Island /
+          ステータスバーの真下に潜る。safe-area-inset-top を入れていなかったため、
+          各画面の一番上は **見えないうえにタップもできない** 状態だった
+          （大翔の実機報告・2026-07-31「上が見えない」「一番上が触れない」）。
+          下端だけ Nav で対応していて、上端が抜けていた。
+        */}
         <main
           id={SCROLL_ROOT_ID}
-          className="flex-1 overflow-y-auto overscroll-contain pb-6"
+          className="flex-1 overflow-y-auto overscroll-contain pt-[env(safe-area-inset-top)] pb-6"
         >
           <AppGate>{children}</AppGate>
         </main>
