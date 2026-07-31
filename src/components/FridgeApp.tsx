@@ -19,6 +19,7 @@ import {
 import { fridgeStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { useSyncState } from "@/lib/syncStore";
+import { SUGGEST_THRESHOLD, remainingToSuggest } from "@/lib/starter";
 import SyncNotice, { LoadingOrOffline } from "./SyncNotice";
 import { BUCKET_UI } from "./freshness";
 import PageHeader from "./PageHeader";
@@ -30,6 +31,8 @@ import FoodCard from "./FoodCard";
 import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
 import ExpiryReviewPanel from "./ExpiryReviewPanel";
+import QuickStart from "./QuickStart";
+import EmptyState, { EMPTY_STATES } from "./EmptyState";
 
 export default function FridgeApp() {
   const router = useRouter();
@@ -38,6 +41,15 @@ export default function FridgeApp() {
   const sync = useSyncState();
   const [editing, setEditing] = useState<FridgeItem | null>(null);
   const [mode, setMode] = useState<"single" | "bulk" | "photo">("single");
+  // 「数量や期限まで自分で決める」を押したら、初回でも従来のフォームに切り替える
+  const [manual, setManual] = useState(false);
+
+  // 初回の画面。ここでは6項目のフォームを出さない（作業感で離脱するため）。
+  // ★ hydrated を必ず見る。読み込み前は items が空なので、
+  //   これを見ないと在庫40件の既存ユーザーにも一瞬「はじめかた」が出てしまう。
+  const showQuickStart =
+    sync.hydrated && items.length < SUGGEST_THRESHOLD && !manual;
+  const left = remainingToSuggest(items.length);
 
   const sorted = useMemo(() => sortByExpiry(items), [items]);
   const counts = useMemo(() => {
@@ -80,35 +92,40 @@ export default function FridgeApp() {
 
       <SyncNotice />
 
-      {guide === "fridge" && (
+      {/*
+        初回ガイド。3つ未満のあいだは QuickStart 側が「あと何個か」を出しているので、
+        ここは **そろったあとの「次は献立」** だけを担当する（同じ案内を二重に出さない）。
+      */}
+      {guide === "fridge" && left === 0 && (
         <div className="mb-5 rounded-2xl border border-brand/30 bg-brand-soft px-4 py-3.5">
-          {items.length === 0 ? (
+          <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold leading-relaxed text-brand-dark">
-              登録できました！まずは食材を1つ入れてみましょう（下のフォーム、または「写真で追加」）。
+              そろいました。この食材で作れる料理を出します。
             </p>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold leading-relaxed text-brand-dark">
-                いい感じ！次は、その食材で献立を探してみましょう。
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setGuide("meal");
-                  router.push("/meal");
-                }}
-                className="shrink-0 rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
-              >
-                献立を探す →
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={() => {
+                setGuide("meal");
+                router.push("/meal");
+              }}
+              className="flex min-h-[44px] shrink-0 items-center rounded-full bg-brand px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.99]"
+            >
+              献立を出す →
+            </button>
+          </div>
         </div>
       )}
 
       <MaintenancePanel onAddToFridge={addItem} />
       <ExpiryReviewPanel items={items} onApply={updateMany} />
 
+      {/*
+        ★ 在庫が1つも無いときは出さない（2026-08-01）。
+          初見の人が /fridge を開いて最初に見るのが「0・0・0」の3枚のカードで、
+          そのぶん本題（あと3つで献立が出る）が画面の下に押し出されていた。
+          数える対象が無いのだから、数えるUIも要らない。
+      */}
+      {items.length > 0 && (
       <div className="mb-5 grid grid-cols-3 gap-3">
         {BUCKETS.map((b) => {
           const u = BUCKET_UI[b.key];
@@ -127,6 +144,7 @@ export default function FridgeApp() {
           );
         })}
       </div>
+      )}
 
       {priority.length > 0 && (
         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50/70 p-3">
@@ -145,12 +163,21 @@ export default function FridgeApp() {
         </div>
       )}
 
+      {showQuickStart ? (
+        <QuickStart
+          count={items.length}
+          existingNames={items.map((i) => i.name)}
+          onAdd={addItem}
+          onAddMany={addMany}
+          onManual={() => setManual(true)}
+        />
+      ) : (
       <div className="mb-6">
         <div className="mb-2 inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
           <button
             type="button"
             onClick={() => setMode("single")}
-            className={`rounded-full px-3 py-1 font-medium transition ${
+            className={`flex min-h-[44px] items-center rounded-full px-3.5 font-medium transition ${
               mode === "single" ? "bg-brand text-white" : "text-ink-soft"
             }`}
           >
@@ -159,7 +186,7 @@ export default function FridgeApp() {
           <button
             type="button"
             onClick={() => setMode("bulk")}
-            className={`rounded-full px-3 py-1 font-medium transition ${
+            className={`flex min-h-[44px] items-center rounded-full px-3.5 font-medium transition ${
               mode === "bulk" ? "bg-brand text-white" : "text-ink-soft"
             }`}
           >
@@ -168,7 +195,7 @@ export default function FridgeApp() {
           <button
             type="button"
             onClick={() => setMode("photo")}
-            className={`rounded-full px-3 py-1 font-medium transition ${
+            className={`flex min-h-[44px] items-center rounded-full px-3.5 font-medium transition ${
               mode === "photo" ? "bg-brand text-white" : "text-ink-soft"
             }`}
           >
@@ -184,6 +211,7 @@ export default function FridgeApp() {
           <PhotoAddForm onAddMany={addMany} />
         )}
       </div>
+      )}
 
       {/*
         ★「空」と「まだ読めていない」を必ず区別する。
@@ -193,14 +221,9 @@ export default function FridgeApp() {
       {sorted.length === 0 && !sync.hydrated ? (
         <LoadingOrOffline label="冷蔵庫" />
       ) : sorted.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line bg-surface/60 px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-ink">まだ食材がありません</p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            上の「写真で追加」で冷蔵庫を撮るか、手入力で登録しましょう。
-            <br />
-            食材が入ると、AIが献立を提案できるようになります。
-          </p>
-        </div>
+        // QuickStart が出ているあいだは、それ自体が空状態の案内なので二重に出さない。
+        // （手入力フォームに切り替えた人だけがここを見る）
+        showQuickStart ? null : <EmptyState content={EMPTY_STATES.fridge} />
       ) : (
         <ul className="flex flex-col gap-2">
           {sorted.map((item) => (
