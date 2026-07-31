@@ -35,16 +35,28 @@ def ensure_app_exists(api_key)
     UI.message("Bundle ID は既にあります: #{APP_ID}")
   end
 
+  # ⚠️ アプリレコードは **API では作れない**（2026-07-31 実測）。
+  #    App.create を呼ぶと必ずこう返る:
+  #      The resource 'apps' does not allow 'CREATE'.
+  #      Allowed operations are: GET_COLLECTION, GET_INSTANCE, UPDATE
+  #    Apple の仕様で、アプリの新規登録は App Store Connect の画面からしかできない。
+  #    そのため「無ければ作る」ではなく「無ければ**何をすべきか示して止まる**」にする。
   if Spaceship::ConnectAPI::App.find(APP_ID).nil?
-    Spaceship::ConnectAPI::App.create(
-      name: APP_NAME,
-      version_string: "1.0",
-      sku: APP_SKU,
-      primary_locale: "ja",
-      bundle_id: APP_ID,
-      platforms: ["IOS"],
-    )
-    UI.success("App Store Connect にアプリを作成しました: #{APP_NAME}")
+    UI.user_error!(<<~MSG)
+      App Store Connect にアプリが登録されていません（APIからは作成できません）。
+
+      https://appstoreconnect.apple.com/apps を開き、「＋」→「新規アプリ」で
+      次の内容で1度だけ手動作成してください。作成後にこのワークフローを再実行すれば通ります。
+
+        プラットフォーム : iOS
+        名前             : #{APP_NAME}
+        主要言語         : 日本語
+        バンドルID       : #{APP_ID}
+        SKU              : #{APP_SKU}
+        ユーザアクセス   : フルアクセス
+
+      ※バンドルID #{APP_ID} は既に登録済みなので、プルダウンから選べます。
+    MSG
   else
     UI.message("App Store Connect のアプリは既にあります")
   end
