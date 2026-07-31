@@ -1,0 +1,354 @@
+# CookSync の iOS 配布レーン（GitHub Actions の macOS ランナー専用）。
+#
+# 署名方式:
+#   - 配布証明書は事前に .p12 を作って GitHub Secrets に base64 で置く（APPLE_CERT_P12_BASE64）
+#   - プロビジョニングプロファイルは App Store Connect API キーで毎回取得/作成（sigh）
+#   - つまり Mac が手元に無くても TestFlight まで到達できる構成
+#
+# 必要な Secrets:
+#   APPLE_TEAM_ID           … Membership details の Team ID（10桁）
+#   APPLE_CERT_P12_BASE64   … Apple Distribution 証明書(.p12) を base64 にしたもの
+#   APPLE_CERT_PASSWORD     … その .p12 のパスワード
+#   APPSTORE_ISSUER_ID      … App Store Connect API キーの Issuer ID
+#   APPSTORE_KEY_ID         … 同 Key ID
+#   APPSTORE_PRIVATE_KEY    … 同 .p8 の中身を base64 にしたもの
+default_platform(:ios)
+
+APP_ID = "com.daito.cooksync"
+APP_NAME = "CookSync 冷蔵庫の食材で献立"
+APP_SKU = "cooksync-ios"
+XCODEPROJ = "ios/App/App.xcodeproj"
+
+# Bundle ID とアプリレコードが無ければ作る（APIキー認証・冪等）。
+def ensure_app_exists(api_key)
+  require "spaceship"
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+
+  if Spaceship::ConnectAPI::BundleId.find(APP_ID).nil?
+    Spaceship::ConnectAPI::BundleId.create(
+      name: "CookSync",
+      identifier: APP_ID,
+      platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
+    )
+    UI.success("Bundle ID を作成しました: #{APP_ID}")
+  else
+    UI.message("Bundle ID は既にあります: #{APP_ID}")
+  end
+
+  if Spaceship::ConnectAPI::App.find(APP_ID).nil?
+    Spaceship::ConnectAPI::App.create(
+      name: APP_NAME,
+      version_string: "1.0",
+      sku: APP_SKU,
+      primary_locale: "ja",
+      bundle_id: APP_ID,
+      platforms: ["IOS"],
+    )
+    UI.success("App Store Connect にアプリを作成しました: #{APP_NAME}")
+  else
+    UI.message("App Store Connect のアプリは既にあります")
+  end
+end
+
+platform :ios do
+  desc "TestFlight へアップロード（署名込みビルド）"
+  lane :beta do
+    # CI用の一時キーチェーンを作る（fastlane_tmp_keychain）
+    setup_ci
+
+    # チームキー（Issuer IDあり）と個人用APIキー（Issuer IDなし）の両方に対応する。
+    # 個人用キーは App Store Connect の「プロフィールを編集」から即発行でき、承認待ちが要らない。
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+
+    # 配布証明書(.p12)を一時キーチェーンへ取り込む
+    cert_path = File.expand_path("../dist-cert.p12", __dir__)
+    File.binwrite(cert_path, Base64.decode64(ENV.fetch("APPLE_CERT_P12_BASE64")))
+    import_certificate(
+      certificate_path: cert_path,
+      certificate_password: ENV.fetch("APPLE_CERT_PASSWORD"),
+      keychain_name: "fastlane_tmp_keychain",
+      keychain_password: "",
+    )
+
+    # Bundle ID（Developer Portal）とアプリ（App Store Connect）を必要なら作成する。
+    # fastlane の produce アクションは APIキー認証に対応していない（Apple ID＋2FA前提）ため、
+    # Spaceship を直接使う。既にあれば何もしない（冪等）＝手で作ってあっても問題ない。
+    ensure_app_exists(api_key)
+
+    # ビルド番号は GitHub Actions の実行番号（TestFlightは同じ番号を再アップロードできない）
+    increment_build_number(
+      build_number: ENV.fetch("GITHUB_RUN_NUMBER", Time.now.to_i.to_s),
+      xcodeproj: XCODEPROJ,
+    )
+
+    # 署名は手動（xcodebuild の自動署名はAPIキー認証が通らないため）。
+    get_provisioning_profile(api_key: api_key, app_identifier: APP_ID, readonly: false)
+    app_profile = lane_context[SharedValues::SIGH_NAME]
+
+    # 署名設定は該当ターゲットにだけ書く（グローバルに渡すとSPM依存のビルドが壊れる）
+    update_code_signing_settings(
+      path: XCODEPROJ,
+      targets: ["App"],
+      use_automatic_signing: false,
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      bundle_identifier: APP_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: app_profile,
+    )
+
+    build_app(
+      project: XCODEPROJ,
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "build",
+      output_name: "CookSync.ipa",
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: { APP_ID => app_profile },
+      },
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      skip_waiting_for_build_processing: true, # 処理待ちでCIを止めない
+      distribute_external: false,              # 最初は内部テスターのみ
+    )
+  end
+
+  desc "TestFlightの最新処理済みビルド番号が BASELINE_BUILD を超えるまで待つ（通知用・審査不要）"
+  lane :wait_build do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    baseline = (ENV["BASELINE_BUILD"] || "0").to_i
+    ready = false
+    30.times do
+      n = latest_testflight_build_number(app_identifier: APP_ID, api_key: api_key).to_i
+      UI.message("latest processed build = #{n} (baseline #{baseline})")
+      if n > baseline
+        UI.success("READY: build #{n} が処理完了しました")
+        ready = true
+        break
+      end
+      sleep(60)
+    end
+    UI.user_error!("timeout: まだ処理中です") unless ready
+  end
+
+  desc "対象ビルドがTestFlightでインストール可能（処理=VALID）になるまで待つ＋状態を報告（通知用・審査不要）"
+  lane :wait_ready do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    target = (ENV["TARGET_BUILD"] || "").to_i
+    ready = false
+    30.times do
+      builds = app.get_builds(limit: 10)
+      b = target > 0 ? builds.find { |x| x.version.to_i == target } : builds.max_by { |x| x.version.to_i }
+      if b.nil?
+        UI.message("build #{target} はまだ一覧に出ていません（アップロード反映待ち）")
+      else
+        comp = (b.uses_non_exempt_encryption rescue "?")
+        UI.message("build=#{b.version} processing=#{b.processing_state} 輸出コンプライアンス(usesNonExemptEncryption)=#{comp.inspect}")
+        if b.processing_state == "VALID"
+          UI.success("READY: build #{b.version} は処理完了。TestFlightでインストール可能です（compliance=#{comp.inspect}）")
+          ready = true
+          break
+        elsif ["INVALID", "FAILED"].include?(b.processing_state)
+          UI.user_error!("build #{b.version} の処理が失敗しました: #{b.processing_state}")
+        end
+      end
+      sleep(60)
+    end
+    UI.user_error!("timeout: まだ処理中です") unless ready
+  end
+
+  desc "TestFlight配布診断（読み取り専用）：内部グループ・テスター・各ビルドのグループ割当を出す"
+  lane :tf_diag do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.message("APP id=#{app.id} name=#{app.name}")
+
+    groups = (app.get_beta_groups rescue [])
+    UI.message("=== BETA GROUPS (#{groups.size}) ===")
+    groups.each do |g|
+      internal = (g.is_internal_group rescue "?")
+      allb = (g.has_access_to_all_builds rescue "?")
+      testers = (g.get_beta_testers rescue [])
+      UI.message("GROUP name=#{g.name.inspect} id=#{g.id} internal=#{internal} allBuilds=#{allb} testers=#{testers.size}")
+      testers.first(20).each do |t|
+        UI.message("   tester=#{(t.email rescue nil) || t.id} state=#{(t.state rescue '?')}")
+      end
+    end
+
+    UI.message("=== BUILDS (最新) ===")
+    builds = (app.get_builds(limit: 6) rescue [])
+    builds.each do |b|
+      bg = (b.get_beta_groups rescue [])
+      comp = (b.uses_non_exempt_encryption rescue "?")
+      UI.message("BUILD #{b.version} state=#{b.processing_state} compliance=#{comp.inspect} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
+    end
+
+    UI.message("=== APP STORE VERSIONS (公開審査の状況) ===")
+    versions = (app.get_app_store_versions(limit: 8) rescue [])
+    if versions.empty?
+      UI.message("App Store版のバージョンは見つかりませんでした（公開審査を出していない可能性）")
+    end
+    versions.each do |v|
+      vs = (v.version_string rescue "?")
+      state = (v.app_store_state rescue "?")
+      bno = (v.build.version rescue nil)
+      UI.message("APPSTORE version=#{vs} state=#{state} build=#{bno.inspect}")
+    end
+
+    UI.message("=== TestFlight Beta App Review (外部テスター用の審査) ===")
+    breb = (app.get_builds(limit: 12) rescue [])
+    breb.each do |b|
+      sub = (b.get_beta_app_review_submission rescue nil)
+      st = sub ? ((sub.beta_review_state rescue nil) || "?") : "なし"
+      ext = (b.uses_non_exempt_encryption rescue "?")
+      UI.message("BUILD #{b.version} betaReview=#{st} export_compliance=#{ext.inspect}")
+    end
+
+    UI.message("=== グループ別の割当ビルド ===")
+    groups.each do |g|
+      gb = (g.get_builds(limit: 6) rescue [])
+      UI.message("GROUP #{g.name.inspect} builds=[#{gb.map { |x| (x.version rescue '?') }.join(', ')}]")
+    end
+  end
+
+  desc "指定範囲のビルドを期限切れ(Expire)にして TestFlight から消す（削除はApple仕様上不可）"
+  lane :expire_builds do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    from = (ENV["EXPIRE_FROM"] || "1").to_i
+    to = (ENV["EXPIRE_TO"] || "1").to_i
+    UI.message("Expire対象: build #{from}〜#{to}（それ以外は残す）")
+    builds = (app.get_builds(limit: 100) rescue [])
+    builds.each do |b|
+      num = b.version.to_i
+      next unless num >= from && num <= to
+      already = (b.expired rescue false)
+      if already
+        UI.message("SKIP build #{b.version}（既にexpired）")
+        next
+      end
+      begin
+        b.expire!
+        UI.message("EXPIRED build #{b.version}")
+      rescue => e
+        begin
+          Spaceship::ConnectAPI.patch_builds(build_id: b.id, expired: true)
+          UI.message("EXPIRED(patch) build #{b.version}")
+        rescue => e2
+          UI.message("expire失敗 build #{b.version}: #{e.message} / #{e2.message}")
+        end
+      end
+    end
+    UI.message("=== 残っている（有効な）ビルド ===")
+    (app.get_builds(limit: 100) rescue []).each do |b|
+      exp = (b.expired rescue "?")
+      UI.message("BUILD #{b.version} expired=#{exp}") unless exp == true
+    end
+  end
+
+  desc "対象ビルドを内部テスターグループに配布する（TestFlightで入手可能にする）"
+  lane :tf_distribute do
+    issuer = ENV["APPSTORE_ISSUER_ID"].to_s.strip
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPSTORE_KEY_ID"),
+      issuer_id: issuer.empty? ? nil : issuer,
+      key_content: ENV.fetch("APPSTORE_PRIVATE_KEY"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**api_key)
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    target = (ENV["TARGET_BUILD"] || "1").to_i
+
+    builds = app.get_builds(limit: 10)
+    b = builds.find { |x| x.version.to_i == target }
+    UI.user_error!("build #{target} が見つかりません") if b.nil?
+    UI.message("target build=#{b.version} state=#{b.processing_state} id=#{b.id}")
+
+    group = app.get_beta_groups.find { |g| (g.is_internal_group rescue false) }
+    UI.user_error!("内部テスターグループが見つかりません") if group.nil?
+    UI.message("内部グループ name=#{group.name.inspect} id=#{group.id}")
+
+    # 今後のビルドが自動で内部テスターに出るよう「すべてのビルドにアクセス」をON（best-effort）
+    begin
+      Spaceship::ConnectAPI.patch_beta_groups(beta_group_id: group.id, attributes: { hasAccessToAllBuilds: true })
+      UI.success("内部グループを hasAccessToAllBuilds=true に設定（今後のビルドは自動配布）")
+    rescue => e
+      UI.important("hasAccessToAllBuilds の設定はスキップ（#{e.message}）")
+    end
+
+    # 対象ビルドを内部グループに配布
+    begin
+      Spaceship::ConnectAPI.add_beta_groups_to_build(build_id: b.id, beta_group_ids: [group.id])
+      UI.success("build #{b.version} を内部グループ #{group.name} に配布しました")
+    rescue => e
+      UI.important("配布APIでエラー（既に配布済みの可能性）: #{e.message}")
+    end
+
+    # 確認：配布後の状態を再取得
+    b2 = app.get_builds(limit: 10).find { |x| x.version.to_i == target }
+    bg = (b2.get_beta_groups rescue [])
+    UI.message("CONFIRM build #{b2.version} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
+    testers = (group.get_beta_testers rescue [])
+    UI.message("CONFIRM 内部グループ testers=#{testers.size}")
+  end
+
+  desc "署名なしビルド（Secretsが無くても通る確認用）"
+  lane :check do
+    build_app(
+      project: XCODEPROJ,
+      scheme: "App",
+      configuration: "Release",
+      skip_package_ipa: true,
+      skip_archive: true,
+      destination: "generic/platform=iOS",
+      xcargs: "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''",
+    )
+  end
+end

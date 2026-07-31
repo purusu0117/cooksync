@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
 import { enablePush } from "@/lib/pushClient";
+import { isNativeApp } from "@/lib/native";
 import { getUid } from "@/lib/syncStore";
 
 // サーバー側に完了時刻を予約／解除（アプリを閉じていても終了時刻ちょうどに通知）
@@ -225,7 +226,13 @@ export default function CookingTimer({
       /* 音が出せない端末は無視 */
     }
     try {
-      if ("Notification" in window && Notification.permission === "default") {
+      // ネイティブアプリ版（WKWebView）は Web の通知が使えないので許可も求めない。
+      // 画面を開いている間のアラーム音・完了バナーはネイティブでもそのまま動く。
+      if (
+        !isNativeApp() &&
+        "Notification" in window &&
+        Notification.permission === "default"
+      ) {
         void Notification.requestPermission();
       }
     } catch {

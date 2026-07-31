@@ -1,0 +1,55 @@
+# iOS ビルド（署名なし）。Windows開発機ではビルド不可のため macOS ランナーで行う。
+# 起動: GitHub Actions の「Run workflow」ボタン（workflow_dispatch）または master への push。
+# 成果物: Actions の実行ページ → Artifacts → cooksync-ios-app（App.app、未署名）
+#
+# 注意: Capacitor 8 の iOS は Swift Package Manager 方式（CocoaPods不要）。
+# `cap sync ios` が Package.swift をランナー上で再生成するため、
+# Windowsでコミットされたパス区切り（\）もここで正しいものに直る。
+name: build-ios
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    # ネイティブに関係ないWeb側の変更で毎回 macOS ランナーを回さない
+    paths:
+      - "ios/**"
+      - "native/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-ios.yml"
+
+jobs:
+  build-unsigned:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # capacitor.config.ts → ネイティブ設定へ反映＋Package.swift 再生成
+      - name: Capacitor sync
+        run: npx cap sync ios
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination generic/platform=iOS \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cooksync-ios-app
+          path: ios/DerivedData/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error

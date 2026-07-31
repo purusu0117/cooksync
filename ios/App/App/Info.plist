@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+        <string>CookSync</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<!-- 輸出コンプライアンス: 通信は標準のHTTPS/TLSのみ＝米国輸出規制の対象外。
+	     これを宣言しておくと、アップロードのたびにApp Store Connectで暗号化の質問に答える必要がなくなる
+	     （答えるまでTestFlightに出てこない）。独自の暗号化を実装した場合はこのキーを見直すこと。 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- カメラ利用の説明。これが無いと写真での食材追加でカメラ起動時にiOSがアプリを強制終了する
+	     （CashSyncで実際に起きた 2026-07-28）。 -->
+	<key>NSCameraUsageDescription</key>
+	<string>冷蔵庫の中や食材を撮影して、AIが食材名と賞味期限を読み取るためにカメラを使用します。</string>
+	<!-- 写真ライブラリの説明。撮影済みの食材写真・レシピ写真を選ぶ（複数選択あり）ために必要。 -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>撮影済みの食材やレシピの写真を選んで読み取るために写真ライブラリへアクセスします。</string>
+</dict>
+</plist>

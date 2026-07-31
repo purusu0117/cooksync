@@ -2,8 +2,11 @@
 
 // クライアント：Service Worker登録＋プッシュ購読。
 // ※ iOSは「ホーム画面に追加したPWA」かつ通知許可済みのときのみ届く（Safariタブ不可）。
+// ※ ネイティブアプリ版（Capacitor/WKWebView）は Web Push を受け取れない。
+//    許可ダイアログだけ出て一生届かない、という状態になるので何もしない。
 
 import { getUid } from "@/lib/syncStore";
+import { isNativeApp } from "@/lib/native";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -17,6 +20,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 /** 通知を有効化（許可要求→SW登録→購読→サーバー送信）。成功でtrue */
 export async function enablePush(): Promise<boolean> {
   try {
+    if (isNativeApp()) return false; // ネイティブは Web Push 非対応（許可も求めない）
     if (
       typeof window === "undefined" ||
       !("serviceWorker" in navigator) ||
@@ -59,6 +63,7 @@ export async function enablePush(): Promise<boolean> {
 /** すでに許可済みなら静かに購読を確保（許可ダイアログは出さない） */
 export async function ensurePushIfGranted(): Promise<void> {
   try {
+    if (isNativeApp()) return; // ネイティブは Web Push 非対応
     if (
       typeof window === "undefined" ||
       !("Notification" in window) ||
