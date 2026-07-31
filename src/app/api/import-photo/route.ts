@@ -9,6 +9,7 @@ import os from "os";
 import path from "path";
 import { askClaudeVisionRecipe } from "@/lib/ai";
 import { consume, quotaResponse, refund } from "@/lib/quotaServer";
+import { identify } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,7 +21,7 @@ const MAX_IMAGES = 4;
 
 export async function POST(request: Request) {
   const tmps: string[] = [];
-  const uid = request.headers.get("x-cooksync-uid") || "anon";
+  const uid = identify(request, request.headers.get("x-cooksync-uid") ?? undefined).uid;
   try {
     const form = await request.formData();
     const files = form.getAll("image").filter((f): f is File => f instanceof File);

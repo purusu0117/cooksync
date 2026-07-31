@@ -9,56 +9,21 @@
 // ⚠️ このメール+パスワード方式は暫定。捨てアドで無限にアカウントを作れるため、
 //    公開時は Google OAuth / Sign in with Apple に置き換える。
 //    → .secretary/Decisions/2026-07-31-cooksync-profitable-monetization.md §4
-import { promises as fs } from "fs";
-import path from "path";
-import { redis } from "@/lib/kv";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { createSession, sessionCookie } from "@/lib/session";
+import { getUser, normEmail as norm, putUser } from "@/lib/userStore";
 
 export const dynamic = "force-dynamic";
 
-const USERS_KEY = "cooksync:users";
-const DIR = path.join(process.cwd(), ".data");
-const FILE = path.join(DIR, "users.json");
-
-interface User {
-  dataId: string;
-  name: string;
-  password: string;
-  createdAt: number;
-}
-
-function norm(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-async function getUser(email: string): Promise<User | null> {
-  if (redis) {
-    const v = await redis.hget<unknown>(USERS_KEY, email);
-    if (!v) return null;
-    return (typeof v === "string" ? JSON.parse(v) : v) as User;
-  }
-  try {
-    const all = JSON.parse(await fs.readFile(FILE, "utf8")) as Record<string, User>;
-    return all[email] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function putUser(email: string, u: User): Promise<void> {
-  if (redis) {
-    await redis.hset(USERS_KEY, { [email]: JSON.stringify(u) });
-    return;
-  }
-  await fs.mkdir(DIR, { recursive: true });
-  let all: Record<string, User> = {};
-  try {
-    all = JSON.parse(await fs.readFile(FILE, "utf8"));
-  } catch {
-    /* 初回 */
-  }
-  all[email] = u;
-  await fs.writeFile(FILE, JSON.stringify(all), "utf8");
+/** ログイン成功時は**サーバー発行のセッションCookie**も配る。
+ *  これがあるとAIの枠がクライアントの申告ではなくCookieで数えられる（偽装不可）。 */
+function withSession(
+  body: Record<string, unknown>,
+  s: { uid: string; dataId: string; email: string; name: string },
+): Response {
+  return Response.json(body, {
+    headers: { "Set-Cookie": sessionCookie(createSession(s)) },
+  });
 }
 
 export async function POST(request: Request) {
@@ -101,7 +66,10 @@ export async function POST(request: Request) {
         password: await hashPassword(password),
         createdAt: Date.now(),
       });
-      return Response.json({ ok: true, dataId, name: name.trim(), email: em });
+      return withSession(
+        { ok: true, dataId, name: name.trim(), email: em },
+        { uid: dataId, dataId, email: em, name: name.trim() },
+      );
     }
 
     // login
@@ -118,7 +86,10 @@ export async function POST(request: Request) {
     if (needsUpgrade) {
       await putUser(em, { ...u, password: await hashPassword(password) }).catch(() => {});
     }
-    return Response.json({ ok: true, dataId: u.dataId, name: u.name, email: em });
+    return withSession(
+      { ok: true, dataId: u.dataId, name: u.name, email: em },
+      { uid: u.dataId, dataId: u.dataId, email: em, name: u.name },
+    );
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "auth failed" },

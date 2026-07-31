@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { askClaudeVisionItems } from "@/lib/ai";
 import { consume, quotaResponse, refund } from "@/lib/quotaServer";
+import { identify } from "@/lib/session";
 
 // 冷蔵庫の写真 → AIが食材名を抽出。期限・カテゴリはクライアント側で推定する。
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const maxDuration = 180;
 
 export async function POST(request: Request) {
   let tmp = "";
-  const uid = request.headers.get("x-cooksync-uid") || "anon";
+  const uid = identify(request, request.headers.get("x-cooksync-uid") ?? undefined).uid;
   try {
     const form = await request.formData();
     const file = form.get("image");

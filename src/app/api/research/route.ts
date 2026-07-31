@@ -3,6 +3,7 @@ import { askClaudeRecipes } from "@/lib/ai";
 import { sendPush } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
 import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
+import { identify } from "@/lib/session";
 import { addToPool, takeFromPool } from "@/lib/recipeCache";
 
 // ローカルClaude Codeを起動するので動的・長め
@@ -125,7 +126,12 @@ function buildPrompt(b: ResearchBody): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ResearchBody;
-    const uid = body.u || "anon";
+    // 枠を数える uid：セッションCookieがあればそれを正とする（クライアントの `u` は
+    // 書き換え可能なので信用しない）。Cookieが無い既存ユーザーは `u` にフォールバック。
+    const uid = identify(request, body.u).uid;
+    // ⚠️ プッシュ通知の宛先は**別**。購読はクライアントのuid(getUid())で登録されているので、
+    //    ここを uid に変えると通知が届かなくなる。
+    const pushUid = body.u || uid;
 
     // ── ① まず共有プールを引く（AI原価0）────────────────────────────
     // 同じ条件のレシピを誰かが既に生成していれば、APIを叩かずに返せる。
@@ -166,7 +172,7 @@ export async function POST(request: Request) {
           .filter(Boolean)
           .join(" / ");
         // 通知は任意（VAPID未設定なら失敗しても結果には影響させない）
-        await sendPush(uid, {
+        await sendPush(pushUid, {
           title: "🍳 レシピが見つかりました",
           body: names || "候補ができました。タップして確認",
           url: "/meal",
