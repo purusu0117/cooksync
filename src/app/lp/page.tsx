@@ -250,10 +250,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-5xl">
           <Kicker>Gallery</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            レシピの写真も、AIが自動生成。
+            冷蔵庫から、こんな一皿へ。
           </h2>
           <p className="mx-auto mt-3 max-w-md text-center text-sm text-ink-soft">
-            提案されたレシピには、おいしそうな料理写真が自動で付きます。
+            余りがちな食材から実際に提案された料理の一例です。
           </p>
           <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {GALLERY.map((src) => (
