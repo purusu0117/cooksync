@@ -28,9 +28,20 @@ const USE_API = !!process.env.ANTHROPIC_API_KEY;
 const MAIN_MODEL = process.env.COOKSYNC_AI_MODEL || "claude-sonnet-5";
 const CHEAP_MODEL = process.env.COOKSYNC_AI_MODEL_CHEAP || "claude-haiku-4-5";
 
+// SDKの既定は timeout=10分・maxRetries=2。つまり最悪 30分 1本のリクエストで粘る。
+// Route Handler 側は maxDuration=300（5分）なので、既定のままだと**必ず先に**
+// after() が殺され、catch も走らず、ジョブが status:"running" のまま Redis に
+// 30分残る（クライアントは回り続けて、30分後にやっと失敗が出る）。
+// 1回120秒×最大2回=240秒に収め、5分の枠内で必ず catch まで戻れるようにする。
+// ※ TIMEOUT_MS(240秒) は claude CLI 経路専用なので、こことは別。
+const API_TIMEOUT_MS = 120_000;
+const API_MAX_RETRIES = 1;
+
 let _client: Anthropic | null = null;
 function api(): Anthropic {
-  if (!_client) _client = new Anthropic(); // ANTHROPIC_API_KEY を自動参照
+  // ANTHROPIC_API_KEY を自動参照。timeout はミリ秒（TypeScript SDK）。
+  if (!_client)
+    _client = new Anthropic({ timeout: API_TIMEOUT_MS, maxRetries: API_MAX_RETRIES });
   return _client;
 }
 function textOf(msg: Anthropic.Message): string {

@@ -75,12 +75,28 @@ export default function RecipeSources() {
   }
 
   // ---- 動画（ジョブ方式：30〜120秒） ----
-  async function poll(jobId: string) {
+  // サーバーが黙ったまま（＝after()が殺された等）でも**永久には回さない**。
+  // 3秒間隔×120回＝約6分で打ち切る。サーバー側のTTLは30分あるので、
+  // 上限が無いと最悪30分スピナーを見せ続けることになる。
+  const MAX_POLLS = 120;
+
+  async function poll(jobId: string, tries = 0) {
+    if (tries >= MAX_POLLS) {
+      setLoading(false);
+      setError("時間がかかりすぎています。もう一度お試しください。");
+      return;
+    }
     try {
       const res = await fetch(`/api/import-video?jobId=${jobId}`);
       const data = await res.json();
       if (data.status === "done") {
         setLoading(false);
+        // done なのにレシピが無い＝読み取れなかった回（古いジョブ対策の保険）。
+        // ここで通すと ImportedRecipePreview が undefined を触って画面ごと落ちる。
+        if (!data.recipe) {
+          setError("この動画からはレシピを読み取れませんでした。");
+          return;
+        }
         setResult({
           recipe: data.recipe,
           missing: data.missing,
@@ -95,9 +111,9 @@ export default function RecipeSources() {
         return;
       }
       if (data.step) setStep(data.step);
-      pollRef.current = setTimeout(() => poll(jobId), 3000);
+      pollRef.current = setTimeout(() => poll(jobId, tries + 1), 3000);
     } catch {
-      pollRef.current = setTimeout(() => poll(jobId), 4000);
+      pollRef.current = setTimeout(() => poll(jobId, tries + 1), 4000);
     }
   }
 

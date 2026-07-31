@@ -100,6 +100,8 @@ function buildPrompt(info: VideoMeta, captions: string): string {
     "- sources には必ず動画URLと投稿者名を入れる。参照した公式ページがあればそれも追加する。",
     "- 分量が読み取れなかった材料名を missing 配列に列挙する（UIで注意表示するため）。",
     "- confidence は high / medium / low。概要欄に材料と分量が揃っていれば high、検索で見つけた出典なら medium、根拠が薄ければ low。",
+    // 料理と無関係な動画に無理やりレシピを付けさせない。写真側と同じ合図にする。
+    '- 動画が料理と無関係なら {"recipe":null} を返す。',
     "",
     "出力は次のJSONだけ（前後に文章やコードフェンスを付けない）:",
     '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low"}',
@@ -148,6 +150,21 @@ export async function POST(request: Request) {
           missing?: unknown;
           confidence?: unknown;
         }>(buildPrompt(info, captions));
+        // 料理と無関係な動画では AI が仕様どおり {"recipe":null} を返す。
+        // ここを done にすると、クライアントが recipe:undefined のまま
+        // ImportedRecipePreview に渡してホーム画面ごとクラッシュする
+        // （TypeError: Cannot read properties of undefined (reading 'name')）。
+        // 写真側（import-photo）と同じく **失敗として扱い、枠も戻す**。
+        if (!out.recipe) {
+          await refund(uid, "import", request).catch(() => {});
+          await setJob(jobId, {
+            status: "error",
+            error:
+              "この動画からはレシピを読み取れませんでした。料理動画のURLでお試しください。",
+            createdAt: Date.now(),
+          });
+          return;
+        }
         await setJob(jobId, {
           status: "done",
           recipe: out.recipe,
@@ -176,10 +193,26 @@ export async function POST(request: Request) {
   }
 }
 
+// maxDuration(300秒)を超えると after() はプラットフォームに殺され、catch も走らない。
+// ＝ジョブは status:"running" のまま Redis のTTL(30分)まで残り、クライアントは
+// その間ずっとスピナーを回し続ける。実時間で見て終わっているはずのジョブは
+// running でも失敗として返す（少し余裕を見て 6分）。
+const STUCK_MS = 6 * 60 * 1000;
+
+function isStuck(job: Job): boolean {
+  return job.status === "running" && Date.now() - job.createdAt > STUCK_MS;
+}
+
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("jobId");
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
   const job = await getJob(jobId);
   if (!job) return Response.json({ status: "missing" });
+  if (isStuck(job)) {
+    return Response.json({
+      status: "error",
+      error: "時間内に取り込みが終わりませんでした。もう一度お試しください。",
+    });
+  }
   return Response.json(job);
 }

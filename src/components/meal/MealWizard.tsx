@@ -310,7 +310,20 @@ export default function MealWizard() {
   }
 
   // ジョブを定期確認（アプリを離れている間もサーバーは処理を継続）
-  async function pollJob(jobId: string) {
+  //
+  // ⚠️ 上限は必須。サーバー側の maxDuration(5分)を超えると after() が殺されて
+  //    ジョブが status:"running" のまま残るので、上限が無いと Redis のTTL(30分)
+  //    いっぱいまで3秒ごとに叩き続け、30分後にやっと失敗が出ることになる。
+  //    3秒×120回＝約6分で打ち切る（再訪時は resume() が0から数え直す）。
+  const MAX_POLLS = 120;
+
+  async function pollJob(jobId: string, tries = 0) {
+    if (tries >= MAX_POLLS) {
+      clearJob();
+      setAiLoading(false);
+      setAiError("時間がかかりすぎています。もう一度「AIで探す」を押してください。");
+      return;
+    }
     try {
       const res = await fetch(`/api/research?jobId=${jobId}`);
       const data = await res.json();
@@ -338,9 +351,9 @@ export default function MealWizard() {
         setAiError(data.error || "レシピが取得できませんでした");
         return;
       }
-      pollRef.current = setTimeout(() => pollJob(jobId), 3000);
+      pollRef.current = setTimeout(() => pollJob(jobId, tries + 1), 3000);
     } catch {
-      pollRef.current = setTimeout(() => pollJob(jobId), 4000);
+      pollRef.current = setTimeout(() => pollJob(jobId, tries + 1), 4000);
     }
   }
 

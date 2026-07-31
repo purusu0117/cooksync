@@ -173,6 +173,20 @@ export async function POST(request: Request) {
     after(async () => {
       try {
         const recipes = await askClaudeRecipes(prompt);
+        // askClaudeRecipes は**例外を投げず空配列を返す**（max_tokens打ち切り・
+        // refusal・pause_turn上限などで、救出できるレシピが1件も無かったとき）。
+        // これを done にすると catch が走らず refund もされないので、
+        // 「レシピが取得できませんでした」と出たのに月8回の枠だけ1つ減る。
+        // 0件は成功ではないので、error 扱いにして枠を戻す。
+        if (recipes.length === 0) {
+          await refund(uid, "research", request).catch(() => {});
+          await setJob(jobId, {
+            status: "error",
+            error: "レシピが取得できませんでした。もう一度お試しください。",
+            createdAt: Date.now(),
+          });
+          return;
+        }
         await setJob(jobId, { status: "done", recipes, createdAt: Date.now() });
         // 次に同じ条件で探す人のためにプールへ貯める（原価が下がっていく）
         await addToPool(body, recipes).catch(() => {});
@@ -206,12 +220,23 @@ export async function POST(request: Request) {
   }
 }
 
+// maxDuration(300秒)を超えると after() はプラットフォームに殺され、catch も走らない。
+// ＝ジョブは status:"running" のまま Redis のTTL(30分)まで残る。クライアントは
+// running を見て延々ポーリングを続けてしまうので、実時間で打ち切って error を返す。
+const STUCK_MS = 6 * 60 * 1000;
+
 // GET ?jobId=... : ジョブの状態/結果を返す
 export async function GET(request: Request) {
   const jobId = new URL(request.url).searchParams.get("jobId");
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
   const job = await getJob(jobId);
   if (!job) return Response.json({ status: "missing" });
+  if (job.status === "running" && Date.now() - job.createdAt > STUCK_MS) {
+    return Response.json({
+      status: "error",
+      error: "時間内にレシピを取得できませんでした。もう一度お試しください。",
+    });
+  }
   if (job.status === "done") {
     return Response.json({ status: "done", recipes: job.recipes ?? [] });
   }

@@ -21,7 +21,13 @@ on:
       - ".github/workflows/build-ios.yml"
 
 jobs:
+  # 型・Lint・テストが通らないものは実機ビルドまで進めない（前段ゲート）。
+  # macOSランナーは課金枠の消費が大きいので、落ちるなら安いUbuntu側で落とす。
+  test:
+    uses: ./.github/workflows/test.yml
+
   build-unsigned:
+    needs: test
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

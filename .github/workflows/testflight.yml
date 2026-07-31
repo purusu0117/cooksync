@@ -9,6 +9,11 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 型・Lint・テストが通らないものは配信しない（前段ゲート）。
+  # 実機に配る一歩手前が最後の砦なので、ここは必ず通す。
+  test:
+    uses: ./.github/workflows/test.yml
+
   # Secrets 不要。Fastfile が壊れていないか（読み込めるか）だけ確認する
   fastlane-syntax:
     runs-on: macos-latest
@@ -22,6 +27,7 @@ jobs:
         run: bundle exec fastlane lanes
 
   upload:
+    needs: [test, fastlane-syntax]
     runs-on: macos-latest
     timeout-minutes: 60
     env:

@@ -1,0 +1,42 @@
+# Web側の自動チェック（型・Lint・テスト）。
+#
+# なぜ要るか：テストは192件書いてあるのに、これまで .github/workflows/ は
+# iOSビルド／TestFlight系しか無く、**CIで一度も走っていなかった**。
+# 壊れても誰も気づかないまま TestFlight にそのまま配信されていた。
+#
+# ここは Ubuntu で回す（macOSランナーの10倍の課金枠を使わない・速い）。
+# 実機ビルドは build-ios.yml、配信は testflight.yml の担当で、
+# どちらもこのワークフローを `uses:` で前段に置いてゲートにしている。
+name: test
+
+on:
+  push:
+  pull_request:
+  # build-ios / testflight から前段ゲートとして呼べるようにする
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # lockfile どおりに入れる（npm install と違って勝手に更新しない）
+      - name: Install dependencies
+        run: npm ci
+
+      # 3つは独立した観点なので、1つ落ちても残りの結果が見えるよう別ステップにする
+      - name: 型チェック
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: テスト
+        run: npx vitest run

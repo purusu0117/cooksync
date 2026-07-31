@@ -32,7 +32,9 @@ export interface RawRecipe {
 }
 
 export interface ImportResult {
-  recipe: RawRecipe;
+  /** AIが「料理ではない」と判断すると null になる（＝レシピ無し）。
+   *  サーバー側で error にしているが、ここでも受けられるようにしておく。 */
+  recipe: RawRecipe | null | undefined;
   missing?: string[];
   confidence?: string;
   /** 出典の表示用（動画のときだけ） */
@@ -66,9 +68,17 @@ export default function ImportedRecipePreview({
   const recipes = useAllRecipes();
   const r = result.recipe;
 
+  // 保険：レシピが無いのに渡されたら**何も描かない**。
+  // ここで r.name を読んで落ちると、この画面だけでなく
+  // ホーム画面ごと真っ白になる（2026-08-01の監査で判明）。
+  // フックは全部この上で呼んでいるので、早期returnしても順序は崩れない。
+  if (!r) return null;
+
   const duplicate = !!r.name && recipes.some((x) => isSameDish(x.name, r.name!));
 
-  function save() {
+  // ⚠️ アロー関数にしてある。`function save()` は巻き上げられる関係で、
+  //    上の `if (!r) return null` による絞り込みが中まで効かない（TS18049）。
+  const save = () => {
     const ct = typeof r.cookTime === "number" ? r.cookTime : 30;
     const id = `import-${crypto.randomUUID().slice(0, 8)}`;
     const recipe: Recipe = {
@@ -90,7 +100,7 @@ export default function ImportedRecipePreview({
     };
     setStored((prev) => [recipe, ...prev]);
     setSavedId(id);
-  }
+  };
 
   if (savedId) {
     return (
