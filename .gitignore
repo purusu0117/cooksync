@@ -48,3 +48,38 @@ next-env.d.ts
 .design/
 
 server.log
+
+# ============================================================
+# iOS/Android の署名情報（**このリポジトリは public**）
+# ============================================================
+# ⚠️ 絶対にコミットしない。漏れると第三者が大翔名義のアプリを配信できてしまう。
+#    fastlane は実行時に fastlane/../dist-cert.p12 へ実ファイルを書き出すので、
+#    ローカルで fastlane を触ると本当にここに置かれる。
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+*.certSigningRequest
+dist-cert.p12
+build/
+
+# fastlane の実行時生成物
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/README.md
+
+# Capacitor / iOS のビルド生成物（cap sync でCI上で再生成される）
+ios/App/App/public
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/App/Pods
+ios/DerivedData
+ios/App/build
+android/app/build
+android/build
+android/.gradle
+android/local.properties
+android/app/src/main/assets/public
+android/app/src/main/assets/capacitor.config.json
