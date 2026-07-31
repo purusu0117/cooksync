@@ -1,4 +1,6 @@
 import { askClaudeForJsonNoWeb } from "@/lib/ai";
+import { guardAi } from "@/lib/quotaServer";
+import { EST_YEN } from "@/lib/aiCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -15,6 +17,9 @@ interface ProofreadBody {
 
 export async function POST(request: Request) {
   try {
+    // 予算とIPの防御（ユーザー枠を持たない経路なので guardAi を通す）
+    const g = await guardAi(request, EST_YEN.text);
+    if (!g.ok) return Response.json({ error: g.message }, { status: 429 });
     const body = (await request.json()) as ProofreadBody;
     const name = body.name ?? "";
     const steps = Array.isArray(body.steps) ? body.steps : [];

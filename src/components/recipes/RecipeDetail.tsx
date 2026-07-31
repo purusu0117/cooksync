@@ -35,6 +35,8 @@ import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
 import DishIcon from "@/components/DishIcon";
+import ShoppablePanel from "@/components/shopping/ShoppablePanel";
+import { shoppingListText } from "@/lib/affiliate";
 import { storageList } from "@/lib/storageTips";
 import { currentTaskKey, toCookTasks } from "@/lib/cookSteps";
 import { saveCookProgress, useCookProgress } from "@/lib/cookProgress";

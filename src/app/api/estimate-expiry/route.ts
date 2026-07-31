@@ -6,6 +6,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { askClaudeForJsonNoWeb } from "@/lib/ai";
 import { redis } from "@/lib/kv";
+import { guardAi } from "@/lib/quotaServer";
+import { EST_YEN } from "@/lib/aiCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -129,6 +131,10 @@ export async function POST(request: Request) {
           return Response.json({ results, capped: true });
         }
       }
+
+      // 予算とIPの防御。キャッシュに当たった分は原価0なので、**実際にAIを呼ぶ直前**に見る。
+      const g = await guardAi(request, EST_YEN.text);
+      if (!g.ok) return Response.json({ results, capped: true, reason: g.message });
 
       const out = await askClaudeForJsonNoWeb<{ items?: unknown[] }>(
         buildPrompt(ask),

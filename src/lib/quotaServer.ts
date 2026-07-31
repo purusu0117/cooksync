@@ -272,6 +272,36 @@ export async function consume(
  * 共有プールから返せるとき（＝AI原価が0のとき）に使う。原価が出ないのに月間枠を
  * 減らすのは筋が悪いので枠は消費せず、連打への最低限の歯止めだけかける。
  */
+/**
+ * ユーザー枠を持たないAI経路の防御。**月間予算 → IP日次上限** の順に見る。
+ *
+ * ⚠️ これが無かったせいで、AIを呼ぶ7つのAPIのうち4つ
+ *    （suggest / estimate-expiry / proofread / import-video）が
+ *    **月間予算¥3,000の上限を完全に迂回していた**（2026-08-01 監査で発覚）。
+ *    予算チェックは consume() の中にしか無く、consume を通らない経路は無防備だった。
+ *    ＝「損失は¥3,000で頭打ち」という前提そのものが成立していなかった。
+ *
+ * @param estYen この呼び出しの見積もり原価（円）。予算判定に足して先に見る。
+ */
+export async function guardAi(
+  request: Request,
+  estYen: number,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!quotaEnforced()) return { ok: true };
+
+  const spent = await monthYenSpent(month());
+  if (spent + estYen > monthlyBudgetYen()) {
+    return { ok: false, message: "今月のAI利用が上限に達しました。来月またご利用ください。" };
+  }
+  if (!(await checkIpOnly(request))) {
+    return {
+      ok: false,
+      message: "この回線からのAI利用が今日の上限に達しました。明日またお試しください。",
+    };
+  }
+  return { ok: true };
+}
+
 export async function checkIpOnly(request: Request): Promise<boolean> {
   if (!quotaEnforced()) return true;
   const ipk = hashIp(clientIp(request));

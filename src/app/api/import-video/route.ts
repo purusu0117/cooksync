@@ -21,6 +21,8 @@ import { askClaudeForJson } from "@/lib/ai";
 import { fetchVideoMeta, isSupportedVideoUrl, type VideoMeta } from "@/lib/videoMeta";
 import { tryLocalRich } from "@/lib/videoLocal";
 import { redis } from "@/lib/kv";
+import { consume, quotaResponse, refund } from "@/lib/quotaServer";
+import { identify } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -114,6 +116,13 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    // ⚠️ ここは **Sonnet 5 ＋ Web検索** を使う一番高い経路（実測 ¥12.8/回）なのに、
+    //    2026-08-01 の監査まで**枠が一切掛かっていなかった**。
+    //    公開環境で入口を戻した以上、誰でも無制限に叩ける状態は許容できない。
+    const uid = identify(request, (body as { u?: string }).u).uid;
+    const q = await consume(uid, "import", request);
+    if (!q.ok) return quotaResponse(q, "import");
+
     const jobId = globalThis.crypto.randomUUID();
     await setJob(jobId, { status: "running", step: "動画の情報を取得中…", createdAt: Date.now() });
 
@@ -148,6 +157,8 @@ export async function POST(request: Request) {
           ...(typeof out.confidence === "string" ? { confidence: out.confidence } : {}),
         } as Job);
       } catch (e) {
+        // AIが失敗したのに枠だけ減るのは理不尽なので戻す
+        await refund(uid, "import", request).catch(() => {});
         await setJob(jobId, {
           status: "error",
           error: friendlyError(e instanceof Error ? e.message : "取り込みに失敗しました"),

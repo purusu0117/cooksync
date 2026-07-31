@@ -9,6 +9,8 @@ import { guessItem } from "@/lib/guess";
 import { Check, ShoppingCart, X } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import AppIcon from "@/components/AppIcon";
+import ShoppablePanel from "@/components/shopping/ShoppablePanel";
+import { shoppingListText } from "@/lib/affiliate";
 
 const fieldClass =
   "rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft";
@@ -181,6 +183,20 @@ export default function ShoppingList() {
           )}
         </div>
       )}
+
+      {/*
+        まとめて注文する導線。**リストの一番下**に置く。
+        画面最上部は iPhone だと親指が届かないうえ、ここは「追加して・見て・チェックする」画面なので、
+        上に置くと本来の操作より先に注文リンクが目に入ってしまう（＝広告に見える）。
+        買うものを一通り見終わったあとの選択肢として最後に出す。
+      */}
+      <ShoppablePanel
+        placement="shopping"
+        count={todo.length}
+        title={`まだ買っていない${todo.length}件を、ネットで注文して届けてもらう`}
+        description="お店に行かなくても、ネットスーパーや食材宅配で受け取れます。リストをコピーしてから開くと、注文先で探すのが楽になります。"
+        copyText={shoppingListText(todo)}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "@/lib/kv";
+import { identify } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -43,8 +44,23 @@ function userKey(uid: string): string {
   const safe = uid.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "anon";
   return `cooksync:u:${safe}`;
 }
+/**
+ * このリクエストが読み書きしてよいデータ領域を決める。
+ *
+ * ⚠️ 以前は `?u=` のクエリをそのまま信用していた（2026-08-01 の監査で発覚）。
+ *    uid を知っていれば **誰でも他人の冷蔵庫・レシピ・献立・買い物リストを読めて、
+ *    書き換えもできた**。認証チェックが1つも無かった。
+ *    uid はUUIDなので総当たりは非現実的だが、漏れれば即アウトで、
+ *    そもそも「知っていれば読める」は認可ではない。
+ *
+ * → **ログイン済み（セッションCookieがある）なら、必ずその人の dataId を使う。**
+ *    クエリの u は無視する＝他人のIDを指定しても自分のデータしか触れない。
+ *    未ログインは従来どおり端末のUUIDを使う（その端末だけのデータ）。
+ */
 function uidFrom(request: Request): string {
-  return new URL(request.url).searchParams.get("u") || "anon";
+  const q = new URL(request.url).searchParams.get("u") || "anon";
+  const id = identify(request, q);
+  return id.trusted ? id.dataId : q;
 }
 
 async function readAllFor(request: Request): Promise<Record<string, unknown>> {
@@ -90,7 +106,10 @@ export async function PUT(request: Request) {
     if (typeof body.key !== "string") {
       return Response.json({ error: "key required" }, { status: 400 });
     }
-    await setKeyFor(body.u || "anon", body.key, body.value);
+    // 書き込みも同じ認可を通す。**body.u をそのまま信用しない**
+    // （信用すると他人のデータを上書きできてしまう）。
+    const me = identify(request, body.u || "anon");
+    await setKeyFor(me.trusted ? me.dataId : body.u || "anon", body.key, body.value);
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json(
