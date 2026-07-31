@@ -1,7 +1,8 @@
 "use client";
 
+import { Apple, Check, Pencil, Scissors } from "lucide-react";
+import { CATEGORY_ICON } from "./categoryIcon";
 import {
-  CATEGORY_EMOJI,
   daysUntil,
   estimateExpiry,
   freshnessOf,
@@ -41,16 +42,18 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
     onUpdate({ ...item, quantity: halveQuantity(item.quantity) });
   }
 
+  const Icon = CATEGORY_ICON[item.category] ?? Apple;
+
   return (
     <li
       className={`animate-pop-in rounded-2xl border border-l-4 border-line ${ui.accentBorder} bg-surface p-3 shadow-sm transition hover:shadow-md`}
     >
       <div className="flex items-center gap-3">
         <span
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-paper text-xl"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-paper text-brand"
           aria-hidden
         >
-          {CATEGORY_EMOJI[item.category]}
+          <Icon size={20} strokeWidth={1.8} />
         </span>
 
         <div className="min-w-0 flex-1">
@@ -76,7 +79,8 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
           onClick={() => onEdit(item)}
           className="rounded-lg px-2 py-1 text-xs font-medium text-ink-soft transition hover:bg-brand-soft hover:text-brand-dark"
         >
-          ✏️ 編集
+          <Pencil size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+          編集
         </button>
         <button
           type="button"
@@ -90,14 +94,16 @@ export default function FoodCard({ item, onDelete, onUpdate, onEdit }: Props) {
           onClick={handleCut}
           className="rounded-lg px-2 py-1 text-xs font-medium text-ink-soft transition hover:bg-brand-soft hover:text-brand-dark"
         >
-          🔪 切った
+          <Scissors size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+          切った
         </button>
         <button
           type="button"
           onClick={() => onDelete(item.id)}
           className="ml-auto rounded-lg px-2 py-1 text-xs font-medium text-ink-soft transition hover:bg-red-50 hover:text-red-600"
         >
-          ✓ 使い切った
+          <Check size={12} strokeWidth={2.5} className="mr-1 inline-block align-[-0.15em]" />
+          使い切った
         </button>
       </div>
     </li>

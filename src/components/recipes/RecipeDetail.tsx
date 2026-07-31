@@ -3,10 +3,22 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ShoppingCart } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUp,
+  Check,
+  CirclePlus,
+  Lightbulb,
+  Link2,
+  RotateCcw,
+  ShoppingCart,
+  Soup,
+  Sparkles,
+} from "lucide-react";
 import { ingredientMatches, type RecipeIngredient } from "@/lib/recipe";
 import { scaleMeasures } from "@/lib/recipeScale";
-import { toBuyableAmount, subtractAmount, parseAmount } from "@/lib/portion";
+import { subtractAmount, parseAmount } from "@/lib/portion";
+import { toBuyableFor, convertAmount } from "@/lib/packaging";
 import {
   recipeStore,
   shoppingStore,
@@ -18,17 +30,13 @@ import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
-import {
-  beginImageGeneration,
-  useIsGenerating,
-  useImageGenEnabled,
-} from "@/lib/imageGen";
-import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
 import AppIcon from "@/components/AppIcon";
-import RecipeThumb from "@/components/recipes/RecipeThumb";
+import DishIcon from "@/components/DishIcon";
 import { storageList } from "@/lib/storageTips";
+import { currentTaskKey, toCookTasks } from "@/lib/cookSteps";
+import { saveCookProgress, useCookProgress } from "@/lib/cookProgress";
 
 interface Props {
   id: string;
@@ -76,14 +84,33 @@ export default function RecipeDetail({ id }: Props) {
     snapshot: FridgeItem[];
     mealId: string;
   } | null>(null);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
   const recipe = recipes.find((r) => r.id === id) ?? null;
   const isStored = stored.some((r) => r.id === id);
   // 「作った回数」は🍳作ったボタンで記録した分だけ（献立に入れただけ=made:falseは数えない）
   const madeCount = meals.filter((m) => m.recipeId === id && m.made).length;
   const stars = ratings.find((r) => r.recipeId === id)?.stars ?? 0;
-  const generating = useIsGenerating(id);
-  const imageGenEnabled = useImageGenEnabled();
-  const usage = useUsage();
+
+  // 調理の進捗（1作業ごとのチェック）。端末ローカルに保存し、開き直しても残る。
+  const checkedTasks = useCookProgress(id);
+
+  function toggleTask(key: string) {
+    const next = { ...checkedTasks };
+    if (next[key]) delete next[key];
+    else next[key] = true;
+    saveCookProgress(id, next);
+  }
+
+  function clearTasks() {
+    saveCookProgress(id, {});
+  }
+
+  function scrollToId(elementId: string) {
+    if (typeof document === "undefined") return;
+    document
+      .getElementById(elementId)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   function setStars(n: number) {
     setRatings((prev) => {
@@ -115,6 +142,13 @@ export default function RecipeDetail({ id }: Props) {
     let have = 0;
     let comparable = false;
     for (const f of matches) {
+      // 「1パック」の在庫とレシピの「5個」も、販売単位の辞書で換算して比べる
+      const converted = convertAmount(f.name, f.quantity, nu);
+      if (converted != null) {
+        have += converted;
+        comparable = true;
+        continue;
+      }
       const h = parseAmount(f.quantity);
       if (h.ok && h.unit.trim() === nu) {
         have += h.num;
@@ -140,8 +174,8 @@ export default function RecipeDetail({ id }: Props) {
       const scaled = scaleMeasures(ing.amount, f);
       const st = stockOf(ing.name, scaled);
       if (st.status === "enough") continue;
-      // 不足分だけ（短い時は need-have、無い時は全量）を買える単位で
-      let amt = toBuyableAmount(scaled);
+      // 不足分だけ（短い時は need-have、無い時は全量）を「店で買える単位」で
+      let buy = toBuyableFor(ing.name, scaled);
       if (
         st.status === "short" &&
         st.need != null &&
@@ -149,15 +183,15 @@ export default function RecipeDetail({ id }: Props) {
         st.unit != null
       ) {
         const shortNum = Math.round((st.need - st.have) * 100) / 100;
-        if (shortNum > 0) amt = toBuyableAmount(`${shortNum}${st.unit}`);
+        if (shortNum > 0) buy = toBuyableFor(ing.name, `${shortNum}${st.unit}`);
       }
       items.push({
         id: crypto.randomUUID(),
         name: ing.name,
-        amount: amt,
+        amount: buy.amount,
         checked: false,
         addedAt: nowMs(),
-        note: `${recipe.name}用`,
+        note: buy.hint ? `${recipe.name}用／${buy.hint}` : `${recipe.name}用`,
         fromRecipeId: recipe.id,
       });
     }
@@ -184,7 +218,7 @@ export default function RecipeDetail({ id }: Props) {
         setStored((prev) =>
           prev.map((r) => (r.id === id ? { ...r, steps: data.steps } : r)),
         );
-        setNote("AIが手順を整えました ✨");
+        setNote("AIが手順を整えました");
       } else {
         setNote("整形に失敗しました");
       }
@@ -274,7 +308,7 @@ export default function RecipeDetail({ id }: Props) {
     ]);
     setUndoData({ snapshot, mealId });
     setShowMade(false);
-    setNote("✅ 「作った」を記録し、冷蔵庫を更新しました");
+    setNote("「作った」を記録し、冷蔵庫を更新しました");
   }
 
   function undoMade() {
@@ -283,18 +317,6 @@ export default function RecipeDetail({ id }: Props) {
     setMeals((prev) => prev.filter((m) => m.id !== undoData.mealId));
     setUndoData(null);
     setNote("取り消しました");
-  }
-
-  function genImage() {
-    if (!recipe || generating) return;
-    if (!usage.canUse("image")) {
-      setNote(`今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`);
-      return;
-    }
-    usage.recordUse("image");
-    // ジョブ方式：即返し→裏で生成→完了で自動反映＋プッシュ通知。画面を閉じても切れない。
-    setNote("AIが写真を生成中…（30〜90秒・画面を閉じてもOK、できたら自動で反映されます）");
-    beginImageGeneration(recipe.id, recipe.name);
   }
 
   // 作った回数の手動編集（＋／−）。作った回数＝made:true の記録のみ
@@ -353,6 +375,24 @@ export default function RecipeDetail({ id }: Props) {
       : recipe.steps.map((s) => ({ ...s, text: scaleMeasures(s.text, factor) }));
   const viewKcal = recipe.kcal ? Math.round(recipe.kcal * factor) : recipe.kcal;
 
+  // 手順を「1作業＝1チェック」に割る（人数換算後のテキストから作るので分量も追従する）
+  const tasks = toCookTasks(viewSteps);
+  const doneCount = tasks.filter((t) => checkedTasks[t.key]).length;
+  const storage = storageList(recipe);
+  const hasStorage = storage.length > 0;
+
+  // 「保存方法」から、いま作業中（未チェックの先頭）の場所へ戻る
+  function backToCurrentTask() {
+    const key = currentTaskKey(tasks, checkedTasks);
+    if (!key) {
+      scrollToId("cook-steps");
+      return;
+    }
+    scrollToId(`task-${key}`);
+    setFlashKey(key);
+    window.setTimeout(() => setFlashKey(null), 1600);
+  }
+
   const timerSuggestions = Array.from(
     new Set(
       viewSteps.flatMap((s) =>
@@ -367,28 +407,14 @@ export default function RecipeDetail({ id }: Props) {
         ← レシピ一覧
       </Link>
 
-      {(recipe.image || generating) && (
-        <div className="relative mt-3 h-52 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-brand-soft to-emerald-50">
-          <RecipeThumb
-            image={recipe.image}
-            emoji={recipe.emoji}
-            cuisine={recipe.tags?.cuisine}
-            alt={recipe.name}
-            sizes="(max-width: 768px) 100vw, 672px"
-            emojiClass="text-6xl"
-          />
-          {generating && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/40 text-white">
-              <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-              <span className="text-xs font-medium">AIが写真を生成中…</span>
-            </div>
-          )}
-        </div>
-      )}
-
       <header className="mt-4 mb-5">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-ink">
-          <span aria-hidden>{recipe.emoji}</span>
+        <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-ink">
+          <DishIcon
+            name={recipe.name}
+            staple={recipe.tags.staple}
+            cuisine={recipe.tags.cuisine}
+            size={34}
+          />
           {recipe.name}
         </h1>
         <p className="mt-1.5 text-xs font-medium text-brand-dark">
@@ -526,18 +552,21 @@ export default function RecipeDetail({ id }: Props) {
                   <span className="text-ink">
                     {i.name}
                     {st?.status === "enough" && (
-                      <span className="ml-1 text-[11px] font-semibold text-brand">
-                        ✓在庫あり
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-brand">
+                        <Check size={11} strokeWidth={3} />
+                        在庫あり
                       </span>
                     )}
                     {st?.status === "short" && (
-                      <span className="ml-1 text-[11px] font-semibold text-accent">
-                        ★不足（{shortText}）
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent">
+                        <CirclePlus size={11} strokeWidth={2.5} />
+                        不足（{shortText}）
                       </span>
                     )}
                     {st?.status === "none" && (
-                      <span className="ml-1 text-[11px] font-semibold text-accent">
-                        ★買い足し
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent">
+                        <CirclePlus size={11} strokeWidth={2.5} />
+                        買い足し
                       </span>
                     )}
                   </span>
@@ -557,27 +586,102 @@ export default function RecipeDetail({ id }: Props) {
         ))}
       </section>
 
-      {/* 行程 */}
-      <section className="mb-6">
-        <h2 className="mb-3 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
-          <AppIcon name="meal" size={18} />
-          行程
-        </h2>
+      {/* 行程：1タブ＝1作業。チェックしながら進められる */}
+      <section id="cook-steps" className="mb-6">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <AppIcon name="meal" size={18} />
+            行程
+            <span className="ml-1 rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand-dark">
+              {doneCount}/{tasks.length}
+            </span>
+          </h2>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={clearTasks}
+              disabled={doneCount === 0}
+              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark disabled:opacity-40"
+            >
+              <RotateCcw size={13} strokeWidth={1.8} />
+              すべて外す
+            </button>
+            {hasStorage && (
+              <button
+                type="button"
+                onClick={() => scrollToId("storage-section")}
+                className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
+              >
+                <ArrowDownToLine size={13} strokeWidth={1.8} />
+                保存方法へ
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 進捗バー：どこまで進んだか一目で分かる */}
+        <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-line">
+          <div
+            className="h-full rounded-full bg-brand transition-all duration-300"
+            style={{
+              width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%`,
+            }}
+          />
+        </div>
+
         <div className="mb-3">
           <CookingTimer suggestions={timerSuggestions} />
         </div>
-        <ol className="flex flex-col gap-3">
-          {viewSteps.map((s, idx) => (
-            <li key={idx} className="rounded-2xl border border-line bg-surface p-4">
-              <p className="font-semibold text-ink">{s.title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-ink">{s.text}</p>
-              {s.tip && (
-                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs italic text-amber-800">
-                  💡 {s.tip}
-                </p>
-              )}
-            </li>
-          ))}
+
+        <ol className="flex flex-col gap-2">
+          {tasks.map((t, idx) => {
+            const done = !!checkedTasks[t.key];
+            const newGroup = idx === 0 || tasks[idx - 1].groupIndex !== t.groupIndex;
+            return (
+              <li key={t.key} id={`task-${t.key}`}>
+                {newGroup && (
+                  <p className="mt-3 mb-1.5 text-xs font-bold text-brand-dark first:mt-0">
+                    {t.group}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleTask(t.key)}
+                  className={`flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left transition ${
+                    done
+                      ? "border-line bg-paper"
+                      : "border-line bg-surface hover:border-brand/40"
+                  } ${flashKey === t.key ? "ring-2 ring-brand" : ""}`}
+                >
+                  <span
+                    aria-hidden
+                    className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg border-2 transition ${
+                      done
+                        ? "border-brand bg-brand text-white"
+                        : "border-line bg-surface text-transparent"
+                    }`}
+                  >
+                    <Check size={15} strokeWidth={3} />
+                  </span>
+                  <span className="flex-1">
+                    <span
+                      className={`block text-sm leading-relaxed transition ${
+                        done ? "text-ink-soft line-through" : "text-ink"
+                      }`}
+                    >
+                      {t.text}
+                    </span>
+                    {t.tip && (
+                      <span className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs italic text-amber-800">
+                        <Lightbulb size={13} strokeWidth={2} className="mt-0.5 shrink-0" />
+                        {t.tip}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
       </section>
 
@@ -591,14 +695,28 @@ export default function RecipeDetail({ id }: Props) {
         </section>
       )}
 
-      {storageList(recipe).length > 0 && (
-        <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
-          <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
-            <AppIcon name="fridge" size={18} />
-            余った材料の保存
-          </h2>
+      {hasStorage && (
+        <section
+          id="storage-section"
+          className="mb-6 scroll-mt-20 rounded-2xl border border-line bg-surface p-4"
+        >
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+              <AppIcon name="fridge" size={18} />
+              余った材料の保存
+            </h2>
+            {/* 保存方法を見たあと、作業していた場所（未チェックの先頭）へ一発で戻る */}
+            <button
+              type="button"
+              onClick={backToCurrentTask}
+              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
+            >
+              <ArrowUp size={13} strokeWidth={1.8} />
+              作業中の場所へ戻る
+            </button>
+          </div>
           <ul className="flex flex-col gap-1.5">
-            {storageList(recipe).map((l, idx) => (
+            {storage.map((l, idx) => (
               <li key={idx} className="text-sm">
                 <span className="font-medium text-ink">{l.ingredient}</span>
                 {l.auto && (
@@ -615,7 +733,10 @@ export default function RecipeDetail({ id }: Props) {
 
       {recipe.sources.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-bold text-ink">🔗 参考</h2>
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <Link2 size={16} strokeWidth={2} />
+            参考
+          </h2>
           <ul className="flex flex-col gap-1">
             {recipe.sources.map((src, idx) => (
               <li key={idx} className="text-sm">
@@ -642,28 +763,16 @@ export default function RecipeDetail({ id }: Props) {
 
       {isStored && (
         <div className="mt-2 mb-4 flex flex-col gap-2">
-          {imageGenEnabled && (
-            <button
-              type="button"
-              onClick={genImage}
-              disabled={generating}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
-            >
-              <AppIcon name="camera" size={18} />
-              {generating
-                ? "AIが写真を生成中…"
-                : recipe.image
-                  ? "写真をAIで再生成"
-                  : "写真をAIで生成"}
-            </button>
-          )}
           <button
             type="button"
             onClick={proofread}
             disabled={proofLoading}
             className="w-full rounded-xl border border-brand/30 bg-brand-soft py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
           >
-            {proofLoading ? "AIが整えています…" : "✨ AIで手順を読みやすく整える"}
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Sparkles size={16} strokeWidth={2} />
+              {proofLoading ? "AIが整えています…" : "AIで手順を読みやすく整える"}
+            </span>
           </button>
           <button
             type="button"
@@ -754,8 +863,9 @@ export default function RecipeDetail({ id }: Props) {
 
             {usedSeasonings().length > 0 && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                <p className="text-[11px] font-semibold text-amber-800">
-                  🧂 使った調味料（常備のため在庫はそのまま）
+                <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+                  <Soup size={13} strokeWidth={2} />
+                  使った調味料（常備のため在庫はそのまま）
                 </p>
                 <p className="mt-0.5 text-xs text-ink">
                   {usedSeasonings().join("・")}

@@ -2,33 +2,12 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import {
-  Search,
-  User,
-  Carrot,
-  Beef,
-  Egg,
-  Wheat,
-  Soup,
-  CupSoda,
-  Apple,
-  ChevronRight,
-  type LucideIcon,
-} from "lucide-react";
-import RecipeThumb from "@/components/recipes/RecipeThumb";
-import { bucketOf, type Category } from "@/lib/food";
+import { Apple, ChevronRight, Search, User } from "lucide-react";
+import { bucketOf } from "@/lib/food";
+import { CATEGORY_ICON } from "@/components/categoryIcon";
 import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
-
-const CATEGORY_ICON: Record<Category, LucideIcon> = {
-  野菜: Carrot,
-  "肉・魚": Beef,
-  "乳製品・卵": Egg,
-  主食: Wheat,
-  調味料: Soup,
-  飲料: CupSoda,
-  その他: Apple,
-};
+import DishIcon from "@/components/DishIcon";
 
 export default function HomeDashboard() {
   const recipes = useAllRecipes();
@@ -80,29 +59,32 @@ export default function HomeDashboard() {
         <SectionTitle title="おすすめレシピ" href="/recipes" />
         <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
           {recommended.map((r) => (
+            // 写真もベタ塗りの大きな絵文字もやめ、専用イラストは小さく添えて
+            // 「料理名」を主役にする（絵文字が大きいと何の料理か読み取りづらかった）
             <Link
               key={r.id}
               href={`/recipes/${r.id}`}
-              className="w-44 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              className="flex w-40 shrink-0 flex-col rounded-2xl border border-line bg-surface p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md"
             >
-              <div className="relative h-28 w-full">
-                <RecipeThumb
-                  image={r.image}
-                  emoji={r.emoji}
+              <span className="mb-2 flex items-start justify-between gap-2">
+                <DishIcon
+                  name={r.name}
+                  staple={r.tags.staple}
                   cuisine={r.tags.cuisine}
-                  alt={r.name}
-                  sizes="176px"
+                  size={30}
                 />
-              </div>
-              <div className="p-3">
-                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold text-ink">
-                  {r.name}
-                </p>
-                <p className="mt-1 text-xs font-medium text-brand-dark">
-                  {r.tags.cookTime ? `⏱ ${r.tags.cookTime}分` : ""}
-                  {r.kcal ? ` / ${r.kcal}kcal` : ""}
-                </p>
-              </div>
+                {r.tags.cookTime && (
+                  <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-bold text-brand-dark">
+                    {r.tags.cookTime}分
+                  </span>
+                )}
+              </span>
+              <span className="line-clamp-2 min-h-[2.5rem] text-sm leading-snug font-bold text-ink">
+                {r.name}
+              </span>
+              <span className="mt-1 text-[11px] text-ink-soft">
+                {r.kcal ? `${r.kcal}kcal` : ""}
+              </span>
             </Link>
           ))}
         </div>
@@ -169,8 +151,8 @@ export default function HomeDashboard() {
         href="/meal"
         className="mb-4 flex items-center gap-3 rounded-2xl border border-brand/20 bg-gradient-to-br from-brand-soft to-emerald-50 p-4 transition hover:shadow-md"
       >
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-surface text-2xl">
-          🥗
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-surface">
+          <DishIcon name="サラダ" size={30} tile={false} />
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-bold text-brand-dark">余りものから作れるレシピ</p>

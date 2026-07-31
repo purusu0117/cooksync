@@ -19,6 +19,7 @@ interface ResearchBody {
     cookTime?: number;
   };
   avoid?: string[];
+  existing?: string[]; // ユーザーが既に持っているレシピ名（同じ料理は提案させない）
   round?: number;
   u?: string;
   shopMode?: "stock" | "buy"; // stock=在庫だけ / buy=買い物OK
@@ -66,6 +67,7 @@ function buildPrompt(b: ResearchBody): string {
   const servings = b.servings && b.servings > 0 ? b.servings : 2;
   const filters = b.filters ?? {};
   const avoid = b.avoid ?? [];
+  const existing = b.existing ?? [];
   const round = b.round && b.round > 0 ? b.round : 1;
   const angle = ANGLES[(round - 1) % ANGLES.length];
   const shopMode = b.shopMode === "buy" ? "buy" : "stock";
@@ -82,7 +84,10 @@ function buildPrompt(b: ResearchBody): string {
     shopMode === "stock"
       ? "■ 買い物方針: 【在庫だけで作る】上の冷蔵庫の食材だけで完結する献立にする。買い足しは基本調味料（塩・醤油・油等）のみ許可。それ以外の新規食材は使わない（toBuyは原則false）。"
       : "■ 買い物方針: 【買い物前提・必須】ユーザーは買い物に行く。各候補は“新しく食材を買って作る料理”にすること。冷蔵庫の在庫だけで作れてしまう料理は禁止（在庫で完結する案は出さない）。在庫の食材は過去に買った物で似た料理になりがちなので、在庫に寄せず、普段作らない新しい料理・新しいジャンルを積極的に出す。任意で“使い切りたい食材”を1品だけ1つ脇役で使ってよいが、その料理も主要な材料は必ず買い足し前提にする。各候補は必ず複数の toBuy:true 食材を含む。",
-    avoid.length ? `■ 避ける（最近作った・既に提案済み）: ${avoid.join("、")}` : "",
+    avoid.length ? `■ 避ける（直近2日に作った・既に提案済み）: ${avoid.join("、")}` : "",
+    existing.length
+      ? `■ 【重複禁止】ユーザーは既に次のレシピを持っている。同じ料理・言い換え（「風」「簡単」等を足しただけ・主材料と味付けが同じ）は絶対に提案しない: ${existing.join("、")}`
+      : "",
     `■ 今回の切り口のヒント: ${angle}（縛りではなく方向性。ユーザー指定の条件は厳守）`,
     round > 1
       ? `■ 重要: これは${round}回目の再探索。前回までと“違うジャンル・調理法・味付け”の角度で、上の『避ける』に挙げた料理とは別物を必ず出す。似た料理の言い換えは禁止。`

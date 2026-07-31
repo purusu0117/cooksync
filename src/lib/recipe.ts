@@ -105,6 +105,9 @@ const SYNONYM_GROUPS: string[][] = [
   ["さけ", "鮭", "しゃけ"],
   ["とうふ", "豆腐"],
   ["ごま", "胡麻"],
+  // 加工トマト（缶詰・水煮）は生トマトと別物。代表表記「とまと缶」に寄せて
+  // 缶どうしは一致・生トマトとは不一致になるようにする（缶の有無で下の判定が効く）。
+  ["とまと缶", "かっととまと缶", "ほーるとまと", "とまと水煮", "かっととまと"],
 ];
 // 別表記→代表表記の置換リスト（長い別表記から適用＝部分置換でも壊れない）。
 // 名前に数量が混ざる（例「玉ねぎ1個」）ケースでも部分一致が効くよう、完全一致ではなく置換にする。
@@ -135,10 +138,41 @@ export function normalizeName(name: string): string {
   return s;
 }
 
+// 料理名の飾り（同じ料理を別名に見せてしまう語）。比較前に落とす。
+const DISH_NOISE =
+  /(レシピ|の作り方|作り方|風|簡単|本格|絶品|激うま|やみつき|定番|基本の|お手軽|時短|超|究極の|プロの|our|recipe)/g;
+
+/** 料理名を重複判定用に正規化（表記ゆれ・飾り語・記号を落とす） */
+export function normalizeDishName(name: string): string {
+  return kataToHira(
+    (name ?? "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/[（(].*?[)）]/g, "")
+      .replace(/[\s　・,、。!！?？~〜\-ー–—_/／]/g, ""),
+  ).replace(DISH_NOISE, "");
+}
+
+/** 2つの料理名が「実質同じ料理」か（AI提案の重複除去用） */
+export function isSameDish(a: string, b: string): boolean {
+  const na = normalizeDishName(a);
+  const nb = normalizeDishName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  // 「豚の生姜焼き」⊂「絶品豚の生姜焼き」のような包含も同一とみなす。
+  // ただし2文字以下の包含（例：丼⊂親子丼）は誤爆するので長さで足切り。
+  const short = na.length <= nb.length ? na : nb;
+  const long = na.length <= nb.length ? nb : na;
+  return short.length >= 3 && long.includes(short);
+}
+
 /** 2つの食材名が同一食材を指すか（部分一致で寛容に判定） */
 export function ingredientMatches(a: string, b: string): boolean {
   const na = normalizeName(a);
   const nb = normalizeName(b);
   if (!na || !nb) return false;
+  // 缶詰・加工品（トマト缶/ホールトマト等→正規化で「とまと缶」）と生鮮（生トマト）は別食材。
+  // 部分一致だと「とまと」⊂「とまと缶」で誤マッチするので、缶の有無が違えば不一致とする。
+  if (na.includes("缶") !== nb.includes("缶")) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }

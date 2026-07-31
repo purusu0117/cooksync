@@ -78,7 +78,8 @@ export default function PhotoAddForm({ onAddMany }: Props) {
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 shadow-sm">
       <p className="mb-3 text-xs text-ink-soft">
-        📷 冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、
+        <Camera size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+        冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、
         <strong>賞味期限とカテゴリは自動で推定</strong>します（あとで編集可）。
       </p>
 

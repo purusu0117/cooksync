@@ -6,7 +6,7 @@ import { usePersistentList } from "@/lib/useStore";
 import type { ShoppingItem } from "@/lib/shopping";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { guessItem } from "@/lib/guess";
-import { ShoppingCart } from "lucide-react";
+import { Check, ShoppingCart, X } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import AppIcon from "@/components/AppIcon";
 
@@ -89,7 +89,7 @@ export default function ShoppingList() {
             i.checked ? "border-brand bg-brand text-white" : "border-line bg-paper"
           }`}
         >
-          {i.checked && "✓"}
+          {i.checked && <Check size={13} strokeWidth={3} />}
         </button>
         <span
           className={`flex-1 truncate text-sm ${
@@ -108,7 +108,7 @@ export default function ShoppingList() {
           aria-label="削除"
           className="shrink-0 rounded-lg p-1.5 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
         >
-          ✕
+          <X size={15} strokeWidth={2} />
         </button>
       </li>
     );

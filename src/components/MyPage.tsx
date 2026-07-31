@@ -15,7 +15,7 @@ import {
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
 import { useUsage, FREE_LIMITS, AI_LABEL, type AiKind } from "@/lib/usage";
-import { HelpCircle } from "lucide-react";
+import { ChefHat, HelpCircle } from "lucide-react";
 import PageHeader from "./PageHeader";
 import { OPEN_EVENT } from "./Onboarding";
 import AppIcon from "./AppIcon";
@@ -277,7 +277,7 @@ export default function MyPage() {
 
       <div className="mb-6 flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 shadow-sm">
         <span className="grid h-14 w-14 place-items-center rounded-full bg-brand text-xl font-bold text-white">
-          {account.name.slice(0, 1) || "🧑‍🍳"}
+          {account.name.slice(0, 1) || <ChefHat size={24} strokeWidth={2} />}
         </span>
         <div className="min-w-0">
           <p className="truncate text-lg font-bold text-ink">{account.name}</p>
@@ -322,7 +322,7 @@ export default function MyPage() {
         </p>
         {sortedMeals.length === 0 ? (
           <p className="rounded-xl bg-paper p-3 text-sm text-ink-soft">
-            まだ記録がありません。レシピの「🍳 作った」で記録されます。
+            まだ記録がありません。レシピの「作った」ボタンで記録されます。
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -364,7 +364,7 @@ export default function MyPage() {
             : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで無制限（準備中）。"}
         </p>
         <ul className="flex flex-col gap-2.5">
-          {(["research", "image", "scan"] as AiKind[]).map((k) => {
+          {(["research", "scan"] as AiKind[]).map((k) => {
             const used = usage.used(k);
             const limit = FREE_LIMITS[k];
             const pct = usage.premium ? 0 : Math.min(100, (used / limit) * 100);

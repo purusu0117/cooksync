@@ -1,7 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Flame, ChefHat, ShoppingCart } from "lucide-react";
+import {
+  CalendarPlus,
+  ChefHat,
+  CircleCheck,
+  Clock,
+  Flame,
+  Lightbulb,
+  Palette,
+  Refrigerator,
+  RefreshCw,
+  Search,
+  ShoppingCart,
+  Sparkles,
+  UtensilsCrossed,
+  Users,
+} from "lucide-react";
 import {
   bucketOf,
   daysUntil,
@@ -12,6 +27,7 @@ import {
 } from "@/lib/food";
 import {
   ingredientMatches,
+  isSameDish,
   type Cuisine,
   type Heaviness,
   type Recipe,
@@ -27,8 +43,9 @@ import {
 } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { rankCandidates } from "@/lib/ranking";
-import { toBuyableAmount } from "@/lib/portion";
+import { toBuyableFor } from "@/lib/packaging";
 import {
+  recentMeals,
   slotsForTiming,
   type MealEntry,
   type MealSlot,
@@ -38,9 +55,10 @@ import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
-import { beginImageGeneration, useImageGenEnabled } from "@/lib/imageGen";
 import { useUsage, FREE_LIMITS } from "@/lib/usage";
 import PageHeader from "@/components/PageHeader";
+import StarRating from "@/components/StarRating";
+import DishIcon from "@/components/DishIcon";
 
 type Phase = "timing" | "direction" | "pick" | "missing" | "done";
 
@@ -97,7 +115,6 @@ export default function MealWizard() {
   const [ratings] = usePersistentList(ratingStore);
   const usage = useUsage();
   const guide = useGuide();
-  const imageGenEnabled = useImageGenEnabled();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -114,7 +131,6 @@ export default function MealWizard() {
   const [aiError, setAiError] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
   const [aiPreview, setAiPreview] = useState<Recipe | null>(null); // 候補の詳細プレビュー（未確定）
-  const [imgStatus, setImgStatus] = useState(""); // 写真生成の状況表示
   const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
   const [searchRound, setSearchRound] = useState(0); // 探索回数（角度を変える）
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,6 +142,10 @@ export default function MealWizard() {
     () => sortByExpiry(fridge).filter((f) => bucketOf(f.expiresOn) === "priority"),
     [fridge],
   );
+
+  // 登録済みの星評価（未評価は0）
+  const starsOf = (rid: string) =>
+    ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
 
   // 現在のスロットのランキング（既に選んだレシピは除外）
   const ranked = useMemo(() => {
@@ -163,7 +183,6 @@ export default function MealWizard() {
     setSlotIndex(0);
     setAiResults([]);
     setAiPreview(null);
-    setImgStatus("");
     setAiSeen([]);
     setSearchRound(0);
     setPhase("pick");
@@ -203,6 +222,14 @@ export default function MealWizard() {
       buildMissing(nextPicks);
       setPhase("missing");
     }
+  }
+
+  // 在庫確認から一つ前（レシピ選び）に戻る。直前に選んだレシピは取り消す。
+  function backToPick() {
+    setPicks((prev) => prev.slice(0, -1));
+    setSlotIndex(Math.max(0, slots.length - 1));
+    setMissing([]);
+    setPhase("pick");
   }
 
   function buildMissing(allPicks: Pick[]) {
@@ -275,14 +302,20 @@ export default function MealWizard() {
       const data = await res.json();
       if (data.status === "done") {
         const mapped = mapRaw(Array.isArray(data.recipes) ? data.recipes : []);
+        // 既に持っているレシピと同じ料理は捨てる（プロンプトで禁止しても稀に出るため二重の関門）
+        const fresh = mapped.filter(
+          (r) => !recipes.some((have) => isSameDish(have.name, r.name)),
+        );
         clearJob();
         setAiLoading(false);
+        // 出た料理名は採否に関わらず記録＝次回探索で必ず別案になる
+        setAiSeen((prev) => [...prev, ...mapped.map((r) => r.name)]);
         if (mapped.length === 0) setAiError("レシピが取得できませんでした");
-        else {
-          setAiResults(mapped);
-          // 次回探索で避けるため、出た料理名を記録
-          setAiSeen((prev) => [...prev, ...mapped.map((r) => r.name)]);
-        }
+        else if (fresh.length === 0)
+          setAiError(
+            "見つかったのは既にレシピ一覧にある料理だけでした。もう一度「AIで探す」を押すと別の角度で探します。",
+          );
+        else setAiResults(fresh);
         return;
       }
       if (data.status === "error" || data.status === "missing") {
@@ -327,12 +360,16 @@ export default function MealWizard() {
           fridge: fridge.map((f) => f.name),
           expiring: priority.map((p) => p.name),
           filters,
-          // 最近作った＋これまでに提案した料理は避ける（再探索で別案を出す）
+          // 避ける対象＝「直近2日に作った」＋今回選んだ＋この探索で既に出た料理。
+          // ※ recent はストア全件（何ヶ月も前を含む）なので、必ず直近2日に絞る。
+          //   昔作ったものまで避けると、作れる料理がどんどん減ってしまう。
           avoid: [
-            ...recent.map((r) => r.recipeName),
+            ...recentMeals(recent, 2).map((r) => r.recipeName),
             ...picks.map((p) => p.recipe.name),
             ...aiSeen,
           ],
+          // 既に持っているレシピは提案させない（同じ料理の作り直しを防ぐ）
+          existing: recipes.map((r) => r.name),
         }),
       });
       const data = await res.json();
@@ -472,30 +509,15 @@ export default function MealWizard() {
     missing,
   ]);
 
-  // 「このレシピを作る」確定：レシピリストへ追加し、写真生成を開始して次へ
+  // 「このレシピを作る」確定：レシピリストへ追加して次へ
+  // （写真のAI生成は廃止。生成に30〜90秒かかり動作が重くなるうえ、
+  //   写真のあるレシピと無いレシピで見た目がバラついていたため）
   function pickAiRecipe(recipe: Recipe) {
     setStoredRecipes((prev) => [recipe, ...prev]);
     setAiResults([]);
     setAiPreview(null);
     setWish("");
-    void generateRecipeImage(recipe);
     pickRecipe(recipe);
-  }
-
-  function generateRecipeImage(recipe: Recipe) {
-    if (!imageGenEnabled) return; // 公開版は画像生成オフ（絵文字表示のまま）
-    if (!usage.canUse("image")) {
-      setImgStatus(
-        `今月のAI写真生成の無料枠（${FREE_LIMITS.image}枚）を使い切りました。`,
-      );
-      return;
-    }
-    usage.recordUse("image");
-    // ジョブ方式：即返し→裏で生成→完了で自動反映＋プッシュ通知。画面を閉じても切れない。
-    setImgStatus(
-      `🖼 「${recipe.name}」の写真を生成中…（30〜90秒・画面を閉じてもOK、できたら自動で反映）`,
-    );
-    beginImageGeneration(recipe.id, recipe.name);
   }
 
   function finalize() {
@@ -505,14 +527,18 @@ export default function MealWizard() {
       const toAdd: ShoppingItem[] = missing
         .filter((m) => m.selected)
         .filter((m) => !existingNames.some((n) => ingredientMatches(n, m.name)))
-        .map((m) => ({
-          id: crypto.randomUUID(),
-          name: m.name,
-          amount: toBuyableAmount(m.amount),
-          note: m.note,
-          checked: false,
-          addedAt: Date.now(),
-        }));
+        .map((m) => {
+          // レシピの使用量（ミニトマト5個・小ねぎ少々）ではなく、店で買える単位にする
+          const b = toBuyableFor(m.name, m.amount);
+          return {
+            id: crypto.randomUUID(),
+            name: m.name,
+            amount: b.amount,
+            note: b.hint ? `${m.note}／${b.hint}` : m.note,
+            checked: false,
+            addedAt: Date.now(),
+          };
+        });
       return [...existing, ...toAdd];
     });
 
@@ -601,13 +627,6 @@ export default function MealWizard() {
             最後のステップ！条件はお好みでOK。下の「AIでレシピを探す」を押してみましょう（3〜4分かかります。完了したら通知でお知らせします）。
           </p>
         </div>
-      )}
-
-      {/* 写真生成のステータス（追加したAIレシピの写真） */}
-      {imgStatus && (
-        <p className="mb-3 rounded-xl bg-brand-soft/60 px-3 py-2 text-xs font-medium text-brand-dark">
-          {imgStatus}
-        </p>
       )}
 
       {/* 優先消費バナー */}
@@ -711,14 +730,16 @@ export default function MealWizard() {
                   onClick={() => setShopMode("stock")}
                   className={chip(shopMode === "stock")}
                 >
-                  🥬 在庫だけで作る
+                  <Refrigerator size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                  在庫だけで作る
                 </button>
                 <button
                   type="button"
                   onClick={() => setShopMode("buy")}
                   className={chip(shopMode === "buy")}
                 >
-                  🛒 買い物してもOK
+                  <ShoppingCart size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                  買い物してもOK
                 </button>
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
@@ -764,7 +785,8 @@ export default function MealWizard() {
           {/* AIで探す */}
           <div className="mb-4 rounded-2xl border border-brand/30 bg-brand-soft/50 p-3">
             <p className="mb-2 text-xs text-ink-soft">
-              🔎 食べたい物を入力すると、AIがWebから人気レシピを探して不足食材も計算します。
+              <Search size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+              食べたい物を入力すると、AIがWebから人気レシピを探して不足食材も計算します。
             </p>
             <div className="flex gap-2">
               <input
@@ -793,11 +815,13 @@ export default function MealWizard() {
                 この条件で探します（未選択は「おまかせ」）
               </p>
               <p>
-                🍽 作りたいもの：
+                <UtensilsCrossed size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                作りたいもの：
                 <span className="text-ink">{wish.trim() || "おまかせ"}</span>
               </p>
               <p>
-                🎨 方向性：
+                <Palette size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                方向性：
                 <span className="text-ink">
                   {[
                     filters.cuisine,
@@ -810,10 +834,12 @@ export default function MealWizard() {
                 </span>
               </p>
               <p>
-                👥 人数：<span className="text-ink">{servings}人分</span>
+                <Users size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                人数：<span className="text-ink">{servings}人分</span>
               </p>
               <p>
-                🛒 買い物：
+                <ShoppingCart size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                買い物：
                 <span className="text-ink">
                   {shopMode === "stock"
                     ? "在庫だけで作る"
@@ -821,7 +847,8 @@ export default function MealWizard() {
                 </span>
               </p>
               <p>
-                🔴 使い切りたい食材：
+                <Flame size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em] text-red-600" />
+                使い切りたい食材：
                 <span className="text-ink">
                   {priority.length
                     ? priority.map((p) => p.name).join("・")
@@ -830,7 +857,8 @@ export default function MealWizard() {
               </p>
               {searchRound > 0 && (
                 <p className="text-brand-dark">
-                  🔄 次は{searchRound + 1}回目：前回と違うジャンル・角度で探します
+                  <RefreshCw size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                  次は{searchRound + 1}回目：前回と違うジャンル・角度で探します
                 </p>
               )}
             </div>
@@ -852,12 +880,17 @@ export default function MealWizard() {
               >
                 ← 候補一覧に戻る
               </button>
-              <h3 className="flex items-center gap-2 text-lg font-bold text-ink">
-                <span aria-hidden>{aiPreview.emoji}</span>
+              <h3 className="flex items-center gap-2.5 text-lg font-bold text-ink">
+                <DishIcon
+                  name={aiPreview.name}
+                  staple={aiPreview.tags.staple}
+                  cuisine={aiPreview.tags.cuisine}
+                  size={26}
+                />
                 {aiPreview.name}
               </h3>
               <p className="mt-1 text-xs font-medium text-brand-dark">
-                {aiPreview.tags.cookTime ? `⏱ ${aiPreview.tags.cookTime}分` : ""}
+                {aiPreview.tags.cookTime ? `${aiPreview.tags.cookTime}分` : ""}
                 {aiPreview.kcal ? ` / ${aiPreview.kcal}kcal` : ""}
                 {`　${aiPreview.servings}人分`}
               </p>
@@ -884,7 +917,8 @@ export default function MealWizard() {
                     {s.text}
                     {s.tip && (
                       <span className="mt-0.5 block text-[11px] italic text-amber-700">
-                        💡 {s.tip}
+                        <Lightbulb size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                        {s.tip}
                       </span>
                     )}
                   </li>
@@ -932,7 +966,8 @@ export default function MealWizard() {
           {aiResults.length > 0 && !aiPreview && (
             <div className="mb-5">
               <p className="mb-2 text-xs font-semibold text-brand-dark">
-                ✨ AIの提案（タップで詳細を見る・{servings}人分）
+                <Sparkles size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                AIの提案（タップで詳細を見る・{servings}人分）
               </p>
               <ul className="flex flex-col gap-3">
                 {aiResults.map((r) => (
@@ -941,7 +976,12 @@ export default function MealWizard() {
                       onClick={() => setAiPreview(r)}
                       className="flex w-full items-start gap-3 rounded-2xl border border-brand/40 bg-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
-                      <span className="text-2xl" aria-hidden>{r.emoji}</span>
+                      <DishIcon
+                        name={r.name}
+                        staple={r.tags.staple}
+                        cuisine={r.tags.cuisine}
+                        size={28}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-ink">{r.name}</p>
                         <p className="mt-0.5 text-xs text-ink-soft">{r.catch}</p>
@@ -954,7 +994,8 @@ export default function MealWizard() {
                           )}
                           {r.tags.cookTime && (
                             <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
-                              ⏱{r.tags.cookTime}分
+                              <Clock size={11} strokeWidth={2} className="mr-0.5 inline-block align-[-0.15em]" />
+                              {r.tags.cookTime}分
                             </span>
                           )}
                         </div>
@@ -979,7 +1020,12 @@ export default function MealWizard() {
                   onClick={() => pickRecipe(r.recipe)}
                   className="flex w-full items-start gap-3 rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand hover:shadow-md"
                 >
-                  <span className="text-2xl" aria-hidden>{r.recipe.emoji}</span>
+                  <DishIcon
+                    name={r.recipe.name}
+                    staple={r.recipe.tags.staple}
+                    cuisine={r.recipe.tags.cuisine}
+                    size={28}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">{r.recipe.name}</p>
                     <p className="mt-0.5 text-xs text-ink-soft">{r.recipe.catch}</p>
@@ -1001,6 +1047,11 @@ export default function MealWizard() {
                         </span>
                       )}
                     </div>
+                    {starsOf(r.recipe.id) > 0 && (
+                      <div className="mt-1.5">
+                        <StarRating value={starsOf(r.recipe.id)} size={14} />
+                      </div>
+                    )}
                   </div>
                 </button>
               </li>
@@ -1053,12 +1104,20 @@ export default function MealWizard() {
               ))}
             </ul>
           )}
-          <button
-            onClick={finalize}
-            className="mt-5 w-full rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99]"
-          >
-            この内容で確定する
-          </button>
+          <div className="mt-5 flex gap-2">
+            <button
+              onClick={backToPick}
+              className="flex-1 rounded-xl border border-line px-4 py-3 text-sm font-medium text-ink-soft transition hover:bg-paper"
+            >
+              ← 戻る（レシピを選び直す）
+            </button>
+            <button
+              onClick={finalize}
+              className="flex-1 rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99]"
+            >
+              この内容で確定する
+            </button>
+          </div>
         </section>
       )}
 
@@ -1066,14 +1125,25 @@ export default function MealWizard() {
       {phase === "done" && (
         <section className="animate-pop-in">
           <div className="rounded-2xl border border-brand/30 bg-brand-soft/60 p-4">
-            <h2 className="mb-2 text-base font-bold text-brand-dark">✅ 献立が決まりました</h2>
+            <h2 className="mb-2 inline-flex items-center gap-1.5 text-base font-bold text-brand-dark">
+              <CircleCheck size={18} strokeWidth={2} />
+              献立が決まりました
+            </h2>
             <ul className="flex flex-col gap-1 text-sm text-ink">
               {picks.map((p, i) => (
                 <li key={i}>
                   <span className="font-semibold">
                     {p.date === todayISO() ? "今日" : "翌日"}の{p.slot}
                   </span>
-                  ：{p.recipe.emoji} {p.recipe.name}
+                  ：
+                  <DishIcon
+                    name={p.recipe.name}
+                    staple={p.recipe.tags.staple}
+                    size={16}
+                    tile={false}
+                    className="mx-0.5 inline-block align-[-0.2em]"
+                  />
+                  {p.recipe.name}
                 </li>
               ))}
             </ul>
@@ -1082,7 +1152,10 @@ export default function MealWizard() {
           <div className="mt-3">
             {comment ? (
               <div className="rounded-2xl border border-brand/20 bg-gradient-to-br from-brand-soft to-emerald-50 p-4 text-sm leading-relaxed text-ink">
-                <p className="mb-1 text-xs font-bold text-brand-dark">✨ AIから</p>
+                <p className="mb-1 inline-flex items-center gap-1 text-xs font-bold text-brand-dark">
+                  <Sparkles size={12} strokeWidth={2} />
+                  AIから
+                </p>
                 {comment}
               </div>
             ) : (
@@ -1091,9 +1164,12 @@ export default function MealWizard() {
                 disabled={commentLoading}
                 className="w-full rounded-xl border border-brand/30 bg-surface py-2.5 text-sm font-semibold text-brand-dark transition hover:border-brand disabled:opacity-60"
               >
-                {commentLoading
-                  ? "AIがコメントを書いています…（15〜30秒）"
-                  : "✨ AIにひとこともらう"}
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Sparkles size={15} strokeWidth={2} />
+                  {commentLoading
+                    ? "AIがコメントを書いています…（15〜30秒）"
+                    : "AIにひとこともらう"}
+                </span>
               </button>
             )}
           </div>
@@ -1110,7 +1186,8 @@ export default function MealWizard() {
               onClick={downloadIcs}
               className="rounded-xl border border-line bg-surface px-4 py-3 text-sm font-semibold text-ink transition hover:border-brand"
             >
-              📅 買い物リマインダー(.ics)
+              <CalendarPlus size={14} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+              買い物リマインダー(.ics)
             </button>
           </div>
 
@@ -1121,7 +1198,14 @@ export default function MealWizard() {
                 href={`/recipes/${p.recipe.id}`}
                 className="rounded-full bg-surface px-3 py-1.5 text-xs font-medium text-brand-dark ring-1 ring-line transition hover:ring-brand"
               >
-                {p.recipe.emoji} {p.recipe.name} の作り方 →
+                <DishIcon
+                  name={p.recipe.name}
+                  staple={p.recipe.tags.staple}
+                  size={15}
+                  tile={false}
+                  className="mr-1 inline-block align-[-0.2em]"
+                />
+                {p.recipe.name} の作り方 →
               </a>
             ))}
           </div>

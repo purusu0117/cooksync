@@ -26,6 +26,7 @@ import AppIcon from "./AppIcon";
 import FoodCard from "./FoodCard";
 import EditItemForm from "./EditItemForm";
 import MaintenancePanel from "./MaintenancePanel";
+import ExpiryReviewPanel from "./ExpiryReviewPanel";
 
 export default function FridgeApp() {
   const router = useRouter();
@@ -62,6 +63,12 @@ export default function FridgeApp() {
   function addMany(newItems: FridgeItem[]) {
     setItems((prev) => [...prev, ...newItems]);
   }
+  /** 期限見直しの反映（idが一致するものを差し替え） */
+  function updateMany(updated: FridgeItem[]) {
+    setItems((prev) =>
+      prev.map((i) => updated.find((u) => u.id === i.id) ?? i),
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
@@ -71,7 +78,7 @@ export default function FridgeApp() {
         <div className="mb-5 rounded-2xl border border-brand/30 bg-brand-soft px-4 py-3.5">
           {items.length === 0 ? (
             <p className="text-sm font-semibold leading-relaxed text-brand-dark">
-              🎉 登録できました！まずは食材を1つ入れてみましょう（下のフォーム、または「写真で追加」）。
+              登録できました！まずは食材を1つ入れてみましょう（下のフォーム、または「写真で追加」）。
             </p>
           ) : (
             <div className="flex items-center justify-between gap-3">
@@ -94,6 +101,7 @@ export default function FridgeApp() {
       )}
 
       <MaintenancePanel onAddToFridge={addItem} />
+      <ExpiryReviewPanel items={items} onApply={updateMany} />
 
       <div className="mb-5 grid grid-cols-3 gap-3">
         {BUCKETS.map((b) => {

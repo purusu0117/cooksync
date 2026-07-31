@@ -39,7 +39,7 @@ const SLIDES: Slide[] = [
     ring: "bg-brand-soft",
     color: "text-brand",
     title: "① まず冷蔵庫に入れる",
-    body: "写真を撮るだけ、または手入力で食材を登録。期限が近いものは 🔴 で教えるので、使い切りに役立ちます。",
+    body: "写真を撮るだけ、または手入力で食材を登録。期限が近いものは赤い印で教えるので、使い切りに役立ちます。",
   },
   {
     Icon: ChefHat,

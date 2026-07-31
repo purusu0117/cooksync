@@ -1,11 +1,8 @@
 "use client";
 
-import {
-  estimateExpiry,
-  todayISO,
-  zoneForCategory,
-  type FridgeItem,
-} from "@/lib/food";
+import { Brush } from "lucide-react";
+import { todayISO, zoneForCategory, type FridgeItem } from "@/lib/food";
+import { guessItem } from "@/lib/guess";
 import { shoppingStore } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { staleByDate, type ShoppingItem } from "@/lib/shopping";
@@ -16,14 +13,17 @@ interface Props {
 
 function toFridgeItem(s: ShoppingItem): FridgeItem {
   const today = todayISO();
+  // 以前は一律「その他・7日」だったため、買った調味料まで1週間で期限切れ表示になっていた。
+  // 食材名からカテゴリと日持ちを推定する（あとでカードから修正可）。
+  const g = guessItem(s.name, today);
   return {
     id: crypto.randomUUID(),
     name: s.name,
     quantity: s.amount,
-    category: "その他",
-    zone: zoneForCategory("その他"),
+    category: g.category,
+    zone: zoneForCategory(g.category),
     purchasedOn: today,
-    expiresOn: estimateExpiry(today, 7), // 仮の期限。カードから編集可
+    expiresOn: g.expiresOn,
     createdAt: Date.now(),
   };
 }
@@ -54,7 +54,8 @@ export default function MaintenancePanel({ onAddToFridge }: Props) {
   return (
     <section className="mb-5 rounded-3xl border border-brand/30 bg-brand-soft/60 p-4">
       <h2 className="mb-2 text-sm font-bold text-brand-dark">
-        🧹 冷蔵庫メンテナンス
+        <Brush size={15} strokeWidth={2} className="mr-1.5 inline-block align-[-0.15em]" />
+        冷蔵庫メンテナンス
       </h2>
 
       {checked.length > 0 && (
