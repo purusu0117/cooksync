@@ -542,8 +542,10 @@ export default function RecipeDetail({ id }: Props) {
         <p className="mt-2 rounded-2xl bg-brand-soft/60 px-4 py-3 text-sm text-brand-dark">
           {recipe.catch}
         </p>
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+        {/* ⚠️ 見出しと星が1行に収まらない幅（iPhone 393px）で「このレシピを評/価」と
+            単語の途中で折り返していた。見出しは折り返させず、入らないときは星ごと次の行へ。 */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-bold text-ink">
             <AppIcon name="star" size={20} />
             このレシピを評価
           </span>

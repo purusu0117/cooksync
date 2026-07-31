@@ -387,6 +387,7 @@ export default function RecipeList() {
                 stars={starsOf(r.id)}
                 made={madeCountOf(r.id)}
                 missing={missingCount.get(r.id) ?? 0}
+                knowsStock={fridge.length > 0}
               />
             </li>
           ))}
@@ -421,11 +422,17 @@ const RecipeRow = memo(function RecipeRow({
   stars,
   made,
   missing,
+  knowsStock,
 }: {
   recipe: Recipe;
   stars: number;
   made: number;
   missing: number;
+  /** 冷蔵庫に1つでも入っているか。**入っていないうちは在庫バッジを出さない。**
+   *  空の冷蔵庫と全レシピを突き合わせれば当然どれも「買い足し10品」になるが、
+   *  それは在庫を知らないだけで事実ではない。初めて開いた人の一覧が
+   *  オレンジの「買い足し10品」で埋まると「何も作れないアプリ」に見える。 */
+  knowsStock: boolean;
 }) {
   return (
     <Link
@@ -462,7 +469,7 @@ const RecipeRow = memo(function RecipeRow({
             </span>
           )}
           {stars > 0 && <StarRating value={stars} size={11} />}
-          {missing === 0 ? (
+          {!knowsStock ? null : missing === 0 ? (
             <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-brand-dark">
               在庫で作れる
             </span>

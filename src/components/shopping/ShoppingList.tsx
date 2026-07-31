@@ -149,7 +149,9 @@ export default function ShoppingList() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <PageHeader title="買い物リスト" Icon={ShoppingCart} iconClass="text-sky-500" />
+      {/* 画面見出しのアイコンは brand（緑＝家にあるもの）と accent（橙＝これから作る/買う）の
+          2色だけで回す。ここだけ text-sky-500 で、アプリ内で唯一の青だった。 */}
+      <PageHeader title="買い物リスト" Icon={ShoppingCart} iconClass="text-accent" />
 
       <SyncNotice />
 
