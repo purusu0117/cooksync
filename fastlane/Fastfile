@@ -127,7 +127,7 @@ platform :ios do
     # fastlane の produce アクションは APIキー認証に対応していない（Apple ID＋2FA前提）ため、
     # Spaceship を直接使う。既にあれば何もしない（冪等）＝手で作ってあっても問題ない。
     ensure_app_exists(api_key)
-    push_added = ensure_push_capability(api_key)
+    ensure_push_capability(api_key)
 
     # ビルド番号は GitHub Actions の実行番号（TestFlightは同じ番号を再アップロードできない）
     increment_build_number(
@@ -136,14 +136,14 @@ platform :ios do
     )
 
     # 署名は手動（xcodebuild の自動署名はAPIキー認証が通らないため）。
-    # capability を足した直後は、既存プロファイルに aps-environment が入っていないので
-    # **必ず作り直す**（force: true）。そうしないと同じエラーで落ち続ける。
-    get_provisioning_profile(
-      api_key: api_key,
-      app_identifier: APP_ID,
-      readonly: false,
-      force: push_added,
-    )
+    #
+    # **毎回作り直す（force: true）。**
+    #  - capability を足しても、既存プロファイルには aps-environment が入らない。
+    #    使い回すと "doesn't include the aps-environment entitlement" で落ち続ける。
+    #  - `readonly` と `force` は**同時に渡せない**（Error resolving conflict between
+    #    options: 'readonly' and 'force'）。force を使うときは readonly を渡さない。
+    #  - プロファイルの再生成に費用や上限は無いので、常に作り直す方が事故らない。
+    get_provisioning_profile(api_key: api_key, app_identifier: APP_ID, force: true)
     app_profile = lane_context[SharedValues::SIGH_NAME]
 
     # 署名設定は該当ターゲットにだけ書く（グローバルに渡すとSPM依存のビルドが壊れる）
