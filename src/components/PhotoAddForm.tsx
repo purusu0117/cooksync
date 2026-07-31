@@ -16,7 +16,13 @@ interface Props {
 export default function PhotoAddForm({ onAddMany }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [items, setItems] = useState<{ name: string; checked: boolean }[]>([]);
+  // ⚠️ `id` は表示用の**行の同一性**。配列の添字を key にすると、途中の行を消したとき
+  //    残った行が別の DOM ノードに載り替わる。名前を漢字変換の途中（IME変換中）で消すと
+  //    確定前の文字が隣の行に残ることがあり、実際に「入力した名前がずれる」になる。
+  //    保存時に作る FridgeItem の id とは別物（あちらは保存のたびに新規発行）。
+  const [items, setItems] = useState<
+    { id: string; name: string; checked: boolean }[]
+  >([]);
   const [done, setDone] = useState("");
   // アプリ版はOSのカメラ/フォトピッカーを直接呼ぶ。Web版は <input type="file"> のまま。
   // 初期値falseでマウント後に確定させる＝サーバー描画（＝Web版）とズレさせない。
@@ -84,7 +90,11 @@ export default function PhotoAddForm({ onAddMany }: Props) {
         );
       }
       setItems(
-        (data.items as string[]).map((n) => ({ name: n, checked: true })),
+        (data.items as string[]).map((n) => ({
+          id: crypto.randomUUID(),
+          name: n,
+          checked: true,
+        })),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "認識に失敗しました");
@@ -160,43 +170,48 @@ export default function PhotoAddForm({ onAddMany }: Props) {
             認識した食材（チェックを外す・名前を直せます）
           </p>
           <ul className="flex max-h-[44vh] flex-col gap-2 overflow-y-auto">
-            {items.map((it, idx) => (
+            {items.map((it) => (
               <li
-                key={idx}
-                className="flex items-center gap-2 rounded-xl bg-paper px-3 py-2"
+                key={it.id}
+                className="flex items-center gap-2 rounded-xl bg-paper px-3 py-1.5"
               >
-                <input
-                  type="checkbox"
-                  checked={it.checked}
-                  onChange={() =>
-                    setItems((prev) =>
-                      prev.map((x, i) =>
-                        i === idx ? { ...x, checked: !x.checked } : x,
-                      ),
-                    )
-                  }
-                  className="h-4 w-4 shrink-0 accent-[var(--color-brand)]"
-                />
+                {/* チェックボックス本体は小さいので、ラベルごと44pxの当たり判定にする */}
+                <label className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center">
+                  <input
+                    type="checkbox"
+                    checked={it.checked}
+                    onChange={() =>
+                      setItems((prev) =>
+                        prev.map((x) =>
+                          x.id === it.id ? { ...x, checked: !x.checked } : x,
+                        ),
+                      )
+                    }
+                    aria-label={`${it.name} を追加する`}
+                    className="h-5 w-5 accent-[var(--color-brand)]"
+                  />
+                </label>
                 <input
                   value={it.name}
                   onChange={(e) =>
                     setItems((prev) =>
-                      prev.map((x, i) =>
-                        i === idx ? { ...x, name: e.target.value } : x,
+                      prev.map((x) =>
+                        x.id === it.id ? { ...x, name: e.target.value } : x,
                       ),
                     )
                   }
-                  className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-brand"
+                  aria-label="食材名"
+                  className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-2 text-sm text-ink outline-none focus:border-brand"
                 />
                 <button
                   type="button"
                   onClick={() =>
-                    setItems((prev) => prev.filter((_, i) => i !== idx))
+                    setItems((prev) => prev.filter((x) => x.id !== it.id))
                   }
-                  aria-label="削除"
-                  className="shrink-0 rounded-lg p-1 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
+                  aria-label={`${it.name} をこの一覧から外す`}
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft transition hover:bg-red-50 hover:text-red-600"
                 >
-                  <X size={15} />
+                  <X size={18} />
                 </button>
               </li>
             ))}

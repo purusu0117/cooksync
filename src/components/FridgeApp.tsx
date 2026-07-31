@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Flame, Refrigerator } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -67,24 +67,27 @@ export default function FridgeApp() {
     [sorted],
   );
 
-  function addItem(item: FridgeItem) {
+  // ⚠️ **すべて useCallback + updater 形式で書くこと。**
+  //    これらは FoodCard（React.memo）へ props で渡る。毎レンダー新しい関数を作ると
+  //    memo が毎回はずれて、在庫100件のとき全カードが再描画される。
+  //    updater 形式（prev => …）なので items を deps に持つ必要がなく、
+  //    同一性が保てるうえに古い items を掴む（stale closure）事故も起きない。
+  const addItem = useCallback((item: FridgeItem) => {
     setItems((prev) => [...prev, item]);
-  }
-  function deleteItem(id: string) {
+  }, [setItems]);
+  const deleteItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
-  }
-  function updateItem(updated: FridgeItem) {
+  }, [setItems]);
+  const updateItem = useCallback((updated: FridgeItem) => {
     setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
-  }
-  function addMany(newItems: FridgeItem[]) {
+  }, [setItems]);
+  const addMany = useCallback((newItems: FridgeItem[]) => {
     setItems((prev) => [...prev, ...newItems]);
-  }
+  }, [setItems]);
   /** 期限見直しの反映（idが一致するものを差し替え） */
-  function updateMany(updated: FridgeItem[]) {
-    setItems((prev) =>
-      prev.map((i) => updated.find((u) => u.id === i.id) ?? i),
-    );
-  }
+  const updateMany = useCallback((updated: FridgeItem[]) => {
+    setItems((prev) => prev.map((i) => updated.find((u) => u.id === i.id) ?? i));
+  }, [setItems]);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">

@@ -648,17 +648,27 @@ function ensureStarted(): void {
   if (!hydrated && !syncing && !retryTimer) scheduleSync(0);
 }
 
+/**
+ * useSyncExternalStore に渡す購読関数。**モジュールスコープに置くこと。**
+ *
+ * ⚠️ 以前はフックの中でインラインの arrow を渡していた。毎レンダーで関数の同一性が変わるので、
+ *    React は**レンダーのたびに購読を解除して張り直していた**。RecipeDetail は1レンダーで
+ *    このフックを5本使っているので、1レンダーあたり Set の add/delete が10回。
+ *    さらに購読のたびに ensureStarted() が走っていた。
+ */
+const subscribe = (cb: () => void): (() => void) => {
+  listeners.add(cb);
+  ensureStarted();
+  return () => {
+    listeners.delete(cb);
+  };
+};
+
 export function useServerList<T>(
   key: string,
 ): [T[], (updater: T[] | ((prev: T[]) => T[])) => void] {
   const data = useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      ensureStarted();
-      return () => {
-        listeners.delete(cb);
-      };
-    },
+    subscribe,
     () => (mem.get(key) as T[]) ?? (EMPTY as unknown as T[]),
     () => EMPTY as unknown as T[],
   );
@@ -778,17 +788,7 @@ const SERVER_STATE: SyncState = {
 };
 
 export function useSyncState(): SyncState {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb);
-      ensureStarted();
-      return () => {
-        listeners.delete(cb);
-      };
-    },
-    currentState,
-    () => SERVER_STATE,
-  );
+  return useSyncExternalStore(subscribe, currentState, () => SERVER_STATE);
 }
 
 /** テスト用：モジュール状態を覗く（本番コードからは使わない） */
