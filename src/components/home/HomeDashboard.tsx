@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Apple, ChevronRight, Search, User } from "lucide-react";
+import { Apple, ChevronRight, User } from "lucide-react";
 import { bucketOf } from "@/lib/food";
 import { CATEGORY_ICON } from "@/components/categoryIcon";
 import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import DishIcon from "@/components/DishIcon";
+import RecipeSources from "@/components/home/RecipeSources";
 
 export default function HomeDashboard() {
   const recipes = useAllRecipes();
@@ -45,14 +46,8 @@ export default function HomeDashboard() {
         </Link>
       </div>
 
-      {/* 検索バー → 献立ウィザード */}
-      <Link
-        href="/meal"
-        className="mb-7 flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-3 text-sm text-ink-soft shadow-sm transition hover:border-brand"
-      >
-        <Search size={18} className="text-brand" />
-        今日は何を作る？
-      </Link>
+      {/* レシピをつくる（AI提案／動画／写真） */}
+      <RecipeSources />
 
       {/* おすすめレシピ */}
       <section className="mb-7">

@@ -276,6 +276,61 @@ export async function askClaudeVisionItems(imagePath: string): Promise<string[]>
     .map((s) => s.trim());
 }
 
+/**
+ * 写真（レシピ本・スクショ・手書きメモ・料理写真）からレシピJSONを読み取る。
+ * ⚠️ 写真に写っていない分量を推測で埋めさせない（[[mistakes]] 2026-05-22 の再発防止）。
+ */
+export async function askClaudeVisionRecipe<T>(imagePath: string): Promise<T> {
+  const rules = [
+    "この画像から料理のレシピを読み取り、JSONにしてください。",
+    "",
+    "【厳守】",
+    "- **画像に書かれていないことを推測で埋めない。**分量が読めない材料は amount を「写真で確認できず」にする。",
+    "- 文字が写っているレシピ（本・スクショ・メモ）なら、書かれた分量・手順をそのまま忠実に写す。勝手に単位を変えない。",
+    "- 料理の写真だけで文字が無い場合は、見た目から分かる材料だけを挙げ、confidence を low にする。",
+    "  分量は全て「写真で確認できず」にし、手順も推測で作らない（steps は空でよい）。",
+    "- 読み取れなかった材料名を missing 配列に列挙する。",
+    "- confidence は high（文字で材料も分量も読める）/ medium（一部読めない）/ low（写真からの推定）。",
+    "- 画像が料理と無関係なら {\"recipe\":null} を返す。",
+    "",
+    "出力は次のJSONだけ（前後に文章やコードフェンスを付けない）:",
+    '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low"}',
+  ].join("\n");
+
+  if (USE_API) {
+    const buf = await fs.readFile(imagePath);
+    const media: "image/png" | "image/jpeg" = imagePath.endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+    const msg = await api().messages.create({
+      model: API_MODEL,
+      max_tokens: 8192,
+      system: SYSTEM_JSON,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: media, data: buf.toString("base64") },
+            },
+            { type: "text", text: rules },
+          ],
+        },
+      ],
+    });
+    return extractJson<T>(textOf(msg));
+  }
+
+  const prompt = [`次の画像ファイルを Read ツールで開いてください: ${imagePath}`, "", rules].join("\n");
+  const text = await runClaude(prompt, false, SYSTEM_VISION, ["Read"]);
+  try {
+    return extractJson<T>(text);
+  } catch {
+    throw new Error(`JSON parse failed. raw=${text.slice(0, 600)}`);
+  }
+}
+
 /** Web無しでJSONを得る（校正など、検索不要の整形タスク用） */
 export async function askClaudeForJsonNoWeb<T>(prompt: string): Promise<T> {
   const text = USE_API ? await apiText(SYSTEM_JSON, prompt) : await runClaude(prompt, false, SYSTEM_JSON);
