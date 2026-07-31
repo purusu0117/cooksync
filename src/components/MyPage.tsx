@@ -17,7 +17,14 @@ import {
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
 import { useUsage, AI_LABEL, type AiKind } from "@/lib/usage";
-import { ChefHat, HelpCircle } from "lucide-react";
+import {
+  enablePush,
+  fetchExpirySettings,
+  pushPermissionState,
+  saveExpirySettings,
+  type ExpiryNotifyConfig,
+} from "@/lib/pushClient";
+import { Bell, ChefHat, HelpCircle } from "lucide-react";
 import PageHeader from "./PageHeader";
 import { OPEN_EVENT } from "./Onboarding";
 import AppIcon from "./AppIcon";
@@ -74,6 +81,14 @@ export default function MyPage() {
   const [deleteError, setDeleteError] = useState("");
   /** ログイン済みなのにアカウントが読めない状態が続いたか（永久ローディング防止） */
   const [loadTimedOut, setLoadTimedOut] = useState(false);
+
+  // ---- 賞味期限のお知らせ ----
+  /** サーバーに保存されている設定と選択肢（読み込み前は null） */
+  const [notify, setNotify] = useState<ExpiryNotifyConfig | null>(null);
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState("");
+  /** 通知の許可状態。**ここでは絶対にダイアログを出さない**（見に行くだけ） */
+  const [perm, setPerm] = useState<"granted" | "denied" | "prompt" | "unsupported">("prompt");
 
   useEffect(() => {
     // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
@@ -152,6 +167,131 @@ export default function MyPage() {
       alive = false;
     };
   }, []);
+
+  // 期限通知の設定を読み込む。**許可ダイアログは出さない**（起動時に勝手に聞くと審査で嫌われる）。
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    void (async () => {
+      const [cfg, p] = await Promise.all([fetchExpirySettings(), pushPermissionState()]);
+      if (!alive) return;
+      if (cfg) setNotify(cfg);
+      setPerm(p);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [session]);
+
+  /** 設定を保存して画面に反映する。保存できなければ画面の値も戻す（嘘の表示をしない） */
+  async function persistNotify(
+    next: ExpiryNotifyConfig["settings"],
+    okMessage: string,
+  ): Promise<boolean> {
+    const ok = await saveExpirySettings(next);
+    if (!ok) {
+      setNotifyMsg("設定を保存できませんでした。通信を確認して、もう一度お試しください。");
+      return false;
+    }
+    setNotify((prev) => (prev ? { ...prev, settings: next } : prev));
+    setNotifyMsg(okMessage);
+    return true;
+  }
+
+  /** オン/オフ。**許可を求めるのはオンにした直後のここだけ** */
+  async function toggleNotify() {
+    if (!notify || notifyBusy) return;
+    const on = !notify.settings.enabled;
+    setNotifyBusy(true);
+    setNotifyMsg("");
+    try {
+      if (on) {
+        const granted = await enablePush();
+        const state = await pushPermissionState();
+        setPerm(state);
+        if (!granted) {
+          setNotifyMsg(
+            state === "denied"
+              ? "通知が拒否されています。端末の設定でCookSyncの通知をオンにすると受け取れます。"
+              : "通知を有効にできませんでした。時間をおいて、もう一度お試しください。",
+          );
+          return;
+        }
+      }
+      const next = { ...notify.settings, enabled: on };
+      await persistNotify(
+        next,
+        on
+          ? `毎日${next.hour}時に、期限が近い食材をまとめて1通お知らせします。`
+          : "期限のお知らせを止めました。通知は届きません。",
+      );
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
+
+  /** 「何日前に知らせるか」の切り替え。最後の1つは外せない（全部外すと何も届かなくなるため） */
+  async function toggleLeadDay(d: number) {
+    if (!notify || notifyBusy) return;
+    const cur = notify.settings.leadDays;
+    const next = cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d].sort((a, b) => a - b);
+    if (next.length === 0) {
+      setNotifyMsg("1つ以上を選んでください。当日と期限切れは常にお知らせします。");
+      return;
+    }
+    setNotifyBusy(true);
+    try {
+      await persistNotify(
+        { ...notify.settings, leadDays: next },
+        `期限の${next.join("・")}日前に知らせます（当日と期限切れは常に届きます）。`,
+      );
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
+
+  /** 送る時刻の変更 */
+  async function changeNotifyHour(hour: number) {
+    if (!notify || notifyBusy) return;
+    setNotifyBusy(true);
+    try {
+      await persistNotify(
+        { ...notify.settings, hour },
+        `毎日${hour}時にまとめてお知らせします。`,
+      );
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
+
+  /** 本当に届くかの確認。自分の宛先にだけ1通送る */
+  async function sendTestNotification() {
+    if (notifyBusy) return;
+    setNotifyBusy(true);
+    setNotifyMsg("");
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        web?: number;
+        native?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        setNotifyMsg(data.error || "テスト通知を送れませんでした。");
+        return;
+      }
+      const n = (data.web ?? 0) + (data.native ?? 0);
+      setNotifyMsg(
+        n > 0
+          ? `テスト通知を${n}件の端末に送りました。届いていれば設定は完了です。`
+          : "送り先の端末が見つかりませんでした。もう一度オンにし直すと登録されます。",
+      );
+    } catch {
+      setNotifyMsg("通信に失敗しました。時間をおいて、もう一度お試しください。");
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
 
   async function handleRegister() {
     if (!name.trim() || !email.trim() || !password) {
@@ -545,6 +685,119 @@ export default function MyPage() {
             <p className="mt-0.5 text-xs text-ink-soft">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* 賞味期限のお知らせ。
+          ・許可を求めるのは「オンにする」を押した直後だけ（起動時には聞かない＝審査対策）
+          ・画面のいちばん上には置かない（iPhoneで指が届かない位置に主要操作を置かない） */}
+      <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+        <h2 className="mb-1 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+          <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} />
+          賞味期限のお知らせ
+        </h2>
+        <p className="mb-3 text-xs leading-relaxed text-ink-soft">
+          期限が近い食材を、毎日1回まとめて1通お知らせします。買い物や帰宅の前に気づけるので、使い切れずに捨てるのを防げます。対象が0件の日は送りません。
+        </p>
+
+        {perm === "unsupported" ? (
+          <p className="rounded-xl bg-paper p-3 text-xs leading-relaxed text-ink-soft">
+            この画面では通知を受け取れません。ホーム画面に追加したCookSync、またはアプリ版で開くとオンにできます。
+          </p>
+        ) : !notify ? (
+          <p className="rounded-xl bg-paper p-3 text-xs text-ink-soft">読み込み中…</p>
+        ) : (
+          <>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notify.settings.enabled}
+              onClick={() => void toggleNotify()}
+              disabled={notifyBusy}
+              className="flex min-h-[52px] w-full touch-manipulation items-center justify-between gap-3 rounded-xl bg-paper px-3.5 text-left transition active:scale-[0.99] disabled:opacity-60"
+            >
+              <span className="text-sm font-semibold text-ink">
+                {notify.settings.enabled
+                  ? "期限が近い食材を通知する"
+                  : "期限が近い食材を通知する（オフ）"}
+              </span>
+              <span
+                aria-hidden="true"
+                className={`relative h-7 w-12 shrink-0 rounded-full transition ${
+                  notify.settings.enabled ? "bg-brand" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${
+                    notify.settings.enabled ? "left-[22px]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+
+            {notify.settings.enabled && (
+              <div className="mt-3 flex flex-col gap-3">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-ink">何日前に知らせるか</p>
+                  <div className="flex flex-wrap gap-2">
+                    {notify.choices.leadDays.map((d) => {
+                      const on = notify.settings.leadDays.includes(d);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => void toggleLeadDay(d)}
+                          disabled={notifyBusy}
+                          className={`min-h-[44px] touch-manipulation rounded-xl border px-3.5 text-xs font-semibold transition disabled:opacity-60 ${
+                            on
+                              ? "border-brand bg-brand-soft text-brand-dark"
+                              : "border-line text-ink-soft"
+                          }`}
+                        >
+                          {d}日前
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
+                    当日と期限切れは、選ばなくても必ずお知らせします。
+                  </p>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-ink">
+                    知らせる時刻（帰宅前に気づける夕方がおすすめ）
+                  </span>
+                  <select
+                    value={notify.settings.hour}
+                    onChange={(e) => void changeNotifyHour(Number(e.target.value))}
+                    disabled={notifyBusy}
+                    className={`${fieldClass} min-h-[44px] disabled:opacity-60`}
+                  >
+                    {notify.choices.hours.map((h) => (
+                      <option key={h} value={h}>
+                        毎日 {h}:00 に知らせる
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => void sendTestNotification()}
+                  disabled={notifyBusy}
+                  className="min-h-[44px] touch-manipulation rounded-xl border border-line px-4 text-xs font-semibold text-ink-soft transition hover:border-brand disabled:opacity-60"
+                >
+                  テスト通知を自分に送って確認する
+                </button>
+              </div>
+            )}
+
+            {notifyMsg && (
+              <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">{notifyMsg}</p>
+            )}
+          </>
+        )}
       </div>
 
       <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">

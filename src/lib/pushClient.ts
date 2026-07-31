@@ -8,7 +8,9 @@
 
 import { getUid } from "@/lib/syncStore";
 import { isNativeApp } from "@/lib/native";
-import { enableNativePush } from "@/lib/nativePush";
+import { enableNativePush, nativePushPermission } from "@/lib/nativePush";
+// 型だけを借りる（`import type` はビルド時に消えるので、サーバー用モジュールは束ねられない）
+import type { ExpirySettings } from "@/lib/expiryNotify";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -57,6 +59,77 @@ export async function enablePush(): Promise<boolean> {
       body: JSON.stringify({ ...subJson, u: getUid() }),
     });
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * いまの通知の許可状態。**ダイアログは出さない**（起動時に勝手に許可を求めない）。
+ *  granted=許可済み / denied=拒否済み（端末の設定からしか戻せない）
+ *  prompt=まだ聞いていない / unsupported=この環境では通知が使えない
+ */
+export async function pushPermissionState(): Promise<
+  "granted" | "denied" | "prompt" | "unsupported"
+> {
+  try {
+    if (isNativeApp()) return await nativePushPermission();
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+    const p = Notification.permission;
+    return p === "granted" ? "granted" : p === "denied" ? "denied" : "prompt";
+  } catch {
+    return "unsupported";
+  }
+}
+
+export interface ExpiryNotifyConfig {
+  settings: Pick<ExpirySettings, "enabled" | "leadDays" | "hour">;
+  /** 画面に出す選択肢。**サーバーが持つ値をそのまま使う**（画面とサーバーでズレないように） */
+  choices: { leadDays: number[]; hours: number[] };
+}
+
+/** 期限通知の設定を読む（未設定ならサーバーが既定値を返す） */
+export async function fetchExpirySettings(): Promise<ExpiryNotifyConfig | null> {
+  try {
+    const res = await fetch(`/api/notify-expiry?u=${encodeURIComponent(getUid())}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<ExpiryNotifyConfig>;
+    if (!data.settings) return null;
+    return {
+      settings: {
+        enabled: !!data.settings.enabled,
+        leadDays: Array.isArray(data.settings.leadDays) ? data.settings.leadDays : [1, 3],
+        hour: typeof data.settings.hour === "number" ? data.settings.hour : 18,
+      },
+      choices: {
+        leadDays: data.choices?.leadDays ?? [1, 2, 3, 5, 7],
+        hours: data.choices?.hours ?? [7, 8, 9, 12, 15, 17, 18, 19, 20, 21],
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 期限通知の設定を保存する。宛先はサーバーが決めるので `u` は手掛かりでしかない */
+export async function saveExpirySettings(
+  s: Pick<ExpirySettings, "enabled" | "leadDays" | "hour">,
+): Promise<boolean> {
+  try {
+    const res = await fetch("/api/notify-expiry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...s,
+        u: getUid(),
+        // 「何時に送るか」はこの端末の時計基準。日本なら -540
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
+      }),
+    });
+    return res.ok;
   } catch {
     return false;
   }

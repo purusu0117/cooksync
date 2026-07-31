@@ -30,6 +30,23 @@ async function saveToken(token: string): Promise<void> {
 }
 
 /**
+ * いまの許可状態を**聞かずに**見るだけ（ダイアログを出さない）。
+ * マイページの「通知はオンになっているか」の表示に使う。
+ * アプリ起動時に勝手に許可を求めると審査で嫌われるので、requestPermissions とは分けてある。
+ */
+export async function nativePushPermission(): Promise<"granted" | "denied" | "prompt"> {
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    const p = await PushNotifications.checkPermissions();
+    if (p.receive === "granted") return "granted";
+    if (p.receive === "denied") return "denied";
+    return "prompt";
+  } catch {
+    return "prompt";
+  }
+}
+
+/**
  * ネイティブのプッシュ通知を有効化する。
  *  - ask=true  … 未許可ならOSの許可ダイアログを出す
  *  - ask=false … 既に許可済みのときだけ静かに登録し直す（ダイアログは出さない）
