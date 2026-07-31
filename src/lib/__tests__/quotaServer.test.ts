@@ -16,8 +16,8 @@ import { quotaMessage, readApiError } from "../usage";
 
 // 枠はローカルではデフォルト無効（大翔のローカルは原価0のため）。
 // 検証のあいだだけ強制する。
-const FILE = path.join(process.cwd(), ".data", "usage-server.json");
-const COST_FILE = path.join(process.cwd(), ".data", "ai-cost.json");
+const FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "usage-server.json");
+const COST_FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "ai-cost.json");
 
 async function clean() {
   await fs.rm(FILE, { force: true }).catch(() => {});

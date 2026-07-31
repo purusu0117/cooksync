@@ -10,7 +10,7 @@ import {
 } from "../recipeCache";
 
 // ローカル保存先（redis未設定時のフォールバック）を毎回まっさらにして検証する
-const FILE = path.join(process.cwd(), ".data", "recipe-pool.json");
+const FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "recipe-pool.json");
 
 async function clean() {
   await fs.rm(FILE, { force: true }).catch(() => {});

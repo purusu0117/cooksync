@@ -10,7 +10,7 @@ import path from "path";
 import { POST } from "../route";
 import { GET } from "@/app/api/admin/stats/route";
 
-const FILE = path.join(process.cwd(), ".data", "affiliate.json");
+const FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "affiliate.json");
 // 16文字未満の鍵は route 側が fail closed で弾く仕様なので、十分な長さにする
 const ADMIN_KEY = "cooksync-admin-key-for-test-0123456789";
 

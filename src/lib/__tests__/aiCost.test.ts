@@ -10,7 +10,7 @@ import {
   usageFrom,
 } from "../aiCost";
 
-const FILE = path.join(process.cwd(), ".data", "ai-cost.json");
+const FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "ai-cost.json");
 
 beforeEach(async () => {
   process.env.COOKSYNC_USD_JPY = "155"; // 為替でテストが揺れないよう固定

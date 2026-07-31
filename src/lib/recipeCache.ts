@@ -85,8 +85,13 @@ export function poolKey(q: PoolQuery): string {
 }
 
 // ---- 保存層（公開=Redis / ローカル=ファイル） ----
-const DIR = path.join(process.cwd(), ".data");
-const FILE = path.join(DIR, "recipe-pool.json");
+// 保存先。COOKSYNC_DATA_DIR で差し替えられる（テストが大翔の実データを壊さないため）。
+// ⚠️ モジュール読み込み時に固定すると、テストが環境変数を設定する前に確定してしまい、
+//    **実際に .data/ の中身が消える事故が起きた**（2026-08-01・監査で発覚）。呼び出しごとに読む。
+function dataDir(): string {
+  return process.env.COOKSYNC_DATA_DIR || path.join(process.cwd(), ".data");
+}
+const FILE = path.join(dataDir(), "recipe-pool.json");
 
 async function loadPool(key: string): Promise<PooledRecipe[]> {
   try {
@@ -115,7 +120,7 @@ async function savePool(key: string, list: PooledRecipe[]): Promise<void> {
       });
       return;
     }
-    await fs.mkdir(DIR, { recursive: true });
+    await fs.mkdir(dataDir(), { recursive: true });
     let all: Record<string, PooledRecipe[]> = {};
     try {
       all = JSON.parse(await fs.readFile(FILE, "utf8"));

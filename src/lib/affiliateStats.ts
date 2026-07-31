@@ -16,8 +16,13 @@ import path from "path";
 import { redis } from "./kv";
 import type { PartnerId, Placement } from "./affiliate";
 
-const DIR = path.join(process.cwd(), ".data");
-const FILE = path.join(DIR, "affiliate.json");
+// 保存先。COOKSYNC_DATA_DIR で差し替えられる（テストが大翔の実データを壊さないため）。
+// ⚠️ モジュール読み込み時に固定すると、テストが環境変数を設定する前に確定してしまい、
+//    **実際に .data/ の中身が消える事故が起きた**（2026-08-01・監査で発覚）。呼び出しごとに読む。
+function dataDir(): string {
+  return process.env.COOKSYNC_DATA_DIR || path.join(process.cwd(), ".data");
+}
+const FILE = path.join(dataDir(), "affiliate.json");
 
 export interface PartnerClicks {
   clicks: number;
@@ -76,7 +81,7 @@ export async function logAffiliateClick(
     cur.byPartner[partner] = p;
     cur.clicks += 1;
     db[m] = cur;
-    await fs.mkdir(DIR, { recursive: true });
+    await fs.mkdir(dataDir(), { recursive: true });
     await fs.writeFile(FILE, JSON.stringify(db), "utf8");
   } catch {
     /* 計測の失敗で本流を止めない */

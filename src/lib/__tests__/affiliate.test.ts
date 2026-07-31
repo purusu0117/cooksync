@@ -21,7 +21,7 @@ function clearEnv() {
   for (const k of ENV_KEYS) delete process.env[k];
 }
 
-const FILE = path.join(process.cwd(), ".data", "affiliate.json");
+const FILE = path.join(process.env.COOKSYNC_DATA_DIR ?? path.join(process.cwd(), ".data"), "affiliate.json");
 
 beforeEach(async () => {
   clearEnv();

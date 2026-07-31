@@ -17,4 +17,9 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },
+  test: {
+    // テストが大翔の実データ .data/ を壊さないよう、ワーカーごとの一時ディレクトリに逃がす。
+    // 詳細は vitest.setup.ts のコメント。
+    setupFiles: ["./vitest.setup.ts"],
+  },
 });

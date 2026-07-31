@@ -109,8 +109,13 @@ export function clientIp(request: Request): string {
 }
 
 // ---- ローカル(ファイル)フォールバック ----
-const DIR = path.join(process.cwd(), ".data");
-const FILE = path.join(DIR, "usage-server.json");
+// 保存先。COOKSYNC_DATA_DIR で差し替えられる（テストが大翔の実データを壊さないため）。
+// ⚠️ モジュール読み込み時に固定すると、テストが環境変数を設定する前に確定してしまい、
+//    **実際に .data/ の中身が消える事故が起きた**（2026-08-01・監査で発覚）。呼び出しごとに読む。
+function dataDir(): string {
+  return process.env.COOKSYNC_DATA_DIR || path.join(process.cwd(), ".data");
+}
+const FILE = path.join(dataDir(), "usage-server.json");
 
 interface LocalDb {
   usage: Record<string, Record<string, number>>; // "<uid>:<YYYY-MM>" -> {kind: n}
@@ -134,7 +139,7 @@ async function readLocal(): Promise<LocalDb> {
 }
 
 async function writeLocal(db: LocalDb): Promise<void> {
-  await fs.mkdir(DIR, { recursive: true });
+  await fs.mkdir(dataDir(), { recursive: true });
   await fs.writeFile(FILE, JSON.stringify(db), "utf8");
 }
 
