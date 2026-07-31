@@ -367,30 +367,40 @@ platform :ios do
 
     group = app.get_beta_groups.find { |g| (g.is_internal_group rescue false) }
     UI.user_error!("内部テスターグループが見つかりません") if group.nil?
-    UI.message("内部グループ name=#{group.name.inspect} id=#{group.id}")
+    all_builds = (group.has_access_to_all_builds rescue nil)
+    UI.message("内部グループ name=#{group.name.inspect} id=#{group.id} hasAccessToAllBuilds=#{all_builds.inspect}")
 
-    # 今後のビルドが自動で内部テスターに出るよう「すべてのビルドにアクセス」をON（best-effort）
-    begin
-      Spaceship::ConnectAPI.patch_beta_groups(beta_group_id: group.id, attributes: { hasAccessToAllBuilds: true })
-      UI.success("内部グループを hasAccessToAllBuilds=true に設定（今後のビルドは自動配布）")
-    rescue => e
-      UI.important("hasAccessToAllBuilds の設定はスキップ（#{e.message}）")
+    # ⚠️ **内部グループが hasAccessToAllBuilds=true なら、割り当ては不要かつ不可能**（2026-08-01 実測）。
+    #    Apple は "Cannot add internal group to a build." を返す。これは失敗ではなく
+    #    「全ビルドが自動で配布されるので個別割り当ては要らない」という意味。
+    #    以前はここで important 扱いにしていたため、成功しているのに失敗したように見えていた。
+    if all_builds == true
+      UI.success("内部グループは全ビルド自動配布の設定です。build #{b.version} は既に配布対象です。")
+    else
+      begin
+        Spaceship::ConnectAPI.add_beta_groups_to_build(build_id: b.id, beta_group_ids: [group.id])
+        UI.success("build #{b.version} を内部グループ #{group.name} に配布しました")
+      rescue => e
+        UI.important("配布APIでエラー: #{e.message}")
+      end
     end
 
-    # 対象ビルドを内部グループに配布
-    begin
-      Spaceship::ConnectAPI.add_beta_groups_to_build(build_id: b.id, beta_group_ids: [group.id])
-      UI.success("build #{b.version} を内部グループ #{group.name} に配布しました")
+    # 確認：本当に届く状態かを、テスターの人数で判定する。
+    # `get_beta_testers` は取れないことがあるので、REST を直接引いて確実に数える。
+    testers = begin
+      res = Spaceship::ConnectAPI.get(path: "betaGroups/#{group.id}/betaTesters", params: { limit: 50 })
+      res.to_models rescue []
     rescue => e
-      UI.important("配布APIでエラー（既に配布済みの可能性）: #{e.message}")
+      UI.important("テスター一覧の取得に失敗: #{e.message}")
+      []
     end
-
-    # 確認：配布後の状態を再取得
-    b2 = app.get_builds(limit: 10).find { |x| x.version.to_i == target }
-    bg = (b2.get_beta_groups rescue [])
-    UI.message("CONFIRM build #{b2.version} groups=[#{bg.map { |x| (x.name rescue x.id) }.join(', ')}]")
-    testers = (group.get_beta_testers rescue [])
     UI.message("CONFIRM 内部グループ testers=#{testers.size}")
+    testers.each { |t| UI.message("  * #{(t.email rescue '?')} state=#{(t.state rescue '-')}") }
+    if testers.empty?
+      UI.important("テスターが0人です。App Store Connect の TestFlight → 内部テスト で自分を追加してください。")
+    else
+      UI.success("build #{b.version} は #{testers.size} 人の内部テスターに配布されます。")
+    end
   end
 
   desc "署名なしビルド（Secretsが無くても通る確認用）"
