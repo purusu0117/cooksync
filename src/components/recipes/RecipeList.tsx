@@ -3,19 +3,46 @@
 // レシピ一覧：写真をやめてテキスト主体の縦リストにした版。
 // 理由＝AI写真生成が重く、写真の有無でカードの見え方がバラつくため。
 // 代わりに「検索・絞り込み・並び替え・在庫で作れるか」を前に出して、
-// 28件以上あっても目的のレシピにすぐ辿り着けるようにする。
+// 38件以上あっても目的のレシピにすぐ辿り着けるようにする。
+//
+// 絞り込みは “よく使う3つ＋詳細は折りたたみ” の二段構え（UIを散らかさないため）。
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { BookOpen, ChefHat, Clock, Refrigerator, Search } from "lucide-react";
+import {
+  BookOpen,
+  ChefHat,
+  Clock,
+  Flame,
+  Refrigerator,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
 import { fridgeStore, mealStore, ratingStore } from "@/lib/storage";
-import { ingredientMatches, type Cuisine, type Recipe } from "@/lib/recipe";
+import { bucketOf } from "@/lib/food";
+import {
+  ingredientMatches,
+  type Cuisine,
+  type Heaviness,
+  type Recipe,
+  type StapleType,
+} from "@/lib/recipe";
+import { kindsOf, matchesQuery, usesExpiring, type MainKind } from "@/lib/recipeFilter";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
 import DishIcon from "@/components/DishIcon";
 
 const CUISINES: Cuisine[] = ["和", "洋", "中", "アジアン"];
+const KINDS: MainKind[] = ["肉", "魚介", "野菜"];
+const HEAVINESS: Heaviness[] = ["ガッツリ", "さっぱり", "あっさり"];
+const STAPLES: StapleType[] = ["ご飯", "麺", "パン"];
+const TIMES: { v: number; label: string }[] = [
+  { v: 15, label: "15分以内" },
+  { v: 30, label: "30分以内" },
+];
+
 type Sort = "default" | "rating" | "made" | "new";
 const SORTS: [Sort, string][] = [
   ["default", "おすすめ順"],
@@ -31,9 +58,18 @@ export default function RecipeList() {
   const [meals] = usePersistentList(mealStore);
   const [sort, setSort] = useState<Sort>("default");
   const [query, setQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // 絞り込み条件
   const [cuisine, setCuisine] = useState<Cuisine | null>(null);
-  const [quickOnly, setQuickOnly] = useState(false); // 15分以内
+  const [kind, setKind] = useState<MainKind | null>(null);
+  const [heaviness, setHeaviness] = useState<Heaviness | null>(null);
+  const [staple, setStaple] = useState<StapleType | null>(null);
+  const [maxTime, setMaxTime] = useState<number | null>(null);
   const [stockOnly, setStockOnly] = useState(false); // 買い足しなしで作れる
+  const [expiringOnly, setExpiringOnly] = useState(false); // 期限が近い食材を使える
+  const [unmadeOnly, setUnmadeOnly] = useState(false); // まだ作ってない
+  const [favOnly, setFavOnly] = useState(false); // ★4以上
 
   const starsOf = (rid: string) =>
     ratings.find((r) => r.recipeId === rid)?.stars ?? 0;
@@ -41,6 +77,14 @@ export default function RecipeList() {
     meals.filter((m) => m.recipeId === rid && m.made).length;
 
   const fridgeNames = useMemo(() => fridge.map((f) => f.name), [fridge]);
+  // 🔴🟡＝早く使い切りたい食材
+  const expiringNames = useMemo(
+    () =>
+      fridge
+        .filter((f) => bucketOf(f.expiresOn) !== "fresh")
+        .map((f) => f.name),
+    [fridge],
+  );
 
   // 買い足しが必要な材料の数（基本調味料は常備とみなして数えない）
   const missingCount = useMemo(() => {
@@ -56,21 +100,60 @@ export default function RecipeList() {
     return map;
   }, [recipes, fridgeNames]);
 
+  const activeCount =
+    (cuisine ? 1 : 0) +
+    (kind ? 1 : 0) +
+    (heaviness ? 1 : 0) +
+    (staple ? 1 : 0) +
+    (maxTime ? 1 : 0) +
+    (stockOnly ? 1 : 0) +
+    (expiringOnly ? 1 : 0) +
+    (unmadeOnly ? 1 : 0) +
+    (favOnly ? 1 : 0);
+
+  function clearFilters() {
+    setCuisine(null);
+    setKind(null);
+    setHeaviness(null);
+    setStaple(null);
+    setMaxTime(null);
+    setStockOnly(false);
+    setExpiringOnly(false);
+    setUnmadeOnly(false);
+    setFavOnly(false);
+  }
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return recipes.filter((r) => {
       if (cuisine && r.tags.cuisine !== cuisine) return false;
-      if (quickOnly && (r.tags.cookTime ?? 99) > 15) return false;
+      if (heaviness && r.tags.heaviness !== heaviness) return false;
+      if (staple && r.tags.staple !== staple) return false;
+      if (maxTime && (r.tags.cookTime ?? 99) > maxTime) return false;
+      if (kind && !kindsOf(r).includes(kind)) return false;
       if (stockOnly && (missingCount.get(r.id) ?? 0) > 0) return false;
-      if (!q) return true;
-      // 料理名・キャッチ・材料名のどれかに当たれば表示
-      return (
-        r.name.toLowerCase().includes(q) ||
-        r.catch.toLowerCase().includes(q) ||
-        r.ingredients.some((i) => i.name.toLowerCase().includes(q))
-      );
+      if (expiringOnly && !usesExpiring(r, expiringNames)) return false;
+      if (unmadeOnly && madeCountOf(r.id) > 0) return false;
+      if (favOnly && starsOf(r.id) < 4) return false;
+      return matchesQuery(r, query);
     });
-  }, [recipes, query, cuisine, quickOnly, stockOnly, missingCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    recipes,
+    query,
+    cuisine,
+    kind,
+    heaviness,
+    staple,
+    maxTime,
+    stockOnly,
+    expiringOnly,
+    unmadeOnly,
+    favOnly,
+    missingCount,
+    expiringNames,
+    meals,
+    ratings,
+  ]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -92,8 +175,8 @@ export default function RecipeList() {
     <div className="mx-auto w-full max-w-2xl px-4 pt-6">
       <PageHeader title="レシピ" Icon={BookOpen} iconClass="text-accent" />
 
-      {/* 検索：料理名でも材料でも引ける */}
-      <div className="relative mb-3">
+      {/* 検索：料理名・材料に加えて「肉系」「さっぱり」等のざっくりした言葉でも引ける */}
+      <div className="relative mb-2">
         <Search
           size={16}
           strokeWidth={1.8}
@@ -102,31 +185,36 @@ export default function RecipeList() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="料理名・材料で検索（例：鶏、さっぱり）"
-          className="w-full rounded-full border border-line bg-surface py-2.5 pr-4 pl-9 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft"
+          placeholder="肉系 / 魚 / さっぱり / 鶏むね / パスタ…"
+          className="w-full rounded-full border border-line bg-surface py-2.5 pr-9 pl-9 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft"
         />
-      </div>
-
-      {/* 絞り込み */}
-      <div className="mb-2 flex flex-wrap gap-1.5">
-        {CUISINES.map((c) => (
+        {query && (
           <button
-            key={c}
             type="button"
-            onClick={() => setCuisine(cuisine === c ? null : c)}
-            className={chip(cuisine === c)}
+            onClick={() => setQuery("")}
+            aria-label="検索をクリア"
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1.5 text-ink-soft transition hover:bg-paper"
           >
-            {c}
+            <X size={14} strokeWidth={2} />
+          </button>
+        )}
+      </div>
+      <p className="mb-3 px-1 text-[11px] text-ink-soft">
+        「肉系」「魚」「野菜」「さっぱり」「時短」などのざっくりした言葉でも絞り込めます（スペース区切りで重ねがけ）。
+      </p>
+
+      {/* よく使う絞り込み＋詳細トグル */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {KINDS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(kind === k ? null : k)}
+            className={chip(kind === k)}
+          >
+            {k === "野菜" ? "野菜中心" : k}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => setQuickOnly(!quickOnly)}
-          className={`${chip(quickOnly)} inline-flex items-center gap-1`}
-        >
-          <Clock size={12} strokeWidth={2} />
-          15分以内
-        </button>
         <button
           type="button"
           onClick={() => setStockOnly(!stockOnly)}
@@ -135,7 +223,110 @@ export default function RecipeList() {
           <Refrigerator size={12} strokeWidth={2} />
           在庫で作れる
         </button>
+        <button
+          type="button"
+          onClick={() => setShowFilters(!showFilters)}
+          className={`${chip(showFilters || activeCount > 0)} inline-flex items-center gap-1`}
+        >
+          <SlidersHorizontal size={12} strokeWidth={2} />
+          絞り込み
+          {activeCount > 0 && (
+            <span className="rounded-full bg-white/25 px-1.5 text-[10px] font-bold">
+              {activeCount}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* 詳細フィルタ（普段は畳んでおく） */}
+      {showFilters && (
+        <div className="animate-pop-in mb-3 rounded-2xl border border-line bg-surface p-3">
+          <FilterRow label="ジャンル">
+            {CUISINES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCuisine(cuisine === c ? null : c)}
+                className={chip(cuisine === c)}
+              >
+                {c}
+              </button>
+            ))}
+          </FilterRow>
+          <FilterRow label="味の重さ">
+            {HEAVINESS.map((h) => (
+              <button
+                key={h}
+                type="button"
+                onClick={() => setHeaviness(heaviness === h ? null : h)}
+                className={chip(heaviness === h)}
+              >
+                {h}
+              </button>
+            ))}
+          </FilterRow>
+          <FilterRow label="主食">
+            {STAPLES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStaple(staple === s ? null : s)}
+                className={chip(staple === s)}
+              >
+                {s}
+              </button>
+            ))}
+          </FilterRow>
+          <FilterRow label="調理時間">
+            {TIMES.map((t) => (
+              <button
+                key={t.v}
+                type="button"
+                onClick={() => setMaxTime(maxTime === t.v ? null : t.v)}
+                className={`${chip(maxTime === t.v)} inline-flex items-center gap-1`}
+              >
+                <Clock size={12} strokeWidth={2} />
+                {t.label}
+              </button>
+            ))}
+          </FilterRow>
+          <FilterRow label="そのほか">
+            <button
+              type="button"
+              onClick={() => setExpiringOnly(!expiringOnly)}
+              className={`${chip(expiringOnly)} inline-flex items-center gap-1`}
+            >
+              <Flame size={12} strokeWidth={2} />
+              期限が近い食材を使う
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnmadeOnly(!unmadeOnly)}
+              className={chip(unmadeOnly)}
+            >
+              まだ作ってない
+            </button>
+            <button
+              type="button"
+              onClick={() => setFavOnly(!favOnly)}
+              className={chip(favOnly)}
+            >
+              ★4以上
+            </button>
+          </FilterRow>
+
+          {activeCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-accent-dark underline"
+            >
+              <X size={12} strokeWidth={2} />
+              絞り込みをクリア（{activeCount}件）
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 並び替え */}
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -157,9 +348,21 @@ export default function RecipeList() {
       </div>
 
       {sorted.length === 0 ? (
-        <p className="rounded-2xl border border-line bg-surface p-6 text-center text-sm text-ink-soft">
-          条件に合うレシピがありませんでした。
-        </p>
+        <div className="rounded-2xl border border-line bg-surface p-6 text-center">
+          <p className="text-sm text-ink-soft">条件に合うレシピがありませんでした。</p>
+          {(activeCount > 0 || query) && (
+            <button
+              type="button"
+              onClick={() => {
+                clearFilters();
+                setQuery("");
+              }}
+              className="mt-3 rounded-full border border-brand/40 bg-brand-soft px-4 py-1.5 text-xs font-semibold text-brand-dark"
+            >
+              条件をリセット
+            </button>
+          )}
+        </div>
       ) : (
         <ul className="flex flex-col gap-2">
           {sorted.map((r) => (
@@ -174,6 +377,21 @@ export default function RecipeList() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function FilterRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-2.5 last:mb-1">
+      <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">{label}</p>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }
