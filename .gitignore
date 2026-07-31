@@ -91,3 +91,5 @@ android/app/src/main/assets/capacitor.config.json
 
 # dev サーバーのログ
 .dev3014.log
+.local3000.log
+.diag/

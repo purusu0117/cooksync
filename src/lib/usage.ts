@@ -9,32 +9,14 @@
 //    数値は quotaServer.FREE_LIMITS と一致させること（ズレるとUIが嘘をつく）。
 
 import { usageStore, accountStore, type UsageRecord } from "./storage";
+import { AI_LABEL, FREE_LIMITS, PREMIUM_LIMITS, type AiKind } from "./aiLimits";
 import { usePersistentList } from "./useStore";
 import { todayISO } from "./food";
 
-export type AiKind = "research" | "scan" | "import";
-
-// 無料枠（月あたり）。原価の裏付けは
-// .secretary/Decisions/2026-07-31-cooksync-profitable-monetization.md §3
-export const FREE_LIMITS: Record<AiKind, number> = {
-  research: 3,
-  scan: 5,
-  import: 2,
-};
-
-// プレミアムのフェアユース上限。**無制限ではない**。
-// 無制限にすると1人の月間原価(最大¥497)が手取り(¥371)を超えて赤字になるため。
-export const PREMIUM_LIMITS: Record<AiKind, number> = {
-  research: 30,
-  scan: 150,
-  import: 8,
-};
-
-export const AI_LABEL: Record<AiKind, string> = {
-  research: "AIレシピ探索",
-  scan: "写真で在庫登録",
-  import: "写真・動画からレシピ",
-};
+// 枠の数字は src/lib/aiLimits.ts に一本化した（ここに書くとサーバー側とズレる）。
+export type { AiKind } from "./aiLimits";
+export { FREE_LIMITS, PREMIUM_LIMITS, AI_LABEL } from "./aiLimits";
+// AI_LABEL はこのファイル内でも使うので値としてimportしてある
 
 export function currentMonth(): string {
   return todayISO().slice(0, 7); // "2026-06"

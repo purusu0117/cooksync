@@ -69,6 +69,8 @@ export default function MyPage() {
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  /** ログイン済みなのにアカウントが読めない状態が続いたか（永久ローディング防止） */
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
 
   useEffect(() => {
     // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
@@ -81,6 +83,14 @@ export default function MyPage() {
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  // 読み込みが終わらないまま放置されるのを防ぐ。4秒で「出口」を出す。
+  // （[[system-reliability]] 大翔に再操作を強いない＝黙って固まらせない）
+  useEffect(() => {
+    if (!session || account) return;
+    const t = setTimeout(() => setLoadTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, [session, account]);
 
   // Googleログインの戻り（/mypage?login=ok）と、この環境でGoogleが使えるかの確認。
   useEffect(() => {
@@ -276,10 +286,48 @@ export default function MyPage() {
   if (!mounted) return null;
 
   // ログイン済みだがデータ読込中（別端末でログインした直後のreload後など）
+  //
+  // ⚠️ 以前はここが **脱出できない永久ローディング** だった（2026-08-01・大翔の「マイページが開けない」）。
+  //    localStorage に session=1 が残っているのに account が無いと、この分岐から永遠に出られず、
+  //    ログアウトすらできない（ログアウトのボタンはこの下にあるので描画されない）。
+  //    consoleにエラーも出ないので原因も分からない。
+  //    → 数秒待って読めなければ、**必ず自力で復帰できる出口を出す**。
   if (session && !account) {
     return (
-      <div className="mx-auto w-full max-w-md px-4 pt-16 text-center text-sm text-ink-soft">
-        読み込み中…
+      <div className="mx-auto w-full max-w-md px-4 pt-16 text-center">
+        {!loadTimedOut ? (
+          <p className="text-sm text-ink-soft">読み込み中…</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-ink">
+              アカウント情報を読み込めませんでした。
+              <br />
+              通信が不安定か、ログイン情報が古くなっている可能性があります。
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="min-h-[52px] rounded-2xl bg-brand text-[15px] font-bold text-white active:scale-[.98]"
+            >
+              もう一度読み込む
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // セッションだけ捨ててログイン画面へ戻す。冷蔵庫などのデータは消さない。
+                try {
+                  window.localStorage.removeItem("cooksync:session");
+                } catch {
+                  /* noop */
+                }
+                setSession(false);
+              }}
+              className="min-h-[52px] rounded-2xl border border-line text-[15px] font-semibold text-ink-soft"
+            >
+              ログイン画面に戻る
+            </button>
+          </div>
+        )}
       </div>
     );
   }
