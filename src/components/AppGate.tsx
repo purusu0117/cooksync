@@ -1,41 +1,24 @@
 "use client";
 
-// 未ログインのままアプリ本体を使わせない（データの保存先が確定する前に入力させない）。
-// 未ログインで保護ルートに来たら /mypage（登録・ログイン）へ誘導。
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-
-// ログイン不要で見せるルート
-const PUBLIC = new Set(["/mypage", "/lp"]);
-// ログイン不要で見せるルート（配下ごと）。
-// /legal は App Store のプライバシーポリシー/サポートURLとして**未ログインで開ける必要がある**。
-const PUBLIC_PREFIX = ["/legal"];
-
+// アカウントを作らなくてもアプリを使える。ログインは「端末間で同期したい人だけ」の任意機能。
+//
+// ⚠️ 以前はここで /mypage 以外を全部ブロックしていた（2026-08-01 の監査で発覚）。
+//    初見のユーザーはタブを押しても全部ログイン画面に飛ばされ、**何ひとつ見られなかった**。
+//    - App Store ガイドライン **5.1.1(v)**：アカウント機能が本質でないアプリは、
+//      ログイン無しで使わせる必要がある。CookSyncの中核（食材を登録して献立を考える）は
+//      端末ローカルだけで成立するので、登録必須は正当化しにくくリジェクト理由になる。
+//    - 審査担当は開いた瞬間に登録を強制され、そこで詰まる。
+//    - 普通のユーザーも「中身を見る前にメールアドレスを要求される」ので離脱する。
+//
+// データはどうなるか：
+//    未ログインの間は端末ごとのUUID（cooksync:uid）配下に保存される。
+//    あとで登録・ログインすると uid がアカウントの dataId に切り替わるが、
+//    **syncStore の hydrate が「サーバーが空ならローカルの内容を移行する」ので、
+//    それまでに入れた冷蔵庫や買い物リストはそのまま引き継がれる**（新規アカウントの場合）。
+//    既にデータのあるアカウントにログインした場合は、そのアカウント側のデータが正となる。
+//
+// このコンポーネントは layout.tsx が包んでいるので、消さずに素通しにしてある。
+// 将来「本当にアカウントが必要な画面」ができたら、ここに条件を足す。
 export default function AppGate({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [blocked, setBlocked] = useState(false);
-
-  useEffect(() => {
-    let session = false;
-    try {
-      session = window.localStorage.getItem("cooksync:session") === "1";
-    } catch {
-      /* noop */
-    }
-    const isPublic =
-      PUBLIC.has(pathname) || PUBLIC_PREFIX.some((p) => pathname.startsWith(p));
-    const needsAuth = !isPublic;
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (!session && needsAuth) {
-      setBlocked(true);
-      router.replace("/mypage");
-    } else {
-      setBlocked(false);
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [pathname, router]);
-
-  if (blocked) return null;
   return <>{children}</>;
 }
