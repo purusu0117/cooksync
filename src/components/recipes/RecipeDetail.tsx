@@ -564,13 +564,13 @@ export default function RecipeDetail({ id }: Props) {
                       </span>
                     )}
                     {st?.status === "short" && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent">
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent-dark">
                         <CirclePlus size={11} strokeWidth={2.5} />
                         不足（{shortText}）
                       </span>
                     )}
                     {st?.status === "none" && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent">
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent-dark">
                         <CirclePlus size={11} strokeWidth={2.5} />
                         買い足し
                       </span>
@@ -792,7 +792,7 @@ export default function RecipeDetail({ id }: Props) {
                     href={src.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-brand underline"
+                    className="text-brand-dark underline"
                   >
                     {src.label}
                   </a>

@@ -227,12 +227,15 @@ export default function AddItemForm({ onAdd }: Props) {
       </div>
 
       {/* 開封済みかどうかで期限は大きく変わる（未開封のしょうゆ=1年半 / 開封後=1ヶ月） */}
-      <label className="mt-3 flex items-center gap-2 text-xs text-ink-soft">
+      {/* ラベルごと44px以上にしてタップ領域を確保する。
+          チェックボックス自体は16pxしかなく、料理中の指では押しにくかった
+          （2026-08-01 の巡回監査で最小のタップ領域として検出）。 */}
+      <label className="mt-3 -mx-1 flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-xl px-1 text-xs text-ink-soft">
         <input
           type="checkbox"
           checked={opened}
           onChange={(e) => toggleOpened(e.target.checked)}
-          className="h-4 w-4 accent-[var(--color-brand)]"
+          className="h-5 w-5 accent-[var(--color-brand)]"
         />
         開封済み（開封後の日持ちで期限を計算）
       </label>

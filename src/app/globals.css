@@ -17,12 +17,17 @@
   --color-ink-soft: #6b6559;
   --color-line: #e6e0d2; /* 罫線 */
 
-  --color-brand: #2f9e60; /* フレッシュ緑：ボタン/バッジ/アクティブ */
+  /* フレッシュ緑：ボタン/バッジ/アクティブ。
+     旧 #2f9e60 は白文字とのコントラスト比が **3.40** で WCAG AA(4.5) 未満だった
+     （2026-08-01 の巡回監査で判明。主要ボタンとリンクのほぼ全部が該当）。
+     見た目を大きく変えずに 4.72 まで上げた値がこれ。 */
+  --color-brand: #27834f;
   --color-brand-dark: #1f6e42; /* 濃緑：ロゴ/見出し/hover */
   --color-brand-soft: #e8f4ec; /* 淡緑：chip/淡背景 */
 
   --color-accent: #e2914f; /* オレンジ：不足アラート */
-  --color-accent-dark: #c06a2a;
+  /* オレンジの**文字**用。旧 #c06a2a は白地で 3.94 と AA に届いていなかった → 5.06 */
+  --color-accent-dark: #a85a1f;
   --color-accent-soft: #f6ddc1; /* peach：不足カード背景 */
 
   --font-display: var(--font-display);
