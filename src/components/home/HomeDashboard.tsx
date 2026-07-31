@@ -76,10 +76,12 @@ export default function HomeDashboard() {
           <User size={18} />
         </Link>
       </div>
-      {/* 初めて開いた人に「他と何が違うか」を1行で。ロゴだけだと伝わらない。 */}
-      <p className="mt-1 mb-5 text-xs text-ink-soft">
-        {APP_TAGLINE}読み取れなかった分量は、そう書きます。
-      </p>
+      {/*
+        ここは**初見の人が最初に読む場所**。差別化（分量を勝手に変えない等）はここではなく
+        LPの中ほど＝比較検討層が読む場所に置く（[[copywriting-audience]]）。
+        「次に何をすればいいか」は直下の初回カードが担当するので、ここでは重ねない。
+      */}
+      <p className="mt-1 mb-5 text-xs text-ink-soft">{APP_TAGLINE}</p>
 
       {/*
         初回の一等地。ここに「レシピをつくる」を先に出すと、在庫ゼロの人は

@@ -96,3 +96,8 @@ android/app/src/main/assets/capacitor.config.json
 
 # 監査スクリプトの出力
 .audit-result.txt
+
+# ベンチ・スクショの出力（実行のたびに変わるので追跡しない）
+.bench/
+.shots-local/
+.shots-retention/

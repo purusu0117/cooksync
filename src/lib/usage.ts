@@ -56,10 +56,10 @@ export function resetHint(now: Date = new Date()): string {
 /**
  * マイページの残量メーターの見出しと説明。
  *
- * ⚠️ **MyPage.tsx はまだ「今月のAI利用」「毎月1日リセット」と書いてある**（＝枠は週次なので嘘）。
- *    あのファイルは文言部門が並行で触っているのでこちらからは変更していない。
- *    差し替えは import 2つで済むよう、ここに文言を用意してある：
- *      <h2>{QUOTA_METER_TITLE}</h2> ／ <p>{quotaMeterNote(usage.premium)}</p>
+ * 枠の数字と同じく、**期間の言い方もここ1箇所**に置く。
+ * MyPage.tsx はこの2つを読むだけにしてある（`{QUOTA_METER_TITLE}` / `{quotaMeterNote(usage.premium)}`）。
+ * 月次→週次のとき、画面側に直書きされていた「今月のAI利用」「毎月1日リセット」が
+ * サーバーの判定だけ週次になっても残り、**表示が嘘になった**。同じことを繰り返さないための集約。
  */
 export const QUOTA_METER_TITLE = `${QUOTA_PERIOD_LABEL}のAI利用`;
 

@@ -205,6 +205,18 @@ function denyGlobal(limit: number, premium: boolean): QuotaResult {
     message: "ただいまAI機能が混み合っています。時間をおいてお試しください。",
   };
 }
+/**
+ * 予算上限のときの文言。
+ *
+ * ⚠️ **これはユーザー個人の枠切れではない。** サービス全体の月間予算
+ *    （COOKSYNC_MONTHLY_BUDGET_YEN・既定¥3,000）に当たった状態で、原因はこちら側にある。
+ *    枠を週次にしたあとも「今月のAI利用が上限に達しました」のままだったので、
+ *    **自分の週次枠がまだ残っている人にも「お前がもう使い切った」と読める**文言だった。
+ *    主語をこちら側に戻し、いつ戻るかも書く。
+ */
+const BUDGET_MESSAGE =
+  "ただいまAI機能の提供上限に達しています（アプリ側の都合です）。翌月1日に再開します。";
+
 function denyBudget(limit: number, premium: boolean): QuotaResult {
   return {
     ok: false,
@@ -213,7 +225,7 @@ function denyBudget(limit: number, premium: boolean): QuotaResult {
     limit,
     remaining: 0,
     premium,
-    message: "今月のAI利用が上限に達しました。来月またご利用ください。",
+    message: BUDGET_MESSAGE,
   };
 }
 function denyIp(limit: number, premium: boolean): QuotaResult {
@@ -363,7 +375,7 @@ export async function guardAi(
 
   const spent = await monthYenSpent(month());
   if (spent + estYen > monthlyBudgetYen()) {
-    return { ok: false, message: "今月のAI利用が上限に達しました。来月またご利用ください。" };
+    return { ok: false, message: BUDGET_MESSAGE };
   }
   if (!(await checkIpOnly(request))) {
     return {

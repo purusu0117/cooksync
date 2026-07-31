@@ -16,7 +16,13 @@ import {
 } from "@/lib/storage";
 import { usePersistentList } from "@/lib/useStore";
 import { recentMeals } from "@/lib/mealplan";
-import { useUsage, AI_LABEL, type AiKind } from "@/lib/usage";
+import {
+  useUsage,
+  AI_LABEL,
+  QUOTA_METER_TITLE,
+  quotaMeterNote,
+  type AiKind,
+} from "@/lib/usage";
 import {
   enablePush,
   fetchExpirySettings,
@@ -845,11 +851,12 @@ export default function MyPage() {
       </div>
 
       <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
-        <h2 className="mb-1 text-sm font-bold text-ink">今月のAI利用</h2>
+        {/* ⚠️ 文言を直書きしない。枠は**週次**（毎週月曜リセット）に変わっており、
+            ここに「今月」「毎月1日」と書くと画面が嘘をつく。
+            期間の言い回しは src/lib/usage.ts に1本化してあり、テストで固定されている。 */}
+        <h2 className="mb-1 text-sm font-bold text-ink">{QUOTA_METER_TITLE}</h2>
         <p className="mb-3 text-xs leading-relaxed text-ink-soft">
-          {usage.premium
-            ? "プレミアム：たっぷり使えます（公平利用のため上限あり）。毎月1日リセット。"
-            : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで大幅に増えます（準備中）。"}
+          {quotaMeterNote(usage.premium)}
         </p>
         <ul className="flex flex-col gap-2.5">
           {(["research", "scan", "import"] as AiKind[]).map((k) => {
