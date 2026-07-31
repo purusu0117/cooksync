@@ -15,14 +15,128 @@ import {
   CookingPot,
   PackageCheck,
   CheckCircle2,
+  TriangleAlert,
+  Link2,
+  ScanLine,
+  Users,
+  Video,
   type LucideIcon,
 } from "lucide-react";
+import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "CookSync｜AIが、冷蔵庫をシェフにする。",
+  title: `${APP_NAME}｜${APP_TAGLINE}`,
   description:
-    "賞味期限が近い食材からAIが献立を提案。写真で在庫登録、買い物リストも在庫管理も半自動。フードロスを減らし、毎日の献立に悩まないキッチンアプリ。",
+    "読み取れなかった分量は「読み取れなかった」と書く。参考にしたページのURLも必ず残す。冷蔵庫にあるものだけで作る在庫厳守モードと、手順の中の分量まで書き換わる人数換算つき。作ってから失敗しないレシピ・冷蔵庫アプリ。",
 };
+
+/* ============================================================
+   ここに書いてあることは全部、実装済みの画面から取った文言です。
+   （出典：ImportedRecipePreview.tsx / RecipeDetail.tsx /
+     MealWizard.tsx / RecipeSources.tsx / lib/recipeScale.ts / lib/ai.ts）
+   実装に無いことは書かない。書き足すときは必ずコードを見てから。
+   ============================================================ */
+
+/** ヒーロー直下の「証拠」。アプリが実際に出す文言をそのまま並べる。 */
+const PROOFS: {
+  Icon: LucideIcon;
+  label: string;
+  headline: string;
+  /** アプリ内の実物の文言 */
+  quote: React.ReactNode;
+  note: string;
+  tone: "warn" | "brand";
+}[] = [
+  {
+    Icon: TriangleAlert,
+    label: "読み取れなかったとき",
+    headline: "推測で埋めない。",
+    quote: (
+      <>
+        ⚠ 分量が読み取れなかった材料：みりん、砂糖
+        <br />
+        保存後にレシピを開いて、元の動画・写真を見ながら直してください。
+      </>
+    ),
+    note: "AIには「書かれていないことを推測で埋めない」と指示しています。読めなかった材料は名前を挙げて警告し、分量欄も「確認できず」と表示します。",
+    tone: "warn",
+  },
+  {
+    Icon: ScanLine,
+    label: "どれくらい自信があるか",
+    headline: "確度も一緒に出す。",
+    quote: <>一部は読み取れなかったので確認してください</>,
+    note: "取り込みごとに3段階で自己申告します。確度が低いときは「分量は必ず元の動画・写真で確認してください」とはっきり書きます。",
+    tone: "warn",
+  },
+  {
+    Icon: Link2,
+    label: "どこから来たレシピか",
+    headline: "出典のURLを必ず残す。",
+    quote: (
+      <>
+        参考にしたページ
+        <br />
+        <span className="underline underline-offset-2">
+          リュウジのバズレシピ 至高を超えた回鍋肉
+        </span>
+      </>
+    ),
+    note: "AI提案は実在のレシピを参照し、URL付きの出典が無い候補は出しません。つくれぽ数・再生数が分かれば一緒に添えます。出典が空のときも見出しごと消さず「記録されていません」と正直に書きます。",
+    tone: "brand",
+  },
+];
+
+/** 差別化の2本柱（在庫厳守／人数スケール）。 */
+const PILLARS: {
+  Icon: LucideIcon;
+  eyebrow: string;
+  title: string;
+  body: string;
+  points: string[];
+}[] = [
+  {
+    Icon: Refrigerator,
+    eyebrow: "在庫厳守モード",
+    title: "「冷蔵庫にあるものだけ」を、本当に守る。",
+    body: "献立提案の初期設定が「在庫だけで作る」。塩・しょうゆなどの基本調味料以外は、冷蔵庫に無い食材を使わせません。",
+    points: [
+      "買い足したい日は「買い物してもOK」に1タップで切り替え",
+      "足りない分だけを「1パック」「1束」など店で買える単位で買い物リストへ",
+      "作り終わって「作った」を押すと、使った分だけ在庫が減る（取り消しも可）",
+    ],
+  },
+  {
+    Icon: Users,
+    eyebrow: "人数の自動換算",
+    title: "手順の文章の中の分量まで、書き換わる。",
+    body: "1〜4人分を選ぶと、材料表だけでなく手順文とkcalまで換算します。AIを呼ばない計算なので、利用枠を使いません。",
+    points: [
+      "「大さじ1」「80〜90g」「1と1/2個」も読める形のまま換算",
+      "手順の「5分煮る」など時間・温度は換算しない（分量だけを直す）",
+      "増やすときは「調味料は7〜8割から入れて味を見て」と注意も表示",
+    ],
+  },
+];
+
+/** レシピの入れ方3つ（動画取り込みはここに置く。看板にはしない）。 */
+const SOURCES: { Icon: LucideIcon; title: string; desc: string }[] = [
+  {
+    Icon: ChefHat,
+    title: "AIに提案してもらう",
+    desc: "冷蔵庫の食材と、気分・調理時間・人数から3案。期限が近い食材から優先して使います。",
+  },
+  {
+    Icon: Video,
+    title: "動画のURLから",
+    desc: "YouTube・TikTokの料理動画を貼るだけ。概要欄と字幕から材料と手順を書き起こします。",
+  },
+  {
+    Icon: Camera,
+    title: "写真から",
+    desc: "レシピ本のページ、SNSのスクショ、手書きメモを4枚まで。順番がバラバラでも並べ直します。",
+  },
+];
 
 const FEATURES: {
   Icon?: LucideIcon;
@@ -47,13 +161,6 @@ const FEATURES: {
     tint: "bg-paper",
   },
   {
-    Icon: ChefHat,
-    title: "AIが実在レシピを提案",
-    desc: "期限が近い食材を活かす人気レシピを、つくれぽ数・再生数など“人気の根拠”つきで。3案は食材を分散。",
-    color: "text-accent-dark",
-    tint: "bg-accent-soft",
-  },
-  {
     Icon: Recycle,
     title: "買い物も在庫も自動で循環",
     desc: "不足は買い物リストへ→買ったら在庫へ→作ったら減る。ぐるっと半自動で回り続けます。",
@@ -74,12 +181,19 @@ const FEATURES: {
     color: "text-rose-500",
     tint: "bg-rose-50",
   },
+  {
+    Icon: PackageCheck,
+    title: "余った分の保存方法まで",
+    desc: "使い切れなかった食材の保存のしかたをレシピごとに表示。次に使うまで傷ませません。",
+    color: "text-accent-dark",
+    tint: "bg-accent-soft",
+  },
 ];
 
 const STEPS: { n: string; Icon: LucideIcon; title: string; desc: string }[] = [
   { n: "01", Icon: Refrigerator, title: "冷蔵庫に登録", desc: "写真を撮るだけ。賞味期限も自動で推定。" },
-  { n: "02", Icon: CookingPot, title: "AIが献立を提案", desc: "期限が近い食材から、人気レシピを3案。" },
-  { n: "03", Icon: ShoppingCart, title: "不足を買い物リストへ", desc: "足りない食材だけ自動でリスト化。" },
+  { n: "02", Icon: CookingPot, title: "在庫だけで献立を提案", desc: "冷蔵庫にあるものだけで作れる案を3つ。" },
+  { n: "03", Icon: ShoppingCart, title: "不足を買い物リストへ", desc: "足りない分だけ、店で買える単位で。" },
   { n: "04", Icon: PackageCheck, title: "買ったら在庫へ", desc: "購入チェックで冷蔵庫に自動反映。" },
   { n: "05", Icon: CheckCircle2, title: "作ったら在庫が減る", desc: "使った食材を自動で消費。そしてまた01へ。" },
 ];
@@ -104,7 +218,7 @@ function Kicker({ children }: { children: React.ReactNode }) {
 export default function LandingPage() {
   return (
     <div className="bg-paper text-ink">
-      {/* ===== Hero（編集系・上品） ===== */}
+      {/* ===== Hero ===== */}
       <section className="relative overflow-hidden px-6 pt-14 pb-8">
         {/* 背景の淡い装飾 */}
         <div
@@ -118,21 +232,21 @@ export default function LandingPage() {
         <div className="relative mx-auto max-w-3xl text-center">
           <Image
             src="/cooksync-logo.svg"
-            alt="CookSync"
+            alt={APP_NAME}
             width={260}
             height={148}
             priority
             className="mx-auto h-auto w-[210px]"
           />
           <h1 className="font-display mt-5 text-4xl font-extrabold leading-tight tracking-tight text-brand-dark sm:text-5xl">
-            AIが、冷蔵庫を
-            <br className="sm:hidden" />
-            シェフにする。
+            AIが勝手に、
+            <br />
+            分量を変えない。
           </h1>
-          <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-ink-soft sm:text-base">
-            賞味期限が近い食材から、今日の献立をAIが提案。
+          <p className="mx-auto mt-5 max-w-lg text-sm leading-relaxed text-ink-soft sm:text-base">
+            読み取れなかった材料は「読み取れなかった」と書く。
             <br className="hidden sm:block" />
-            写真で在庫登録、買い物リストも在庫管理も、ほぼ手間ゼロ。
+            参考にしたページのURLも必ず残す。だから、作ってから失敗しない。
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
@@ -142,10 +256,10 @@ export default function LandingPage() {
               今すぐ始める（無料）
             </Link>
             <a
-              href="#features"
+              href="#proof"
               className="w-full rounded-full border border-line bg-surface px-8 py-3.5 text-sm font-bold text-brand-dark transition hover:border-brand sm:w-auto"
             >
-              できること
+              なぜ言い切れるのか
             </a>
           </div>
 
@@ -163,8 +277,144 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ===== 証拠：実際にアプリが出す文言 ===== */}
+      <section id="proof" className="px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-5xl">
+          <Kicker>Proof</Kicker>
+          <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+            「たぶんこれくらい」を、書かない。
+          </h2>
+          <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-relaxed text-ink-soft">
+            レシピアプリで一番困るのは、材料が間違っていることです。
+            {APP_NAME}
+            は、分からなかったことを分からないまま出します。以下は実際に画面に出る文言です。
+          </p>
+
+          <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
+            {PROOFS.map((p) => {
+              const Icon = p.Icon;
+              const warn = p.tone === "warn";
+              return (
+                <div
+                  key={p.label}
+                  className="flex flex-col rounded-3xl border border-line bg-surface p-6 shadow-sm"
+                >
+                  <span
+                    className={`grid h-12 w-12 place-items-center rounded-2xl ${
+                      warn ? "bg-amber-50" : "bg-brand-soft"
+                    }`}
+                  >
+                    <Icon
+                      size={24}
+                      strokeWidth={1.8}
+                      className={warn ? "text-amber-600" : "text-brand"}
+                    />
+                  </span>
+                  <p className="mt-4 text-xs font-bold tracking-wide text-ink-soft">
+                    {p.label}
+                  </p>
+                  <h3 className="mt-1 text-base font-bold text-ink">{p.headline}</h3>
+
+                  {/* アプリ内の実物の文言（画像ではなく本物のテキスト） */}
+                  <div
+                    className={`mt-4 rounded-xl px-3.5 py-3 text-xs leading-relaxed ${
+                      warn
+                        ? "bg-amber-50 text-amber-800"
+                        : "bg-brand-soft text-brand-dark"
+                    }`}
+                  >
+                    {p.quote}
+                  </div>
+
+                  <p className="mt-4 text-xs leading-relaxed text-ink-soft">{p.note}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="mx-auto mt-8 max-w-2xl rounded-2xl border border-line bg-surface px-5 py-4 text-center text-xs leading-relaxed text-ink-soft">
+            取り込んだレシピは<strong className="text-ink">確認画面を挟んでから</strong>
+            保存します。材料と手順、読み取れなかった箇所を見て、納得してから残せます。
+          </p>
+        </div>
+      </section>
+
+      {/* ===== 2本柱：在庫厳守・人数換算 ===== */}
+      <section className="bg-surface/70 px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-4xl">
+          <Kicker>Two promises</Kicker>
+          <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+            当たり前のことを、当たり前にやる。
+          </h2>
+          <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-2">
+            {PILLARS.map((p) => {
+              const Icon = p.Icon;
+              return (
+                <div
+                  key={p.eyebrow}
+                  className="flex flex-col rounded-3xl border border-line bg-paper p-7 shadow-sm"
+                >
+                  <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-soft">
+                    <Icon size={28} strokeWidth={1.7} className="text-brand" />
+                  </span>
+                  <p className="mt-4 text-xs font-bold tracking-wide text-brand">
+                    {p.eyebrow}
+                  </p>
+                  <h3 className="font-display mt-1 text-xl font-bold leading-snug text-ink">
+                    {p.title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-ink-soft">{p.body}</p>
+                  <ul className="mt-4 flex flex-col gap-2.5">
+                    {p.points.map((pt) => (
+                      <li key={pt} className="flex gap-2 text-xs leading-relaxed text-ink">
+                        <CheckCircle2
+                          size={16}
+                          strokeWidth={2}
+                          className="mt-px shrink-0 text-brand"
+                        />
+                        <span>{pt}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== レシピの入れ方は3つ ===== */}
+      <section className="px-6 py-16 sm:py-24">
+        <div className="mx-auto max-w-5xl">
+          <Kicker>Add a recipe</Kicker>
+          <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+            レシピの入れ方は、3つ。
+          </h2>
+          <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-relaxed text-ink-soft">
+            どの入れ方でも、読み取れなかった分量と出典の扱いは同じです。
+          </p>
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {SOURCES.map((s) => {
+              const Icon = s.Icon;
+              return (
+                <div
+                  key={s.title}
+                  className="rounded-3xl border border-line bg-surface p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                >
+                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-soft">
+                    <Icon size={22} strokeWidth={1.8} className="text-brand" />
+                  </span>
+                  <h3 className="mt-4 text-base font-bold text-ink">{s.title}</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-ink-soft">{s.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
       {/* ===== 主な機能 ===== */}
-      <section id="features" className="px-6 py-16 sm:py-24">
+      <section id="features" className="bg-surface/70 px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-5xl">
           <Kicker>Features</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
@@ -176,7 +426,7 @@ export default function LandingPage() {
               return (
                 <div
                   key={i}
-                  className="group rounded-3xl border border-line bg-surface p-7 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                  className="group rounded-3xl border border-line bg-paper p-7 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
                 >
                   <span
                     className={`mx-auto grid h-20 w-20 place-items-center rounded-full ${f.tint} transition group-hover:scale-105`}
@@ -202,8 +452,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ===== ぐるっと1周（4-5ステップの流れ） ===== */}
-      <section className="bg-surface/70 px-6 py-16 sm:py-24">
+      {/* ===== ぐるっと1周（在庫が回る流れ） ===== */}
+      <section className="px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-2xl">
           <Kicker>How it works</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
@@ -225,7 +475,7 @@ export default function LandingPage() {
                 <span className="relative z-10 grid h-20 w-20 shrink-0 place-items-center rounded-full border border-line bg-surface shadow-sm sm:h-[84px] sm:w-[84px]">
                   <Icon size={34} className="text-brand" strokeWidth={1.7} />
                 </span>
-                <div className="min-w-0 flex-1 rounded-2xl border border-line bg-paper px-5 py-4">
+                <div className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-5 py-4">
                   <div className="flex items-center gap-2">
                     <span className="font-display text-lg font-extrabold text-brand">
                       {s.n}
@@ -246,7 +496,7 @@ export default function LandingPage() {
       </section>
 
       {/* ===== ギャラリー ===== */}
-      <section className="px-6 py-16 sm:py-24">
+      <section className="bg-surface/70 px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-5xl">
           <Kicker>Gallery</Kicker>
           <h2 className="font-display mt-2 text-center text-2xl font-bold tracking-tight text-ink sm:text-3xl">
@@ -275,19 +525,21 @@ export default function LandingPage() {
       </section>
 
       {/* ===== CTA ===== */}
-      <section className="px-6 pb-20">
+      <section className="px-6 py-20">
         <div className="mx-auto max-w-3xl overflow-hidden rounded-[32px] bg-brand px-8 py-14 text-center text-white shadow-xl">
           <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
-            食材を、最後までおいしく使い切る。
+            作る前に、疑わなくていい。
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-white/90">
-            献立に悩む時間も、食材を捨てる罪悪感も、もういらない。
+            分からないことは分からないと書く。冷蔵庫にあるものだけで作る。
+            <br className="hidden sm:block" />
+            それだけで、毎日の料理はずいぶん楽になります。
           </p>
           <Link
             href="/"
             className="mt-8 inline-block rounded-full bg-white px-10 py-3.5 text-sm font-bold text-brand-dark shadow-lg transition hover:bg-paper active:scale-95"
           >
-            CookSync を始める
+            {APP_NAME} を始める
           </Link>
         </div>
       </section>
@@ -297,13 +549,13 @@ export default function LandingPage() {
         <div className="mx-auto max-w-5xl px-6 text-center">
           <Image
             src="/cooksync-logo.svg"
-            alt="CookSync"
+            alt={APP_NAME}
             width={140}
             height={80}
             className="mx-auto h-auto w-[120px] opacity-80"
           />
           <p className="mt-3 text-xs text-ink-soft">
-            個人開発のキッチンアプリ。Next.js / TypeScript / ローカルAI（Claude）で構築。
+            個人開発のキッチンアプリ。Next.js / TypeScript / AI（Claude）で構築。
           </p>
           <nav className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
             <Link href="/legal/support" className="underline underline-offset-4">
@@ -316,7 +568,7 @@ export default function LandingPage() {
               利用規約
             </Link>
           </nav>
-          <p className="mt-3 text-xs text-ink-soft/70">© 2026 CookSync</p>
+          <p className="mt-3 text-xs text-ink-soft/70">© 2026 {APP_NAME}</p>
         </div>
       </footer>
     </div>

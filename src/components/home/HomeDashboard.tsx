@@ -9,6 +9,7 @@ import { fridgeStore, shoppingStore, ratingStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import DishIcon from "@/components/DishIcon";
 import RecipeSources from "@/components/home/RecipeSources";
+import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 export default function HomeDashboard() {
   const recipes = useAllRecipes();
@@ -28,10 +29,10 @@ export default function HomeDashboard() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pt-5">
       {/* トップ：ロゴ＋アバター */}
-      <div className="mb-5 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <Image
           src="/cooksync-logo.svg"
-          alt="CookSync"
+          alt={APP_NAME}
           width={160}
           height={91}
           priority
@@ -45,6 +46,10 @@ export default function HomeDashboard() {
           <User size={18} />
         </Link>
       </div>
+      {/* 初めて開いた人に「他と何が違うか」を1行で。ロゴだけだと伝わらない。 */}
+      <p className="mt-1 mb-5 text-xs text-ink-soft">
+        {APP_TAGLINE}読み取れなかった分量は、そう書きます。
+      </p>
 
       {/* レシピをつくる（AI提案／動画／写真） */}
       <RecipeSources />
@@ -128,7 +133,7 @@ export default function HomeDashboard() {
               <>不足：{shortage.join("、")}</>
             ) : (
               <span className="font-medium text-ink-soft">
-                不足はありません。献立を決めると自動で追加されます。
+                不足はありません。献立を決めると、足りない分だけ店で買える単位で追加されます。
               </span>
             )}
           </p>
@@ -152,7 +157,7 @@ export default function HomeDashboard() {
         <div className="min-w-0 flex-1">
           <p className="font-bold text-brand-dark">余りものから作れるレシピ</p>
           <p className="text-xs leading-relaxed text-ink-soft">
-            期限が近い食材を活かす献立を提案します。
+            買い足しなし。冷蔵庫にあるものと基本調味料だけで作れる献立を提案します。
           </p>
         </div>
         <ChevronRight size={20} className="shrink-0 text-brand" />

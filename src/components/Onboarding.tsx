@@ -26,13 +26,16 @@ interface Slide {
   body: string;
 }
 
+// 1枚目で「他のレシピアプリと何が違うのか」を必ず言う。
+// 献立提案アプリはいくらでもあるので、ここで差が伝わらないと2枚目以降を読んでもらえない。
+// 書いてある内容は全部実装済み（missing/confidence 表示・出典URL必須・在庫厳守・人数換算）。
 const SLIDES: Slide[] = [
   {
     Icon: Sparkles,
     ring: "bg-brand-soft",
     color: "text-brand",
-    title: "CookSync へようこそ",
-    body: "冷蔵庫にある食材から、AIが今日の献立を提案します。「何作ろう」と「期限切れ」をまとめて解決。",
+    title: "AIが勝手に、分量を変えない",
+    body: "読み取れなかった材料は「読み取れなかった」と表示し、参考にしたページのURLも必ず残します。作ってから「量が違う」で失敗しないために。",
   },
   {
     Icon: Refrigerator,
@@ -45,15 +48,15 @@ const SLIDES: Slide[] = [
     Icon: ChefHat,
     ring: "bg-accent-soft",
     color: "text-accent",
-    title: "② 献立をAIにおまかせ",
-    body: "「献立を決める」を押すと、AIが実在の人気レシピを3案提案。期限が近い食材から優先して使います。",
+    title: "② 冷蔵庫にあるものだけで提案",
+    body: "初期設定は「在庫だけで作る」。基本調味料以外は、冷蔵庫に無い食材を使いません。1〜4人分の切り替えは手順の中の分量まで書き換わります。",
   },
   {
     Icon: ShoppingCart,
     ring: "bg-sky-100",
     color: "text-sky-500",
     title: "③ 買い物 & 作った記録",
-    body: "足りない材料は買い物リストへ自動で追加。作ったら「作った」を押すだけで在庫が自動で減ります。",
+    body: "足りない分だけ「1パック」など店で買える単位で買い物リストへ。作ったら「作った」を押すだけで在庫が自動で減ります。",
   },
 ];
 
