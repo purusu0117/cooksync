@@ -1,19 +1,19 @@
 // YouTube / TikTok のURLからレシピを起こす。
 //
-// 取り方は yt-dlp（uvx経由・ダウンロードはせずメタデータと字幕だけ）。
+// **取り方は素のHTTPだけ**（src/lib/videoMeta.ts）。以前は yt-dlp を uvx でサブプロセス起動して
+// いたが、Vercelでは起動できず公開環境では機能ごと隠すことになっていた。
+// 開発者のPCをワーカーにする案も出たが、配信するアプリの可用性を私物環境に依存させるのは論外。
+// 素のfetchで取れる範囲に作り直し、ローカルも本番も**同じ経路**にした。
+//
 //  - 概要欄(description)：料理系の投稿者は材料と分量をここに全部書いていることが多い＝一番正確
-//  - 自動生成字幕：手順の流れは分かるが **音声認識の誤変換が非常に多い**
-//    （実測：「ピーマン丼」→「ショー開催t1どん」）。分量の根拠には使えない。
+//  - 字幕：**取れなくなった**（timedtextは0バイトで返る）。取れない前提で組む。
 //
 // ⚠️ 方針：取れた情報だけでレシピにする。**分からない分量をAIの一般知識で埋めない**。
-//    （[[mistakes]] 2026-05-22「トランスクリプトが取れず一般知識で補完し出典と食い違った」の再発防止）
+//    概要欄が取れなかったときは、タイトルと投稿者からAIにWeb検索させて出典を明示させる。
 
-import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { after } from "next/server";
 import { askClaudeForJson } from "@/lib/ai";
-import { captionsToText, parseVtt } from "@/lib/vtt";
+import { fetchVideoMeta, isSupportedVideoUrl, type VideoMeta } from "@/lib/videoMeta";
 import { redis } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
@@ -44,162 +44,49 @@ async function getJob(id: string): Promise<Job | null> {
   return mem.get(id) ?? null;
 }
 
-/** 対応しているURLか（対応外を弾いて無駄な起動をしない） */
-export function isSupportedVideoUrl(url: string): boolean {
-  try {
-    const u = new URL(url.trim());
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    const h = u.hostname.replace(/^www\./, "").toLowerCase();
-    return (
-      h === "youtube.com" ||
-      h === "m.youtube.com" ||
-      h === "youtu.be" ||
-      h === "tiktok.com" ||
-      h === "vt.tiktok.com" ||
-      h === "vm.tiktok.com" ||
-      h.endsWith(".youtube.com") ||
-      h.endsWith(".tiktok.com")
-    );
-  } catch {
-    return false;
-  }
-}
-
-const UVX = process.platform === "win32" ? "uvx.exe" : "uvx";
-
-/** yt-dlp の英語エラーを、何をすればいいか分かる日本語にする */
+/** 内部のエラー文言を、何をすればいいか分かる日本語にする */
 function friendlyError(raw: string): string {
   const m = raw.toLowerCase();
-  if (m.includes("ip address is blocked") || m.includes("blocked from accessing")) {
-    return "動画サイト側からアクセスを弾かれました（TikTokで起きやすい）。少し時間をおくか、別の動画で試してください。";
+  if (m.includes("timeout") || m.includes("aborted")) {
+    return "動画の情報を取りに行って時間切れになりました。もう一度お試しください。";
   }
-  if (m.includes("sign in") || m.includes("login required") || m.includes("private")) {
-    return "非公開・ログインが必要な動画は取り込めません。公開されている動画のURLを使ってください。";
+  if (m.includes("quota") || m.includes("上限")) return raw;
+  if (m.includes("json") || m.includes("parse")) {
+    return "AIの応答を読み取れませんでした。もう一度お試しください。";
   }
-  if (m.includes("unsupported url") || m.includes("unable to extract")) {
-    return "このURLからは情報を取得できませんでした。動画の個別ページのURLか確認してください（一覧・タグページは不可）。";
-  }
-  if (m.includes("timeout")) {
-    return "動画の取得に時間がかかりすぎました。もう一度試してください。";
-  }
-  if (m.includes("enoent") || m.includes("uvx")) {
-    return "yt-dlp を起動できませんでした（uv が見つかりません）。";
-  }
-  return raw.slice(0, 200);
+  return "レシピの取り込みに失敗しました。別の動画URLでお試しください。";
 }
 
-/** yt-dlp を叩く（uvx経由なので事前インストール不要） */
-function runYtDlp(args: string[], timeoutMs: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(UVX, ["yt-dlp", ...args], { shell: false });
-    let out = "";
-    let err = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("yt-dlp timeout"));
-    }, timeoutMs);
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0 && !out) {
-        reject(new Error(err.trim().split("\n").slice(-2).join(" ") || `yt-dlp exit ${code}`));
-        return;
-      }
-      resolve(out);
-    });
-  });
-}
-
-interface VideoInfo {
-  title: string;
-  channel: string;
-  description: string;
-  duration: number;
-  webpageUrl: string;
-}
-
-async function fetchInfo(url: string): Promise<VideoInfo> {
-  const raw = await runYtDlp(
-    ["--skip-download", "--no-warnings", "--no-playlist", "--dump-json", url],
-    90_000,
-  );
-  const first = raw.trim().split("\n")[0];
-  const j = JSON.parse(first) as Record<string, unknown>;
-  return {
-    title: typeof j.title === "string" ? j.title : "",
-    channel:
-      (typeof j.channel === "string" && j.channel) ||
-      (typeof j.uploader === "string" && j.uploader) ||
-      "",
-    description: typeof j.description === "string" ? j.description : "",
-    duration: typeof j.duration === "number" ? j.duration : 0,
-    webpageUrl: typeof j.webpage_url === "string" ? j.webpage_url : url,
-  };
-}
-
-/** 字幕（日本語優先）を取れたら返す。取れなくてもエラーにしない */
-async function fetchCaptions(url: string, dir: string): Promise<string> {
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await runYtDlp(
-      [
-        "--skip-download",
-        "--no-warnings",
-        "--no-playlist",
-        "--write-subs",
-        "--write-auto-subs",
-        "--sub-langs",
-        "ja,ja-JP,ja-orig,en",
-        "-o",
-        path.join(dir, "cap.%(ext)s"),
-        url,
-      ],
-      120_000,
-    );
-    const files = (await fs.readdir(dir)).filter((f) => f.endsWith(".vtt"));
-    if (files.length === 0) return "";
-    // 日本語を優先
-    files.sort((a, b) => (a.includes(".ja") ? -1 : 0) - (b.includes(".ja") ? -1 : 0));
-    const vtt = await fs.readFile(path.join(dir, files[0]), "utf8");
-    return captionsToText(parseVtt(vtt));
-  } catch {
-    return "";
-  }
-}
-
-function buildPrompt(info: VideoInfo, captions: string): string {
+function buildPrompt(info: VideoMeta): string {
+  const hasDesc = info.description.trim().length > 0;
   return [
     "あなたは料理動画を家庭用レシピに書き起こすアシスタントです。次の動画の情報から、レシピをJSONで作ってください。",
     "",
-    `■ 動画タイトル: ${info.title}`,
-    `■ 投稿者: ${info.channel}`,
+    `■ 動画タイトル: ${info.title || "（取得できず）"}`,
+    `■ 投稿者: ${info.channel || "（取得できず）"}`,
     `■ 動画URL: ${info.webpageUrl}`,
     "",
     "■ 概要欄（投稿者本人が書いた説明。材料と分量が書かれていることが多く、最も信頼できる）:",
-    info.description ? info.description.slice(0, 4000) : "（概要欄なし）",
+    hasDesc ? info.description.slice(0, 6000) : "（取得できませんでした）",
     "",
-    captions
-      ? [
-          "■ 字幕（自動生成のため誤変換が多い。手順の流れの参考にはするが、食材名・分量の根拠にはしない）:",
-          captions,
-        ].join("\n")
-      : "■ 字幕: 取得できませんでした。",
+    // 字幕は YouTube 側で塞がれて取れなくなった。取れない前提で、
+    // 足りない分は「憶測」ではなく「Web検索で出典を見つける」方向に倒す。
+    "■ 字幕: 取得できません（動画配信側の仕様変更のため）。音声の内容は分かりません。",
     "",
     "【厳守】",
     "- **書かれていないことを推測で埋めない。** 分量が分からない材料は amount を「動画で明示なし」にする。",
     "  （それらしい数字を勝手に入れるのは禁止。あとで作る人が失敗する）",
-    "- 概要欄に公式レシピページのURL（バズレシピ.com、クックパッド、ブログ等）があれば WebFetch で開き、",
+    "- 概要欄に公式レシピページのURL（バズレシピ.com、クックパッド、ブログ等）があれば web_fetch で開き、",
     "  そこに書かれた正確な材料・分量・手順を最優先で使う。",
-    "- 字幕の誤変換は概要欄の材料名で補正する（例: 字幕の「ぴ」→概要欄の「ピーマン」）。",
-    "- 手順が動画から読み取れない場合は、無理に工程を作らず steps を短くしてよい。",
+    hasDesc
+      ? "- 概要欄に材料と分量が書かれていれば、それをそのまま使う（勝手に足し引きしない）。"
+      : // 概要欄が取れなかったときが一番危ない。ここで一般知識に頼らせない。
+        "- **概要欄が取れていない。** タイトルと投稿者名で web_search を行い、その投稿者の公式レシピページ（ブログ・クックパッド等）を探して、そこに書かれた材料・分量・手順を使うこと。見つからなければ、無理にレシピを作らず ingredients と steps を空にして confidence を low にする。一般知識で作った“それらしいレシピ”を返すのは禁止。",
+    "- 手順が読み取れない場合は、無理に工程を作らず steps を短くしてよい。",
+    "- **1文＝1作業**。動作が変わったら文を切る。とくに『〜たら』（煮立ったら等の“待ち”）は独立した文にする。",
     "- sources には必ず動画URLと投稿者名を入れる。参照した公式ページがあればそれも追加する。",
     "- 分量が読み取れなかった材料名を missing 配列に列挙する（UIで注意表示するため）。",
-    "- confidence は high / medium / low。概要欄に材料と分量が揃っていれば high、字幕頼りなら low。",
+    "- confidence は high / medium / low。概要欄に材料と分量が揃っていれば high、検索で見つけた出典なら medium、根拠が薄ければ low。",
     "",
     "出力は次のJSONだけ（前後に文章やコードフェンスを付けない）:",
     '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low"}',
@@ -216,37 +103,25 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    // 公開(Vercel)ではyt-dlpを起動できないので機能ごと止める
-    if (redis) {
-      return Response.json(
-        { error: "動画からの取り込みはローカル版のみ対応しています。" },
-        { status: 501 },
-      );
-    }
-
     const jobId = globalThis.crypto.randomUUID();
     await setJob(jobId, { status: "running", step: "動画の情報を取得中…", createdAt: Date.now() });
 
     after(async () => {
-      const dir = path.join(process.cwd(), ".data", "tmp", `video-${jobId}`);
       try {
-        const info = await fetchInfo(url);
+        const info = await fetchVideoMeta(url);
         await setJob(jobId, {
           status: "running",
-          step: "字幕を取得中…",
-          createdAt: Date.now(),
-        });
-        const captions = await fetchCaptions(url, dir);
-        await setJob(jobId, {
-          status: "running",
-          step: "AIがレシピに書き起こし中…",
+          // 何を根拠にしているかを進捗にも出す（概要欄が取れないと精度が落ちるため）
+          step: info.description
+            ? "AIがレシピに書き起こし中…（概要欄あり）"
+            : "AIが出典を検索中…（概要欄が取得できず）",
           createdAt: Date.now(),
         });
         const out = await askClaudeForJson<{
           recipe?: unknown;
           missing?: unknown;
           confidence?: unknown;
-        }>(buildPrompt(info, captions));
+        }>(buildPrompt(info));
         await setJob(jobId, {
           status: "done",
           recipe: out.recipe,
@@ -261,8 +136,6 @@ export async function POST(request: Request) {
           error: friendlyError(e instanceof Error ? e.message : "取り込みに失敗しました"),
           createdAt: Date.now(),
         });
-      } finally {
-        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
       }
     });
 

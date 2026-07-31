@@ -12,9 +12,9 @@ export function GET() {
     // 公開時の設定状況をひと目で確認（鍵の中身は出さない）
     aiProvider: process.env.ANTHROPIC_API_KEY ? "api" : "local",
     db: hasRedis ? "redis" : "local-json",
-    // 動画からの取り込みは yt-dlp(uvx) をサブプロセスで起動するのでローカル版だけ。
-    // クライアントはこれを見て入口ごと隠す（押しても必ず501になる機能を出さない＝
-    // App Store審査ガイドライン 2.1「動作しない機能を含めない」対策）。
-    videoImport: !hasRedis,
+    // 動画からの取り込みは素のHTTPだけで動くようになったので、ローカルも公開も同じく使える。
+    // （以前は yt-dlp のサブプロセス起動が必要でVercelでは動かず、ここを false にして
+    //   入口ごと隠していた。フィールド自体はクライアントが見ているので残す）
+    videoImport: true,
   });
 }
