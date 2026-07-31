@@ -302,6 +302,40 @@ export async function guardAi(
   return { ok: true };
 }
 
+/**
+ * ログイン試行のレート制限（総当たり対策）。
+ *
+ * ⚠️ 監査（2026-08-01）まで **試行回数の制限も遅延も一切無かった**。
+ *    パスワードは8文字以上という条件しかないので、辞書攻撃を延々と試せる状態だった。
+ *    scrypt で保存しているので漏れても即解読はされないが、
+ *    「何回でも試せる」こと自体が穴なので入口で止める。
+ *
+ * IPごとに15分あたり `limit` 回まで。超えたら false。
+ * 数えられない（Redis障害等）ときは通す＝ログインできなくなる方が困るため。
+ */
+export async function checkLoginAttempt(request: Request, limit = 10): Promise<boolean> {
+  if (!quotaEnforced()) return true;
+  const ipk = hashIp(clientIp(request));
+  // 15分の窓。エポックを900秒で割って窓IDにする（スライドではないが十分）
+  const win = Math.floor(Date.now() / (15 * 60 * 1000));
+  try {
+    if (redis) {
+      const k = `cooksync:login:${ipk}:${win}`;
+      const n = await redis.incr(k);
+      if (n === 1) await redis.expire(k, 16 * 60);
+      return n <= limit;
+    }
+    const db = await readLocal();
+    const key = `login:${ipk}:${win}`;
+    db.ip[key] = (db.ip[key] ?? 0) + 1;
+    const ok = db.ip[key] <= limit;
+    await writeLocal(db);
+    return ok;
+  } catch {
+    return true;
+  }
+}
+
 export async function checkIpOnly(request: Request): Promise<boolean> {
   if (!quotaEnforced()) return true;
   const ipk = hashIp(clientIp(request));

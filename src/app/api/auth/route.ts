@@ -12,6 +12,7 @@
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { createSession, sessionCookie } from "@/lib/session";
 import { getUser, normEmail as norm, putUser } from "@/lib/userStore";
+import { checkLoginAttempt } from "@/lib/quotaServer";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,14 @@ export async function POST(request: Request) {
       email?: string;
       password?: string;
     };
+    // 総当たり対策。登録も含めて数える（捨てアドの大量作成も抑えられる）
+    if (!(await checkLoginAttempt(request))) {
+      return Response.json(
+        { error: "試行回数が多すぎます。しばらく待ってからお試しください。" },
+        { status: 429 },
+      );
+    }
+
     const em = norm(email || "");
     if (!em || !password) {
       return Response.json(
