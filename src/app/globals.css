@@ -29,11 +29,16 @@
 
 html {
   background-color: var(--color-paper);
+  /* iOSのラバーバンド（画面を引っ張ると document ごと動く）を止める。
+     これが無いと position:fixed のボトムタブまで一緒に持ち上がる。 */
+  overscroll-behavior: none;
+  height: 100%;
 }
 
 body {
   /* 背景は最背面の固定レイヤー(.app-bg)で描く。body自体は透明にして覆わない。 */
   background-color: transparent;
+  overscroll-behavior: none;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-feature-settings: "palt";

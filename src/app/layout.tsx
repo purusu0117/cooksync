@@ -4,6 +4,7 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import AppGate from "@/components/AppGate";
 import Onboarding from "@/components/Onboarding";
+import ScrollReset, { SCROLL_ROOT_ID } from "@/components/ScrollReset";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 // ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝Zen角ゴ
@@ -50,12 +51,22 @@ export default function RootLayout({
       lang="ja"
       className={`${display.variable} ${sans.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
+      {/*
+        アプリシェル構造：body自体はスクロールさせず、中身(main)だけをスクロールさせる。
+        document がスクロールしないので、iOSで画面を引っ張ってもボトムタブが動かない
+        （position:fixed は iOS のラバーバンドでは一緒に持ち上がってしまうため、
+         そもそもタブを通常フローの最下段に置いて“動きようがない”状態にする）。
+      */}
+      <body className="flex h-dvh flex-col overflow-hidden">
         <div className="app-bg" aria-hidden />
-        <main className="flex-1 pb-24">
+        <main
+          id={SCROLL_ROOT_ID}
+          className="flex-1 overflow-y-auto overscroll-contain pb-6"
+        >
           <AppGate>{children}</AppGate>
         </main>
         <Nav />
+        <ScrollReset />
         <Onboarding />
       </body>
     </html>

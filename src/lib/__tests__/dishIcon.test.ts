@@ -40,6 +40,20 @@ describe("dishIconOf（料理名から専用イラストを選ぶ）", () => {
     expect(dishIconOf("なすの照り焼き")).toBe("vegetable");
     expect(dishIconOf("エビとアボカドの生春巻き 自家製スイートチリ")).toBe("roll");
   });
+  it("シードレシピ6件が正しい絵になる（主食タグへの誤フォールバック防止）", () => {
+    // アクアパッツァは staple:"パン" なのでパンの絵に落ちていた
+    expect(dishIconOf("アクアパッツァ", "パン")).toBe("fish");
+    // ナポリタンは staple:"麺" なのでラーメンの絵に落ちていた
+    expect(dishIconOf("喫茶店風ナポリタン", "麺")).toBe("pasta");
+    expect(dishIconOf("油淋鶏（揚げ焼き）", "ご飯")).toBe("fried");
+    expect(dishIconOf("豚の生姜焼き", "ご飯")).toBe("meat");
+    expect(dishIconOf("やみつき鶏のっけごはん", "ご飯")).toBe("donburi");
+    expect(dishIconOf("トマトチーズリゾット（ご飯で簡単）", "ご飯")).toBe("friedrice");
+  });
+  it("「鍋」を含む炒め物を煮込みにしない", () => {
+    expect(dishIconOf("回鍋肉")).toBe("stirfry");
+    expect(dishIconOf("寄せ鍋")).toBe("stew");
+  });
   it("名前で決まらなければ主食タグ、それも無ければ皿", () => {
     expect(dishIconOf("謎の一品", "麺")).toBe("noodle");
     expect(dishIconOf("謎の一品", "パン")).toBe("bread");

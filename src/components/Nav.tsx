@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, type MouseEvent } from "react";
 import {
   Home,
   BookOpen,
@@ -23,33 +23,6 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
-  // iOSのソフトキーボードが開くと fixed要素が画面中央に張り付くので、
-  // キーボード中はナビを下にしまう（visualViewportの高さで検知）。
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  // iOS Safari/PWAでは fixed は「レイアウトビューポート」基準なので、
-  // アドレスバーの伸縮・ラバーバンドスクロールで画面下からズレて“上に来る”ことがある。
-  // 実際に見えている領域（visualViewport）の下端との差分を bottom に足して打ち消す。
-  const [bottomGap, setBottomGap] = useState(0);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const sync = () => {
-      // 表示領域がレイアウト高より150px以上小さい＝キーボード等で縮んでいる
-      const kb = window.innerHeight - vv.height > 150;
-      setKeyboardOpen(kb);
-      // 可視領域の下端 = vv.offsetTop + vv.height。レイアウト高との差＝下にはみ出た分。
-      const gap = window.innerHeight - (vv.height + vv.offsetTop);
-      setBottomGap(kb ? 0 : Math.max(0, Math.round(gap)));
-    };
-    sync();
-    vv.addEventListener("resize", sync);
-    vv.addEventListener("scroll", sync);
-    return () => {
-      vv.removeEventListener("resize", sync);
-      vv.removeEventListener("scroll", sync);
-    };
-  }, []);
 
   // レシピ内のページ（一覧/詳細）に来たら、最後に開いた場所を覚える
   useEffect(() => {
@@ -84,13 +57,9 @@ export default function Nav() {
   }
 
   return (
-    <nav
-      // translateZ(0)＝合成レイヤーに固定（iOSでのfixedのちらつき/ズレ対策）
-      style={{ bottom: bottomGap, willChange: "transform" }}
-      className={`fixed inset-x-0 z-30 transform-gpu border-t border-line bg-surface/95 backdrop-blur-md transition-transform duration-200 ${
-        keyboardOpen ? "translate-y-full" : "translate-y-0"
-      }`}
-    >
+    // position:fixed をやめ、アプリシェル（body=flex縦）の最下段に置く。
+    // document がスクロールしないので、iOSで画面を引っ張ってもタブは動かない。
+    <nav className="shrink-0 border-t border-line bg-surface/95 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)]">
         {TABS.map((t) => {
           const active = isActive(t.href);
