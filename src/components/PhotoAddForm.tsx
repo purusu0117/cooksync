@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Camera, X } from "lucide-react";
 import { guessItem } from "@/lib/guess";
 import { zoneForCategory, todayISO, type FridgeItem } from "@/lib/food";
 import { readApiError, useUsage } from "@/lib/usage";
 import { getUid } from "@/lib/syncStore";
+import { isNativeApp } from "@/lib/native";
+import { takeOrPickPhoto } from "@/lib/nativeCamera";
 
 interface Props {
   onAddMany: (items: FridgeItem[]) => void;
@@ -16,12 +18,39 @@ export default function PhotoAddForm({ onAddMany }: Props) {
   const [error, setError] = useState("");
   const [items, setItems] = useState<{ name: string; checked: boolean }[]>([]);
   const [done, setDone] = useState("");
+  // アプリ版はOSのカメラ/フォトピッカーを直接呼ぶ。Web版は <input type="file"> のまま。
+  // 初期値falseでマウント後に確定させる＝サーバー描画（＝Web版）とズレさせない。
+  const [native, setNative] = useState(false);
   const usage = useUsage();
 
+  useEffect(() => {
+    // マウント後に確定させる（effect本体での同期setStateを避ける）
+    const t = setTimeout(() => setNative(isNativeApp()), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  // ネイティブ：OSのアクションシートで「写真を撮る／ライブラリから選ぶ」
+  async function onNativePick() {
+    if (loading) return;
+    setError("");
+    try {
+      const file = await takeOrPickPhoto();
+      if (file) await scan(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "写真を取得できませんでした");
+    }
+  }
+
+  // Web：<input type="file"> から
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // 同じ写真を選び直せるように
     if (!file) return;
+    await scan(file);
+  }
+
+  // 取得経路がどちらでも、ここから先（送信・表示）は同じ
+  async function scan(file: File) {
     // 事前チェックは表示用。文言はサーバーの429と揃える（説明がブレないように）。
     if (!usage.canUse("scan")) {
       setError(usage.limitMessage("scan"));
@@ -97,18 +126,30 @@ export default function PhotoAddForm({ onAddMany }: Props) {
         <strong>賞味期限とカテゴリは自動で推定</strong>します（あとで編集可）。
       </p>
 
-      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99]">
-        <Camera size={18} />
-        {loading ? "読み取り中…（10〜30秒）" : "写真を撮る / 選ぶ"}
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={onFile}
+      {native ? (
+        <button
+          type="button"
+          onClick={onNativePick}
           disabled={loading}
-          className="hidden"
-        />
-      </label>
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99] disabled:bg-line disabled:text-ink-soft"
+        >
+          <Camera size={18} />
+          {loading ? "読み取り中…（10〜30秒）" : "写真を撮る / 選ぶ"}
+        </button>
+      ) : (
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-semibold text-white transition hover:bg-brand-dark active:scale-[0.99]">
+          <Camera size={18} />
+          {loading ? "読み取り中…（10〜30秒）" : "写真を撮る / 選ぶ"}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={onFile}
+            disabled={loading}
+            className="hidden"
+          />
+        </label>
+      )}
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       {done && <p className="mt-2 text-xs font-medium text-brand-dark">{done}</p>}

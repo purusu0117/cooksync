@@ -1,12 +1,14 @@
 "use client";
 
-// クライアント：Service Worker登録＋プッシュ購読。
-// ※ iOSは「ホーム画面に追加したPWA」かつ通知許可済みのときのみ届く（Safariタブ不可）。
-// ※ ネイティブアプリ版（Capacitor/WKWebView）は Web Push を受け取れない。
-//    許可ダイアログだけ出て一生届かない、という状態になるので何もしない。
+// クライアント：通知の有効化。呼び出し側は環境を意識しなくてよいよう、ここで振り分ける。
+//  - Web（ブラウザ/PWA）… Service Worker登録＋Web Push購読。
+//    ※ iOSは「ホーム画面に追加したPWA」かつ通知許可済みのときのみ届く（Safariタブ不可）。
+//  - ネイティブアプリ（Capacitor/WKWebView）… Web Push は受け取れないので APNs で登録する
+//    （nativePush.ts）。以前はここで何もせず、アプリ版だけ通知が届かなかった。
 
 import { getUid } from "@/lib/syncStore";
 import { isNativeApp } from "@/lib/native";
+import { enableNativePush } from "@/lib/nativePush";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -20,7 +22,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 /** 通知を有効化（許可要求→SW登録→購読→サーバー送信）。成功でtrue */
 export async function enablePush(): Promise<boolean> {
   try {
-    if (isNativeApp()) return false; // ネイティブは Web Push 非対応（許可も求めない）
+    if (isNativeApp()) return await enableNativePush({ ask: true }); // ネイティブはAPNs
     if (
       typeof window === "undefined" ||
       !("serviceWorker" in navigator) ||
@@ -63,7 +65,11 @@ export async function enablePush(): Promise<boolean> {
 /** すでに許可済みなら静かに購読を確保（許可ダイアログは出さない） */
 export async function ensurePushIfGranted(): Promise<void> {
   try {
-    if (isNativeApp()) return; // ネイティブは Web Push 非対応
+    if (isNativeApp()) {
+      // ネイティブは許可済みのときだけ静かに端末トークンを取り直す（ダイアログは出さない）
+      await enableNativePush({ ask: false });
+      return;
+    }
     if (
       typeof window === "undefined" ||
       !("Notification" in window) ||

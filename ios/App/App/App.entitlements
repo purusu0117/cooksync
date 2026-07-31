@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- APNs（サーバーからのプッシュ通知）。これが無いと端末登録の時点で失敗する。
+	     TestFlight/App Store 配布は production。Xcodeの開発ビルドで試すときだけ development にする。 -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

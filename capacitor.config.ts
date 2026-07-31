@@ -16,6 +16,12 @@ const config: CapacitorConfig = {
     url: serverUrl,
     cleartext: process.env.CAPACITOR_SERVER_CLEARTEXT === "1",
   },
+  plugins: {
+    PushNotifications: {
+      // アプリを開いたままでも通知を表示する（タイマー完了に気づけるように）
+      presentationOptions: ["badge", "sound", "alert"],
+    },
+  },
 };
 
 export default config;

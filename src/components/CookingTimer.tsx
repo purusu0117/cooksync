@@ -8,7 +8,8 @@
 //  - スクロールしても見える固定の完了バナー
 //  - OS通知（Notifications API・許可時）
 //  - 実行中は画面スリープ防止（Wake Lock・対応端末）
-// ※ iOSはバイブAPI非対応。アプリを離れている間の通知が要る場合はネイティブ化が必要。
+// ※ iOSはバイブAPI非対応。離脱中の通知はサーバー予約（/api/timer）から届く
+//    ＝Webは Web Push、アプリ版は APNs（pushClient.ts が振り分ける）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Timer, X, Pause, Play, Plus, BellOff } from "lucide-react";
@@ -226,8 +227,9 @@ export default function CookingTimer({
       /* 音が出せない端末は無視 */
     }
     try {
-      // ネイティブアプリ版（WKWebView）は Web の通知が使えないので許可も求めない。
-      // 画面を開いている間のアラーム音・完了バナーはネイティブでもそのまま動く。
+      // ここで許可を求めるのは Web の Notification API（画面を開いている間の完了バナー）。
+      // ネイティブアプリ版には Notification API が無く、通知は enablePush()＝APNs 側が担当する
+      // ので、ここでは何もしない（アラーム音は両方でそのまま鳴る）。
       if (
         !isNativeApp() &&
         "Notification" in window &&

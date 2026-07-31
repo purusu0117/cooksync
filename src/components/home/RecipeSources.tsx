@@ -10,12 +10,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Camera, ChefHat, ChevronRight, Link2, Loader2, Video } from "lucide-react";
+import { Camera, ChefHat, ChevronRight, Images, Link2, Loader2, Video } from "lucide-react";
 import ImportedRecipePreview, {
   type ImportResult,
 } from "@/components/recipes/ImportedRecipePreview";
 import { getUid } from "@/lib/syncStore";
 import { readApiError, useUsage } from "@/lib/usage";
+import { isNativeApp } from "@/lib/native";
+import { MAX_RECIPE_PHOTOS, pickPhotosFromLibrary, takePhoto } from "@/lib/nativeCamera";
 
 type Mode = "video" | "photo" | null;
 
@@ -32,6 +34,15 @@ export default function RecipeSources() {
   // 動画からの取り込みは yt-dlp を起動できるローカル版だけ。公開サーバーでは必ず501になるので、
   // 入口ごと出さない（押しても失敗する機能を審査担当者に触らせないため。ガイドライン2.1）。
   const [videoEnabled, setVideoEnabled] = useState(false);
+  // アプリ版はOSのカメラ/フォトピッカーを直接呼ぶ。Web版は <input type="file"> のまま。
+  // 初期値falseでマウント後に確定させる＝サーバー描画（＝Web版）とズレさせない。
+  const [native, setNative] = useState(false);
+
+  useEffect(() => {
+    // マウント後に確定させる（effect本体での同期setStateを避ける）
+    const t = setTimeout(() => setNative(isNativeApp()), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -111,9 +122,30 @@ export default function RecipeSources() {
   }
 
   // ---- 写真 ----
+  // Web：<input type="file">（複数選択可）から
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じ写真を選び直せるように
+    await runPhotos(files);
+  }
+
+  // ネイティブ：撮影（1枚）／ライブラリから複数選択（4枚まで）
+  async function onNativePhotos(mode: "camera" | "library") {
+    if (loading) return;
+    setError("");
+    try {
+      const files =
+        mode === "camera"
+          ? await takePhoto().then((f) => (f ? [f] : []))
+          : await pickPhotosFromLibrary(MAX_RECIPE_PHOTOS);
+      await runPhotos(files);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "写真を取得できませんでした");
+    }
+  }
+
+  // 取得経路がどちらでも、ここから先（送信・表示）は同じ
+  async function runPhotos(files: File[]) {
     if (files.length === 0) return;
     reset();
     // 事前チェックは表示用（押す前に気づけるように）。文言はサーバーの429と揃える。
@@ -237,23 +269,49 @@ export default function RecipeSources() {
             </>
           ) : (
             <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={onFile}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:bg-line disabled:text-ink-soft"
-              >
-                <Camera size={16} strokeWidth={2} />
-                写真を選ぶ・撮る（複数可）
-              </button>
+              {native ? (
+                // アプリ版：撮影とライブラリをOSのUIで分けて出す（複数選択はライブラリ側）
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNativePhotos("camera")}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:bg-line disabled:text-ink-soft"
+                  >
+                    <Camera size={16} strokeWidth={2} />
+                    写真を撮る
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNativePhotos("library")}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-brand bg-surface py-2.5 text-sm font-semibold text-brand-dark transition hover:bg-brand-soft disabled:border-line disabled:text-ink-soft"
+                  >
+                    <Images size={16} strokeWidth={2} />
+                    ライブラリから選ぶ
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={onFile}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={loading}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:bg-line disabled:text-ink-soft"
+                  >
+                    <Camera size={16} strokeWidth={2} />
+                    写真を選ぶ・撮る（複数可）
+                  </button>
+                </>
+              )}
               <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
                 レシピ本のページ、SNSのスクショ、手書きメモでOK（4枚まで）。
                 <strong>順番はバラバラでも大丈夫</strong>— 調理の進み方から並べ直して手順にします。

@@ -65,4 +65,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+    // APNs（サーバーからのプッシュ通知）のトークン受信を Capacitor の PushNotifications プラグインへ転送する。
+    // これが無いと register() を呼んでも 'registration' イベントが発火せず、端末トークンが取れない
+    // （＝タイマー完了やレシピ探索完了の通知が一切届かない）。CashSyncで実際に踏んだ落とし穴。
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
 }

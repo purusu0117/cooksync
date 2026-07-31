@@ -55,7 +55,6 @@ import {
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
 import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
-import { isNativeApp } from "@/lib/native";
 import { getUid } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
 import { readApiError, useUsage } from "@/lib/usage";
@@ -136,9 +135,6 @@ export default function MealWizard() {
   const [aiPreview, setAiPreview] = useState<Recipe | null>(null); // 候補の詳細プレビュー（未確定）
   const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
   const [searchRound, setSearchRound] = useState(0); // 探索回数（角度を変える）
-  // ネイティブアプリ版（Capacitor/WKWebView）は Web Push が届かないので通知の案内を出さない。
-  // 初期値falseでマウント後に確定させる＝サーバー描画（＝Web版）とズレさせない。
-  const [isNative, setIsNative] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredRef = useRef(false); // 復元が終わるまで保存/削除しない（初期timingでの誤削除防止）
   const [comment, setComment] = useState("");
@@ -474,7 +470,6 @@ export default function MealWizard() {
     const t = setTimeout(() => {
       restoreSnapshot();
       resume();
-      setIsNative(isNativeApp()); // ネイティブ版かの確定も同じタイミングで
       restoredRef.current = true; // 以降のみ保存/削除を有効化
     }, 0);
     void ensurePushIfGranted();
@@ -652,10 +647,8 @@ export default function MealWizard() {
       {guide === "meal" && (
         <div className="mb-5 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3.5">
           <p className="text-sm font-semibold leading-relaxed text-accent-dark">
-            最後のステップ！条件はお好みでOK。下の「AIでレシピを探す」を押してみましょう（3〜4分かかります。
-            {isNative
-              ? "この画面を開いたままお待ちください）。"
-              : "完了したら通知でお知らせします）。"}
+            {/* アプリ版もAPNsで通知が届くようになったので、案内はWeb版と同じ文言でよい */}
+            最後のステップ！条件はお好みでOK。下の「AIでレシピを探す」を押してみましょう（3〜4分かかります。完了したら通知でお知らせします）。
           </p>
         </div>
       )}

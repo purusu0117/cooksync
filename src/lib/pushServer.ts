@@ -1,5 +1,8 @@
-// サーバー専用：Web Push（VAPID）。アプリを閉じていても通知を届ける。
-//  - 公開（Vercel）：VAPID鍵は環境変数、購読はRedisにユーザー別保存。
+// サーバー専用：プッシュ通知の送信口。アプリを閉じていても通知を届ける。
+//  - Web（ブラウザ/PWA）… Web Push（VAPID）
+//  - ネイティブアプリ（iOS）… APNs（apns.ts）。WKWebViewは Web Push を受け取れないため。
+// 宛先は同じ uid で持ち、sendPush() が両方へ振り分ける（同じ人がWebとアプリを併用してもよい）。
+//  - 公開（Vercel）：VAPID鍵は環境変数、購読/端末トークンはRedisにユーザー別保存。
 //  - ローカル：.data/ のファイル（VAPID鍵は自動生成）。
 // Route Handlerからのみ使用。
 
@@ -7,6 +10,7 @@ import webpush from "web-push";
 import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "@/lib/kv";
+import { sendApns } from "@/lib/apns";
 
 interface PushSub {
   endpoint: string;
@@ -16,6 +20,7 @@ interface PushSub {
 const DIR = path.join(process.cwd(), ".data");
 const VAPID_FILE = path.join(DIR, "vapid.json");
 const SUBS_FILE = path.join(DIR, "push-subs.json");
+const DEVICES_FILE = path.join(DIR, "push-devices.json");
 const SUBJECT = process.env.VAPID_SUBJECT || "mailto:daito150117@gmail.com";
 
 let configured = false;
@@ -50,9 +55,11 @@ export async function getPublicKey(): Promise<string> {
 }
 
 // ---- 購読の保存（ユーザー別）----
+function safeUid(uid: string): string {
+  return (uid || "anon").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "anon";
+}
 function subsKey(uid: string): string {
-  const safe = (uid || "anon").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "anon";
-  return `cooksync:push:${safe}`;
+  return `cooksync:push:${safeUid(uid)}`;
 }
 
 async function readSubs(uid: string): Promise<PushSub[]> {
@@ -86,20 +93,100 @@ export async function addSubscription(uid: string, sub: PushSub): Promise<void> 
   }
 }
 
-export async function sendPush(
+// ---- ネイティブアプリの端末トークン（APNs用・ユーザー別）----
+function devicesKey(uid: string): string {
+  return `cooksync:apns:${safeUid(uid)}`;
+}
+// トークン→所有uid。同じiPhoneを別uidで使い回したとき、前の持ち主から外すために持つ
+function ownerKey(token: string): string {
+  return `cooksync:apnsowner:${token}`;
+}
+
+async function readDeviceFile(): Promise<Record<string, string[]>> {
+  try {
+    const v = JSON.parse(await fs.readFile(DEVICES_FILE, "utf8"));
+    return v && typeof v === "object" ? (v as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+}
+async function writeDeviceFile(map: Record<string, string[]>): Promise<void> {
+  await fs.mkdir(DIR, { recursive: true });
+  await fs.writeFile(DEVICES_FILE, JSON.stringify(map), "utf8");
+}
+
+async function readDevices(uid: string): Promise<string[]> {
+  if (redis) {
+    const v = await redis.get<unknown>(devicesKey(uid));
+    if (!v) return [];
+    const arr = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(arr) ? (arr as string[]) : [];
+  }
+  return (await readDeviceFile())[safeUid(uid)] || [];
+}
+async function writeDevices(uid: string, tokens: string[]): Promise<void> {
+  if (redis) {
+    await redis.set(devicesKey(uid), JSON.stringify(tokens));
+    return;
+  }
+  const map = await readDeviceFile();
+  map[safeUid(uid)] = tokens;
+  await writeDeviceFile(map);
+}
+
+/** ネイティブアプリの端末トークンを登録（アプリ起動時に毎回呼ばれる＝冪等） */
+export async function addDevice(uid: string, token: string): Promise<void> {
+  if (!token) return;
+  if (redis) {
+    const prev = await redis.get<string>(ownerKey(token));
+    if (prev && prev !== safeUid(uid)) {
+      // 端末の持ち主が変わった → 前のuidの一覧から外す（他人に通知が飛ばないように）
+      const old = await readDevices(prev);
+      if (old.includes(token)) await writeDevices(prev, old.filter((t) => t !== token));
+    }
+    await redis.set(ownerKey(token), safeUid(uid));
+  } else {
+    const map = await readDeviceFile();
+    let changed = false;
+    for (const key of Object.keys(map)) {
+      if (key !== safeUid(uid) && map[key]?.includes(token)) {
+        map[key] = map[key].filter((t) => t !== token);
+        changed = true;
+      }
+    }
+    if (changed) await writeDeviceFile(map);
+  }
+  const list = await readDevices(uid);
+  if (!list.includes(token)) await writeDevices(uid, [...list, token]);
+}
+
+/** 端末トークンの削除（token省略でそのuidの全端末） */
+export async function removeDevice(uid: string, token?: string): Promise<void> {
+  const list = await readDevices(uid);
+  const next = token ? list.filter((t) => t !== token) : [];
+  if (next.length !== list.length) await writeDevices(uid, next);
+  if (redis) {
+    for (const t of token ? [token] : list) await redis.del(ownerKey(t));
+  }
+}
+
+/** Web Push（ブラウザ/PWA）へ送る。届いた件数を返す */
+async function sendWebPush(
   uid: string,
   payload: { title: string; body: string; url?: string },
-): Promise<void> {
+): Promise<number> {
   await ensureVapid();
   const subs = await readSubs(uid);
-  if (subs.length === 0) return;
+  if (subs.length === 0) return 0;
   const json = JSON.stringify(payload);
   const alive: PushSub[] = [];
+  let sent = 0;
   await Promise.all(
     subs.map(async (s) => {
       try {
         await webpush.sendNotification(s, json);
         alive.push(s);
+        sent++;
       } catch (e) {
         const code = (e as { statusCode?: number }).statusCode;
         // 404/410 = 失効した購読 → 破棄。それ以外は残す
@@ -108,4 +195,40 @@ export async function sendPush(
     }),
   );
   if (alive.length !== subs.length) await writeSubs(uid, alive);
+  return sent;
+}
+
+/** ネイティブアプリ（iOS）へ APNs で送る。届いた件数を返す */
+async function sendNativePush(
+  uid: string,
+  payload: { title: string; body: string; url?: string },
+): Promise<number> {
+  const tokens = await readDevices(uid);
+  if (tokens.length === 0) return 0;
+  const { sent, dead } = await sendApns(tokens, payload);
+  if (dead.length > 0) {
+    await writeDevices(
+      uid,
+      tokens.filter((t) => !dead.includes(t)),
+    );
+    if (redis) for (const t of dead) await redis.del(ownerKey(t));
+  }
+  return sent;
+}
+
+/**
+ * 通知を送る。宛先の種類で自動的に振り分ける。
+ *  - ブラウザ/PWAの購読 → Web Push
+ *  - ネイティブアプリの端末トークン → APNs
+ * 片方しか無ければ片方だけ送る（どちらも無ければ何もしない）。
+ */
+export async function sendPush(
+  uid: string,
+  payload: { title: string; body: string; url?: string },
+): Promise<{ web: number; native: number }> {
+  const [web, native] = await Promise.all([
+    sendWebPush(uid, payload).catch(() => 0),
+    sendNativePush(uid, payload).catch(() => 0),
+  ]);
+  return { web, native };
 }
