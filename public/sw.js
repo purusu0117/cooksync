@@ -59,10 +59,21 @@ const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.jpg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
+  // ⚠️ addAll は**1つでも404だと全部入らない**（監査 中-16）。
+  //    オフライン用ページが入らないと、いざという時に真っ白になる単一障害点なので、
+  //    1つずつ入れて失敗したものだけ諦める。
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(PRECACHE))
+      .then((c) =>
+        Promise.all(
+          PRECACHE.map((u) =>
+            fetch(u)
+              .then((res) => (res.ok ? c.put(u, res) : null))
+              .catch(() => null),
+          ),
+        ),
+      )
       .then(() => self.skipWaiting())
       .catch(() => self.skipWaiting()),
   );
@@ -93,8 +104,10 @@ self.addEventListener("fetch", (event) => {
         (hit) =>
           hit ||
           fetch(req).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
             return res;
           }),
       ),
@@ -107,8 +120,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy));
+          }
           return res;
         })
         .catch(() =>
@@ -118,6 +133,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // App Router のクライアント遷移(`?_rsc=`)はキャッシュしない。
+  // 入れてしまうとデプロイ後に毎回 stale → buildId不一致で全画面リロードになる。
+  if (url.searchParams.has("_rsc")) return;
+
   // 画像などのその他：キャッシュ優先で通信を減らす
   event.respondWith(
     caches.match(req).then(
@@ -125,8 +144,14 @@ self.addEventListener("fetch", (event) => {
         hit ||
         fetch(req)
           .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            // ⚠️ **ステータスを見ずに put してはいけない**（監査 高-3）。
+            //    404/5xx をそのまま焼き込むと、キャッシュ名にバージョンが無いので
+            //    **二度と消えない**。実際、参照されている画像を一時的に消したことがあり、
+            //    その状態でアクセスされていたら「戻しても壊れたまま」になっていた。
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
             return res;
           })
           .catch(() => hit),

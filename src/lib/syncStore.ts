@@ -80,6 +80,9 @@ let hydrated = false;
 let syncing = false;
 let queued = false;
 let offline = false;
+// 401/403＝セッション切れ。待っても直らないので「オフライン」とは別物として扱う。
+// これを分けないと画面に『接続が戻り次第、自動で送ります』と嘘が出る（監査 高-4）。
+let authRequired = false;
 let lastError: string | null = null;
 let attempts = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -434,6 +437,7 @@ async function syncNow(): Promise<void> {
   persistMeta();
   hydrated = true;
   offline = false;
+  authRequired = false;
   lastError = null;
   notify();
 }
@@ -461,12 +465,14 @@ async function runSync(): Promise<void> {
   try {
     await syncNow();
     attempts = 0;
+    authRequired = false;
   } catch (e) {
     attempts += 1;
     offline = true;
     // 401/403＝セッションが切れている。待っても直らないので自動再送は止める。
     // ただし手元のデータと未送信の記録はそのまま残すので、ログインし直せば送られる。
     const auth = e instanceof HttpError && (e.status === 401 || e.status === 403);
+    authRequired = auth;
     lastError = auth
       ? "ログインの有効期限が切れています。マイページからログインし直してください。"
       : e instanceof Error
@@ -626,6 +632,8 @@ export interface SyncState {
   hasCache: boolean;
   /** 直近の通信に失敗している */
   offline: boolean;
+  /** セッション切れ。オフラインではないので「自動で送ります」と言ってはいけない */
+  authRequired: boolean;
   /** まだ送れていない変更の数 */
   pending: number;
   error: string | null;
@@ -635,6 +643,7 @@ let cachedState: SyncState = {
   hydrated: false,
   hasCache: false,
   offline: false,
+  authRequired: false,
   pending: 0,
   error: null,
 };
@@ -645,6 +654,7 @@ function currentState(): SyncState {
     cachedState.hydrated === hydrated &&
     cachedState.hasCache === hasCache &&
     cachedState.offline === offline &&
+    cachedState.authRequired === authRequired &&
     cachedState.pending === dirty.size &&
     cachedState.error === lastError
   ) {
@@ -654,6 +664,7 @@ function currentState(): SyncState {
     hydrated,
     hasCache,
     offline,
+    authRequired,
     pending: dirty.size,
     error: lastError,
   };
@@ -664,6 +675,7 @@ const SERVER_STATE: SyncState = {
   hydrated: false,
   hasCache: false,
   offline: false,
+  authRequired: false,
   pending: 0,
   error: null,
 };

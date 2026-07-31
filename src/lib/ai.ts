@@ -12,7 +12,7 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
-import { logAiCost, usageFrom } from "./aiCost";
+import { logAiCost, logAiCostEstimated, usageFrom } from "./aiCost";
 
 const TIMEOUT_MS = 240_000; // Web研究は時間がかかるので長め
 
@@ -77,16 +77,25 @@ async function apiResearch(prompt: string): Promise<string> {
     system: SYSTEM_JSON,
     tools: [{ type: "web_search_20260209" as const, name: "web_search" as const }],
   };
-  let msg = await api().messages.create({ ...params, messages });
-  await logAiCost("research", usageFrom(MAIN_MODEL, msg));
-  let guard = 0;
-  while (msg.stop_reason === "pause_turn" && guard++ < 4) {
-    messages.push({ role: "assistant", content: msg.content });
-    msg = await api().messages.create({ ...params, messages });
-    // 継続分も課金されるので必ず足す（ここを漏らすと実測が過小になる）
+  // ⚠️ タイムアウトで例外が飛ぶと usage が取れないが、**Anthropic側の生成は完走していて
+  //    課金は発生している**。記録が残らないと月間予算の上限が静かに破られる（監査 高-8）。
+  //    さらに maxRetries で1回自動再実行されるので、1操作で最大2回分が未記録になる。
+  //    実測が取れない以上、見積もりで記録して安全側に倒す。
+  try {
+    let msg = await api().messages.create({ ...params, messages });
     await logAiCost("research", usageFrom(MAIN_MODEL, msg));
+    let guard = 0;
+    while (msg.stop_reason === "pause_turn" && guard++ < 4) {
+      messages.push({ role: "assistant", content: msg.content });
+      msg = await api().messages.create({ ...params, messages });
+      // 継続分も課金されるので必ず足す（ここを漏らすと実測が過小になる）
+      await logAiCost("research", usageFrom(MAIN_MODEL, msg));
+    }
+    return textOf(msg);
+  } catch (e) {
+    await logAiCostEstimated("research").catch(() => {});
+    throw e;
   }
-  return textOf(msg);
 }
 
 /** API: 画像（base64）から食材名。

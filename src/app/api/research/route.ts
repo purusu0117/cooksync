@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { askClaudeRecipes } from "@/lib/ai";
-import { sendPush } from "@/lib/pushServer";
+import { sendPush, resolvePushTarget } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
 import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
 import { identify } from "@/lib/session";
@@ -138,9 +138,12 @@ export async function POST(request: Request) {
     // 枠を数える uid：セッションCookieがあればそれを正とする（クライアントの `u` は
     // 書き換え可能なので信用しない）。Cookieが無い既存ユーザーは `u` にフォールバック。
     const uid = identify(request, body.u).uid;
-    // ⚠️ プッシュ通知の宛先は**別**。購読はクライアントのuid(getUid())で登録されているので、
-    //    ここを uid に変えると通知が届かなくなる。
-    const pushUid = body.u || uid;
+    // プッシュ通知の宛先。購読はクライアントのuid(getUid())で登録されているので枠のuidとは別だが、
+    // ⚠️ **`body.u` をそのまま信じてはいけない**（2026-08-01 の監査 高-7）。
+    //    他人の dataId を名乗れば、その人の端末に任意の文言（レシピ名はクエリで操作できる）を
+    //    鳴らせてしまう。他のpush経路は既に resolvePushTarget を通しているのに、ここだけ漏れていた。
+    const pushTarget = await resolvePushTarget(request, body.u);
+    const pushUid = pushTarget?.uid ?? null;
 
     // ── ① まず共有プールを引く（AI原価0）────────────────────────────
     // 同じ条件のレシピを誰かが既に生成していれば、APIを叩かずに返せる。
@@ -195,7 +198,7 @@ export async function POST(request: Request) {
           .filter(Boolean)
           .join(" / ");
         // 通知は任意（VAPID未設定なら失敗しても結果には影響させない）
-        await sendPush(pushUid, {
+        if (pushUid) await sendPush(pushUid, {
           title: "🍳 レシピが見つかりました",
           body: names || "候補ができました。タップして確認",
           url: "/meal",

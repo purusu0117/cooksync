@@ -22,7 +22,15 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/ai", () => ({ askClaudeRecipes: h.askClaudeRecipes }));
 vi.mock("@/lib/kv", () => ({ redis: null }));
 vi.mock("@/lib/session", () => ({ identify: () => ({ uid: "u-test" }) }));
-vi.mock("@/lib/pushServer", () => ({ sendPush: async () => {} }));
+// 通知の宛先は resolvePushTarget を通す（他人に鳴らせないようにした・監査 高-7）。
+// モックし忘れると route が import 時に落ちてジョブが作られず、原因が分かりにくい。
+vi.mock("@/lib/pushServer", () => ({
+  sendPush: async () => {},
+  resolvePushTarget: async (_req: Request, claimed?: string | null) => ({
+    uid: claimed || "anon",
+    trusted: false,
+  }),
+}));
 vi.mock("@/lib/recipeCache", () => ({
   takeFromPool: async () => null, // 共有プールは常に外れ＝必ずAIを呼ぶ経路
   addToPool: async () => {},

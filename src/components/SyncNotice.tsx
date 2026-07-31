@@ -8,16 +8,45 @@
 // なので文言は必ず「いま起きていること」＋「勝手に直す」を両方書く。
 // 手動の再試行ボタンは、待ちたくない人のための近道であって、必須の操作ではない。
 
-import { CloudOff, RefreshCw } from "lucide-react";
+import { CloudOff, LogIn, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { retryNow, useSyncState } from "@/lib/syncStore";
 
 export default function SyncNotice() {
-  const { offline, pending, hydrated } = useSyncState();
+  const { offline, authRequired, pending, hydrated } = useSyncState();
 
   // 通信できていて、送り残しも無い＝いつも通り。何も出さない。
   if (!offline && pending === 0) return null;
   // 起動直後の一瞬（まだ1回目の通信が終わっていないだけ）で騒がない
   if (!hydrated && !offline) return null;
+
+  // ⚠️ セッション切れは「オフライン」と別物。ここを分けないと、実際はオンラインなのに
+  //    「接続が戻り次第、自動で送ります」と**嘘**が出る（自動再送は止まっている）。
+  //    直す手段（ログインし直す）を出さないと、ユーザーは待ち続けることになる。
+  if (authRequired) {
+    return (
+      <div
+        role="status"
+        className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3"
+      >
+        <LogIn size={16} strokeWidth={2.2} className="mt-0.5 shrink-0 text-amber-700" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-amber-900">ログインの有効期限が切れました</p>
+          <p className="mt-0.5 text-xs text-amber-800">
+            変更はこの端末に保存済みです（未送信 {pending} 件）。
+            ログインし直すと、そのまま送られます。
+          </p>
+          <Link
+            href="/mypage"
+            className="mt-2.5 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-amber-700 px-4 text-xs font-bold text-white"
+          >
+            <LogIn size={14} strokeWidth={2.4} />
+            マイページでログインし直す
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

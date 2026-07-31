@@ -49,6 +49,9 @@ export interface AiUsage {
   cacheReadTokens?: number;
   cacheCreateTokens?: number;
   webSearches?: number;
+  /** トークンが分からないとき用の円建て見積もり。設定されていればこれを原価として使う
+   *  （タイムアウトで usage が取れないが課金は発生している場合。監査 高-8）。 */
+  estYen?: number;
 }
 
 /** 1回のAI呼び出しのUSD原価 */
@@ -66,6 +69,8 @@ export function costUsd(u: AiUsage): number {
 
 /** 1回のAI呼び出しの円原価（表示・上限設計用） */
 export function costYen(u: AiUsage): number {
+  // 見積もりが入っているときはそれを使う（トークンが取れない＝タイムアウト時）
+  if (typeof u.estYen === "number" && u.estYen > 0) return u.estYen;
   return costUsd(u) * usdJpy();
 }
 
@@ -140,6 +145,23 @@ async function readFile(): Promise<Record<string, CostSummary>> {
  * 1回分を記録する。**失敗しても本流を止めない**（計測のためにユーザー体験を壊さない）。
  * ローカルのCLI経路は原価0なので呼ばない。
  */
+/**
+ * AI呼び出しが**タイムアウト/例外で終わったとき**の原価を、見積もりで記録する。
+ *
+ * ⚠️ これが無いと月間予算の上限が静かに破られる（2026-08-01 の監査 高-8）。
+ * `logAiCost` は成功した応答の usage からしか計上できないが、タイムアウトしても
+ * Anthropic側の生成は完走していることが多く、**課金は発生している**。
+ * さらに maxRetries により1回自動再実行されるので、1操作で最大2回分が未記録で課金される。
+ * 実測が取れない以上、**見積もり(EST_YEN)で記録して安全側に倒す**。
+ * 少なく見積もって上限を破るより、多めに数えて早く止まる方がよい。
+ */
+export async function logAiCostEstimated(feature: AiFeature): Promise<void> {
+  const yen = EST_YEN[feature] ?? 0;
+  if (yen <= 0) return;
+  // 円だけを積む（トークン数は分からないので0のまま）
+  await logAiCost(feature, { model: "unknown-timeout", inputTokens: 0, outputTokens: 0, estYen: yen });
+}
+
 export async function logAiCost(feature: AiFeature, u: AiUsage): Promise<number> {
   const yen = costYen(u);
   const m = month();
