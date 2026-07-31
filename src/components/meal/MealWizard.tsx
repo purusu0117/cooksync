@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   ShoppingCart,
+  X,
   Sparkles,
   UtensilsCrossed,
   Users,
@@ -44,6 +45,7 @@ import {
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { rankCandidates } from "@/lib/ranking";
 import { toBuyableFor } from "@/lib/packaging";
+import { matchesQuery } from "@/lib/recipeFilter";
 import {
   recentMeals,
   slotsForTiming,
@@ -169,11 +171,23 @@ export default function MealWizard() {
       undefined,
       undefined,
       ratingOf,
-    ).filter((r) => r.score > -500);
-  }, [recipes, fridge, recent, picks, filters, ratings]);
+    )
+      .filter((r) => r.score > -500)
+      // 「気分」の自由入力でも絞る（肉系/魚/さっぱり等のざっくりした言葉に対応）
+      .filter((r) => matchesQuery(r.recipe, wish));
+  }, [recipes, fridge, recent, picks, filters, ratings, wish]);
 
   function toggleFilter<K extends keyof RecipeTags>(key: K, val: RecipeTags[K]) {
     setFilters((f) => ({ ...f, [key]: f[key] === val ? undefined : val }));
+  }
+
+  // 「気分」で何か指定しているか（クリアボタンの出し分け用）
+  const hasDirection =
+    !!filters.cuisine || !!filters.heaviness || !!filters.staple || !!filters.cookTime;
+
+  function clearDirection() {
+    setFilters({});
+    setWish("");
   }
 
   function startPicking() {
@@ -676,80 +690,126 @@ export default function MealWizard() {
       {/* Step 3: 方向性 */}
       {phase === "direction" && (
         <section className="animate-pop-in">
-          <h2 className="mb-3 text-sm font-bold text-ink">
-            気分は？（任意・選ばなければ「おまかせ」）
-          </h2>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2">
+          <h2 className="text-base font-bold text-ink">今日の気分は？</h2>
+          <p className="mt-0.5 mb-3 text-xs text-ink-soft">
+            どれも任意です。選ばなければ「おまかせ」で提案します。
+          </p>
+
+          {/* 自由入力：チップに無い気分もここで指定できる（下の候補がすぐ絞られる） */}
+          <div className="relative">
+            <Search
+              size={16}
+              strokeWidth={1.8}
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-soft"
+            />
+            <input
+              value={wish}
+              onChange={(e) => setWish(e.target.value)}
+              placeholder="肉系 / 魚 / さっぱり / 鶏むね / パスタ…"
+              className="w-full rounded-full border border-line bg-surface py-2.5 pr-9 pl-9 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand-soft"
+            />
+            {wish && (
+              <button
+                type="button"
+                onClick={() => setWish("")}
+                aria-label="入力をクリア"
+                className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1.5 text-ink-soft transition hover:bg-paper"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            )}
+          </div>
+          <p className="mt-1.5 mb-4 px-1 text-[11px] leading-relaxed text-ink-soft">
+            「肉系」「魚」「さっぱり」などざっくりした言葉でOK（スペース区切りで重ねがけ）。
+            ここに書いた言葉は、AIでレシピを探すときの条件にもそのまま使われます。
+          </p>
+
+          {/* 条件はカードにまとめ、1グループ1行＋ラベルで何を選んでいるか分かるようにする */}
+          <div className="rounded-2xl border border-line bg-surface p-4">
+            <DirectionField label="ジャンル">
               {CUISINES.map((c) => (
                 <button key={c} className={chip(filters.cuisine === c)} onClick={() => toggleFilter("cuisine", c)}>
                   {c}
                 </button>
               ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </DirectionField>
+            <DirectionField label="味の重さ">
               {HEAVINESS.map((h) => (
                 <button key={h} className={chip(filters.heaviness === h)} onClick={() => toggleFilter("heaviness", h)}>
                   {h}
                 </button>
               ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </DirectionField>
+            <DirectionField label="主食">
               {STAPLES.map((s) => (
                 <button key={s} className={chip(filters.staple === s)} onClick={() => toggleFilter("staple", s)}>
                   {s}系
                 </button>
               ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
+            </DirectionField>
+            <DirectionField label="調理時間">
               {TIMES.map((t) => (
                 <button key={t.v} className={chip(filters.cookTime === t.v)} onClick={() => toggleFilter("cookTime", t.v)}>
                   {t.label}
                 </button>
               ))}
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-medium text-ink-soft">何人分？</p>
-              <div className="flex flex-wrap gap-2">
-                {[1, 2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setServings(n)}
-                    className={chip(servings === n)}
-                  >
-                    {n}人分
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-medium text-ink-soft">買い物は？</p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShopMode("stock")}
-                  className={chip(shopMode === "stock")}
-                >
-                  <Refrigerator size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
-                  在庫だけで作る
+            </DirectionField>
+            <DirectionField label="何人分">
+              {[1, 2, 3, 4].map((n) => (
+                <button key={n} onClick={() => setServings(n)} className={chip(servings === n)}>
+                  {n}人分
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShopMode("buy")}
-                  className={chip(shopMode === "buy")}
-                >
-                  <ShoppingCart size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
-                  買い物してもOK
-                </button>
-              </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
-                {shopMode === "stock"
+              ))}
+            </DirectionField>
+            <DirectionField
+              label="買い物"
+              hint={
+                shopMode === "stock"
                   ? "冷蔵庫にある食材だけで作れる献立を提案します（基本調味料は除く）。"
-                  : "在庫に縛られず提案。期限が近い食材を1つだけ活かして、残りは買い足す案も出します。"}
-              </p>
-            </div>
+                  : "在庫に縛られず提案。期限が近い食材を1つだけ活かして、残りは買い足す案も出します。"
+              }
+              last
+            >
+              <button
+                type="button"
+                onClick={() => setShopMode("stock")}
+                className={chip(shopMode === "stock")}
+              >
+                <Refrigerator size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                在庫だけで作る
+              </button>
+              <button
+                type="button"
+                onClick={() => setShopMode("buy")}
+                className={chip(shopMode === "buy")}
+              >
+                <ShoppingCart size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
+                買い物してもOK
+              </button>
+            </DirectionField>
           </div>
-          <div className="mt-5 flex gap-2">
+
+          {/* いま何件あるか＝条件を絞りすぎていないかがその場で分かる */}
+          <p className="mt-3 text-center text-xs text-ink-soft">
+            {ranked.length > 0 ? (
+              <>条件に合うレシピ <strong className="text-brand-dark">{ranked.length}件</strong></>
+            ) : (
+              <span className="text-accent-dark">
+                条件に合うレシピがありません。条件を減らすか、AIに探してもらいましょう。
+              </span>
+            )}
+            {(hasDirection || wish) && (
+              <button
+                type="button"
+                onClick={clearDirection}
+                className="ml-2 font-medium text-accent-dark underline"
+              >
+                条件をクリア
+              </button>
+            )}
+          </p>
+
+          <div className="mt-3 flex gap-2">
             <button onClick={() => setPhase("timing")} className="flex-1 rounded-xl border border-line px-4 py-3 text-sm font-medium text-ink-soft transition hover:bg-paper">
               戻る
             </button>
@@ -1224,6 +1284,29 @@ export default function MealWizard() {
             もう一度献立を決める
           </button>
         </section>
+      )}
+    </div>
+  );
+}
+
+/** 「気分」画面の1グループ（ラベル＋チップ列）。何を選んでいるか一目で分かるようにする */
+function DirectionField({
+  label,
+  hint,
+  last,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={last ? "" : "mb-3.5 border-b border-line/70 pb-3.5"}>
+      <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">{label}</p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+      {hint && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">{hint}</p>
       )}
     </div>
   );
