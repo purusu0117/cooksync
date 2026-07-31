@@ -109,7 +109,7 @@ export default function ExpiryReviewPanel({ items, onApply }: Props) {
 
       {open && (
         <>
-          <p className="mt-2 text-[11px] leading-relaxed text-amber-800">
+          <p className="mt-2 text-xs leading-relaxed text-amber-800">
             推定ロジックの更新で、登録済みの食材と目安がズレています。反映すると期限とカテゴリを直します（個別に無視もできます）。
           </p>
 
@@ -121,7 +121,7 @@ export default function ExpiryReviewPanel({ items, onApply }: Props) {
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-ink">{c.item.name}</span>
-                  <span className="block text-[11px] text-ink-soft">
+                  <span className="block text-xs text-ink-soft">
                     {c.item.expiresOn} → <strong>{c.next.expiresOn}</strong>
                     {c.categoryChanged && `　${c.item.category}→${c.next.category}`}
                   </span>

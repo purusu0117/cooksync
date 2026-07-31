@@ -21,5 +21,5 @@ export function Ul({ children }: { children: React.ReactNode }) {
 }
 
 export function Faint({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] leading-relaxed text-ink-soft">{children}</p>;
+  return <p className="text-xs leading-relaxed text-ink-soft">{children}</p>;
 }

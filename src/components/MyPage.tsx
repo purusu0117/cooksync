@@ -312,7 +312,7 @@ export default function MyPage() {
             </a>
             <div className="mb-3 flex items-center gap-3">
               <span className="h-px flex-1 bg-line" />
-              <span className="text-[11px] text-ink-soft">または</span>
+              <span className="text-xs text-ink-soft">または</span>
               <span className="h-px flex-1 bg-line" />
             </div>
           </>
@@ -383,12 +383,12 @@ export default function MyPage() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-[11px] leading-relaxed text-ink-soft/80">
+        <p className="mt-4 text-center text-xs leading-relaxed text-ink-soft/80">
           メールとパスワードで登録すると、別の端末からも同じアカウントでログインできます。
         </p>
 
         {/* 未ログインでも規約・プライバシー・サポートに辿り着けるようにする（審査担当者もここを見る） */}
-        <nav className="mt-5 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-ink-soft">
+        <nav className="mt-5 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
           <Link href="/legal/support" className="underline underline-offset-4">
             サポート・FAQ
           </Link>
@@ -454,7 +454,7 @@ export default function MyPage() {
             className="rounded-2xl border border-line bg-surface p-3 text-center shadow-sm"
           >
             <p className="text-2xl font-bold text-brand-dark">{s.value}</p>
-            <p className="mt-0.5 text-[11px] text-ink-soft">{s.label}</p>
+            <p className="mt-0.5 text-xs text-ink-soft">{s.label}</p>
           </div>
         ))}
       </div>
@@ -464,7 +464,7 @@ export default function MyPage() {
           <AppIcon name="check" size={18} />
           最近作ったもの
         </h2>
-        <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
+        <p className="mb-3 text-xs leading-relaxed text-ink-soft">
           「提案で除外中」は直近2日に作ったため、献立提案で避けられています。間違いは × で削除できます。
         </p>
         {sortedMeals.length === 0 ? (
@@ -485,7 +485,7 @@ export default function MyPage() {
                   {m.recipeName}
                 </span>
                 {avoidIds.has(m.id) && (
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[12px] font-medium text-amber-700">
                     提案で除外中
                   </span>
                 )}
@@ -505,7 +505,7 @@ export default function MyPage() {
 
       <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
         <h2 className="mb-1 text-sm font-bold text-ink">今月のAI利用</h2>
-        <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">
+        <p className="mb-3 text-xs leading-relaxed text-ink-soft">
           {usage.premium
             ? "プレミアム：たっぷり使えます（公平利用のため上限あり）。毎月1日リセット。"
             : "無料枠（毎月1日リセット）。AI機能だけ回数制限があります。プレミアムで大幅に増えます（準備中）。"}
@@ -533,7 +533,7 @@ export default function MyPage() {
             );
           })}
         </ul>
-        <p className="mt-2.5 text-[11px] leading-relaxed text-ink-soft">
+        <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">
           同じ条件のレシピが既に見つかっている場合は、AIを使わずに返すので枠を消費しません。
         </p>
       </div>
@@ -554,7 +554,7 @@ export default function MyPage() {
         >
           すべてのデータをリセット
         </button>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
           冷蔵庫・買い物・献立履歴だけを空にします（アカウントは残ります）。
         </p>
 

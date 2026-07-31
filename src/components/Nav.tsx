@@ -16,7 +16,8 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/", label: "ホーム", icon: Home },
   { href: "/recipes", label: "レシピ", icon: BookOpen },
   { href: "/fridge", label: "冷蔵庫", icon: Refrigerator },
-  { href: "/shopping", label: "買い物リスト", icon: ShoppingCart },
+  // 文字を大きくした分、5タブに収めるため「買い物リスト」→「買い物」に短縮
+  { href: "/shopping", label: "買い物", icon: ShoppingCart },
   { href: "/mypage", label: "マイページ", icon: User },
 ];
 
@@ -70,7 +71,7 @@ export default function Nav() {
               key={t.href}
               href={t.href}
               onClick={(e) => handleTabClick(t.href, e)}
-              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition ${
+              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[12px] font-medium transition ${
                 active ? "text-brand-dark" : "text-ink-soft hover:text-brand"
               }`}
             >

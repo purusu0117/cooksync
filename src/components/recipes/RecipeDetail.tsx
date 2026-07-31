@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
-  ArrowDownToLine,
   ArrowUp,
   Check,
+  ChevronLeft,
   CirclePlus,
   Lightbulb,
   Link2,
   RotateCcw,
+  Refrigerator,
   ShoppingCart,
   Soup,
   Sparkles,
@@ -402,12 +403,27 @@ export default function RecipeDetail({ id }: Props) {
   ).filter((n) => n > 0 && n <= 120);
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-8">
-      <Link href="/recipes" className="text-sm text-ink-soft transition hover:text-brand">
-        ← レシピ一覧
-      </Link>
+    <div className="mx-auto w-full max-w-2xl px-4 pt-0 pb-8">
+      {/*
+        戻る導線は画面の一番上に固定する。
+        以前は本文の先頭に置いた薄い灰色のテキストリンクだったので、
+        手順まで下にスクロールすると画面外に出てしまい、iPhoneでは戻れなくなっていた。
+        タップ領域は52px（Appleの最小44ptより大きく）確保して、料理中に濡れた手でも押せるようにする。
+      */}
+      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-2 border-b border-line bg-paper/95 px-2 backdrop-blur-md">
+        <Link
+          href="/recipes"
+          className="flex min-h-[52px] shrink-0 items-center gap-1 rounded-xl px-2 text-[15px] font-bold text-brand-dark transition active:bg-brand-soft"
+        >
+          <ChevronLeft size={22} strokeWidth={2.6} />
+          レシピ一覧
+        </Link>
+        <span className="min-w-0 flex-1 truncate pr-2 text-right text-sm font-semibold text-ink-soft">
+          {recipe.name}
+        </span>
+      </div>
 
-      <header className="mt-4 mb-5">
+      <header className="mb-5">
         <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-ink">
           <DishIcon
             name={recipe.name}
@@ -468,7 +484,7 @@ export default function RecipeDetail({ id }: Props) {
               <AppIcon name="meal" size={18} />
               何人前で作る？
             </h2>
-            <p className="mt-0.5 text-[11px] text-ink-soft">
+            <p className="mt-0.5 text-xs text-ink-soft">
               選んだ人数に材料・手順の分量・kcalを自動換算します
             </p>
           </div>
@@ -529,7 +545,7 @@ export default function RecipeDetail({ id }: Props) {
       <section className="mb-6 rounded-2xl border border-line bg-surface p-4">
         <h2 className="mb-3 text-sm font-bold text-ink">材料（{viewServings}人分）</h2>
         {factor !== 1 && (
-          <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+          <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
             ※{baseServings}人分を{viewServings}人分に自動換算（端数は目安）。
             {factor > 1 &&
               "塩・しょうゆ・スパイス・にんにく・わさび等の調味料は倍にすると濃くなりがち。表示量より控えめ（7〜8割）から入れて、味を見て足すのがおすすめ。"}
@@ -552,19 +568,19 @@ export default function RecipeDetail({ id }: Props) {
                   <span className="text-ink">
                     {i.name}
                     {st?.status === "enough" && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-brand">
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-brand">
                         <Check size={11} strokeWidth={3} />
                         在庫あり
                       </span>
                     )}
                     {st?.status === "short" && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent">
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent">
                         <CirclePlus size={11} strokeWidth={2.5} />
                         不足（{shortText}）
                       </span>
                     )}
                     {st?.status === "none" && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-semibold text-accent">
+                      <span className="ml-1 inline-flex items-center gap-0.5 text-xs font-semibold text-accent">
                         <CirclePlus size={11} strokeWidth={2.5} />
                         買い足し
                       </span>
@@ -573,7 +589,7 @@ export default function RecipeDetail({ id }: Props) {
                   <span className="text-ink-soft">
                     {i.amount}
                     {factor > 1 && i.basicSeasoning && (
-                      <span className="ml-1 text-[10px] font-medium text-amber-700">
+                      <span className="ml-1 text-[12px] font-medium text-amber-700">
                         味見て調整
                       </span>
                     )}
@@ -592,31 +608,25 @@ export default function RecipeDetail({ id }: Props) {
           <h2 className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
             <AppIcon name="meal" size={18} />
             行程
-            <span className="ml-1 rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand-dark">
+            <span className="ml-1 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
               {doneCount}/{tasks.length}
             </span>
           </h2>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={clearTasks}
-              disabled={doneCount === 0}
-              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark disabled:opacity-40"
-            >
-              <RotateCcw size={13} strokeWidth={1.8} />
-              すべて外す
-            </button>
-            {hasStorage && (
-              <button
-                type="button"
-                onClick={() => scrollToId("storage-section")}
-                className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
-              >
-                <ArrowDownToLine size={13} strokeWidth={1.8} />
-                保存方法へ
-              </button>
-            )}
-          </div>
+          {/*
+            「すべて外す」は目的語がなく、何が起きるか初見で分からなかった。
+            チェックを消す＝もう一度作るときの操作なので、そう書く。
+            「保存方法へ」はここから外した。保存方法は作り終わったあとに見るものなので、
+            手順の見出し横ではなく手順リストの最後に置く。
+          */}
+          <button
+            type="button"
+            onClick={clearTasks}
+            disabled={doneCount === 0}
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-line px-3.5 text-xs font-semibold text-ink-soft transition hover:border-brand hover:text-brand-dark disabled:opacity-40"
+          >
+            <RotateCcw size={15} strokeWidth={2} />
+            チェックを全部消す
+          </button>
         </div>
 
         {/* 進捗バー：どこまで進んだか一目で分かる */}
@@ -683,6 +693,23 @@ export default function RecipeDetail({ id }: Props) {
             );
           })}
         </ol>
+
+        {/*
+          保存方法への案内は「行き先」ではなく「いつ・何のために押すか」を書く。
+          手順を全部終えたときだけ、次にやることとして出す。
+        */}
+        {hasStorage && (
+          <button
+            type="button"
+            onClick={() => scrollToId("storage-section")}
+            className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface px-4 text-sm font-bold text-brand-dark transition active:bg-brand-soft"
+          >
+            <Refrigerator size={18} strokeWidth={2} />
+            {doneCount === tasks.length
+              ? "おつかれさま。余った材料の保存方法を見る"
+              : "余った材料の保存方法を見る"}
+          </button>
+        )}
       </section>
 
       {recipe.sideDishes && recipe.sideDishes.length > 0 && (
@@ -709,7 +736,7 @@ export default function RecipeDetail({ id }: Props) {
             <button
               type="button"
               onClick={backToCurrentTask}
-              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
+              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
             >
               <ArrowUp size={13} strokeWidth={1.8} />
               作業中の場所へ戻る
@@ -720,7 +747,7 @@ export default function RecipeDetail({ id }: Props) {
               <li key={idx} className="text-sm">
                 <span className="font-medium text-ink">{l.ingredient}</span>
                 {l.auto && (
-                  <span className="ml-1 text-[10px] font-medium text-ink-soft">
+                  <span className="ml-1 text-[12px] font-medium text-ink-soft">
                     （目安）
                   </span>
                 )}
@@ -731,11 +758,26 @@ export default function RecipeDetail({ id }: Props) {
         </section>
       )}
 
-      {recipe.sources.length > 0 && (
+      {/*
+        参考リンクが空のときは、見出しごと消さずに「無い」と書く。
+        黙って消すと「機能が無くなった」ように見えてしまう（大翔の指摘・2026-07-31）。
+        sources は AI が埋めそこねると空配列になるので、その事実が画面に出るようにする。
+      */}
+      {(recipe.sources?.length ?? 0) === 0 ? (
         <section className="mb-6">
           <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
             <Link2 size={16} strokeWidth={2} />
-            参考
+            参考にしたページ
+          </h2>
+          <p className="text-sm text-ink-soft">
+            このレシピには参考ページが記録されていません。
+          </p>
+        </section>
+      ) : (
+        <section className="mb-6">
+          <h2 className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+            <Link2 size={16} strokeWidth={2} />
+            参考にしたページ
           </h2>
           <ul className="flex flex-col gap-1">
             {recipe.sources.map((src, idx) => (
@@ -816,12 +858,12 @@ export default function RecipeDetail({ id }: Props) {
                         <span className="text-xs text-ink-soft">{f.quantity}</span>
                       )}
                       {isSeasoningItem(f) && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[12px] font-medium text-amber-700">
                           調味料
                         </span>
                       )}
                       {recipeAmountFor(f) && (
-                        <span className="text-[10px] font-medium text-brand-dark">
+                        <span className="text-[12px] font-medium text-brand-dark">
                           レシピ:{recipeAmountFor(f)}
                         </span>
                       )}
@@ -863,7 +905,7 @@ export default function RecipeDetail({ id }: Props) {
 
             {usedSeasonings().length > 0 && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+                <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800">
                   <Soup size={13} strokeWidth={2} />
                   使った調味料（常備のため在庫はそのまま）
                 </p>

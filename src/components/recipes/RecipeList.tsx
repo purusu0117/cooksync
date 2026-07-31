@@ -199,8 +199,9 @@ export default function RecipeList() {
           </button>
         )}
       </div>
-      <p className="mb-3 px-1 text-[11px] text-ink-soft">
-        「肉系」「魚」「野菜」「さっぱり」「時短」などのざっくりした言葉でも絞り込めます（スペース区切りで重ねがけ）。
+      {/* 文字を大きくしたので、3行に伸びないよう文言も短くする（例は検索窓のプレースホルダに出ている） */}
+      <p className="mb-3 px-1 text-xs text-ink-soft">
+        「さっぱり」「時短」など、ざっくりした言葉でも探せます。
       </p>
 
       {/* よく使う絞り込み＋詳細トグル */}
@@ -231,7 +232,7 @@ export default function RecipeList() {
           <SlidersHorizontal size={12} strokeWidth={2} />
           絞り込み
           {activeCount > 0 && (
-            <span className="rounded-full bg-white/25 px-1.5 text-[10px] font-bold">
+            <span className="rounded-full bg-white/25 px-1.5 text-[12px] font-bold">
               {activeCount}
             </span>
           )}
@@ -319,7 +320,7 @@ export default function RecipeList() {
             <button
               type="button"
               onClick={clearFilters}
-              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-accent-dark underline"
+              className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent-dark underline"
             >
               <X size={12} strokeWidth={2} />
               絞り込みをクリア（{activeCount}件）
@@ -329,14 +330,19 @@ export default function RecipeList() {
       )}
 
       {/* 並び替え */}
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="inline-flex flex-wrap rounded-full border border-line bg-surface p-0.5 text-xs">
+      {/*
+        以前は件数を同じ行に置いていたせいで幅が足りず、並び替えが2行に折り返してピルの形が崩れていた。
+        件数を行の外に出し、左右の余白を詰めると4つとも1行に収まる。
+      */}
+      <div className="mb-3 flex flex-col gap-1.5">
+        <span className="px-1 text-xs font-semibold text-ink-soft">{sorted.length}件</span>
+        <div className="inline-flex rounded-full border border-line bg-surface p-0.5 text-xs">
           {SORTS.map(([v, label]) => (
             <button
               key={v}
               type="button"
               onClick={() => setSort(v)}
-              className={`rounded-full px-3 py-1 font-medium transition ${
+              className={`shrink-0 rounded-full px-2.5 py-1.5 font-semibold transition ${
                 sort === v ? "bg-brand text-white" : "text-ink-soft"
               }`}
             >
@@ -344,7 +350,6 @@ export default function RecipeList() {
             </button>
           ))}
         </div>
-        <span className="shrink-0 text-[11px] text-ink-soft">{sorted.length}件</span>
       </div>
 
       {sorted.length === 0 ? (
@@ -390,7 +395,7 @@ function FilterRow({
 }) {
   return (
     <div className="mb-2.5 last:mb-1">
-      <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">{label}</p>
+      <p className="mb-1.5 text-xs font-semibold text-ink-soft">{label}</p>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -423,11 +428,11 @@ function RecipeRow({
           {r.name}
         </span>
         {r.catch && (
-          <span className="mt-0.5 block truncate text-[11px] text-ink-soft">
+          <span className="mt-0.5 block truncate text-xs text-ink-soft">
             {r.catch}
           </span>
         )}
-        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium text-brand-dark">
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-brand-dark">
           {r.tags.cookTime ? (
             <span className="inline-flex items-center gap-0.5">
               <Clock size={11} strokeWidth={2} />

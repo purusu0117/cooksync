@@ -114,9 +114,9 @@ export default function ImportedRecipePreview({
         <DishIcon name={r.name || ""} size={26} />
         <div className="min-w-0 flex-1">
           <p className="font-bold text-ink">{r.name}</p>
-          {r.catch && <p className="mt-0.5 text-[11px] text-ink-soft">{r.catch}</p>}
+          {r.catch && <p className="mt-0.5 text-xs text-ink-soft">{r.catch}</p>}
           {result.source && (
-            <p className="mt-1 truncate text-[11px] text-ink-soft">
+            <p className="mt-1 truncate text-xs text-ink-soft">
               出典：{result.source.channel}「{result.source.title}」
             </p>
           )}
@@ -125,7 +125,7 @@ export default function ImportedRecipePreview({
 
       {result.confidence && (
         <p
-          className={`mt-2 rounded-lg px-2.5 py-1.5 text-[11px] ${
+          className={`mt-2 rounded-lg px-2.5 py-1.5 text-xs ${
             result.confidence === "high"
               ? "bg-brand-soft text-brand-dark"
               : "bg-amber-50 text-amber-800"
@@ -137,7 +137,7 @@ export default function ImportedRecipePreview({
 
       {/* 複数写真：AIがどう並べ替えたかを見せる（順番が違えば大翔が気づける） */}
       {(result.photoCount ?? 0) > 1 && (
-        <p className="mt-2 rounded-lg bg-paper px-2.5 py-1.5 text-[11px] leading-relaxed text-ink-soft">
+        <p className="mt-2 rounded-lg bg-paper px-2.5 py-1.5 text-xs leading-relaxed text-ink-soft">
           写真{result.photoCount}枚をまとめました。
           {result.photoOrder && result.photoOrder.length > 1 ? (
             <>
@@ -151,7 +151,7 @@ export default function ImportedRecipePreview({
       )}
 
       {result.missing && result.missing.length > 0 && (
-        <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800">
+        <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
           ⚠ 分量が読み取れなかった材料：{result.missing.join("、")}
           <br />
           保存後にレシピを開いて、元の動画・写真を見ながら直してください。
@@ -159,18 +159,18 @@ export default function ImportedRecipePreview({
       )}
 
       {duplicate && (
-        <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+        <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
           同じ名前のレシピが既にあります。保存すると2件になります。
         </p>
       )}
 
       <details className="mt-2">
-        <summary className="cursor-pointer text-[11px] font-semibold text-brand-dark">
+        <summary className="cursor-pointer text-xs font-semibold text-brand-dark">
           材料 {r.ingredients?.length ?? 0}点・手順 {r.steps?.length ?? 0}工程を確認
         </summary>
         <ul className="mt-1.5 flex flex-col gap-0.5">
           {(r.ingredients ?? []).map((i, idx) => (
-            <li key={idx} className="flex justify-between gap-2 text-[11px]">
+            <li key={idx} className="flex justify-between gap-2 text-xs">
               <span className="text-ink">{i.name}</span>
               <span
                 className={
@@ -185,7 +185,7 @@ export default function ImportedRecipePreview({
         {(r.steps ?? []).length > 0 && (
           <ol className="mt-2 flex flex-col gap-1">
             {(r.steps ?? []).map((s, idx) => (
-              <li key={idx} className="text-[11px] leading-relaxed text-ink">
+              <li key={idx} className="text-xs leading-relaxed text-ink">
                 <span className="font-semibold">{s.title}</span>：{s.text}
               </li>
             ))}

@@ -101,7 +101,7 @@ export default function BulkAddForm({ onAddMany }: Props) {
 
       {parsed.length > 0 && (
         <div className="mt-3 max-h-40 overflow-y-auto rounded-xl bg-paper p-2">
-          <p className="mb-1 px-1 text-[11px] font-semibold text-ink-soft">
+          <p className="mb-1 px-1 text-xs font-semibold text-ink-soft">
             プレビュー（{parsed.length}件・推定結果）
           </p>
           <ul className="flex flex-col gap-1">
@@ -114,10 +114,10 @@ export default function BulkAddForm({ onAddMany }: Props) {
                   <span className="text-ink-soft">
                     {p.quantity || (pack ? `1${pack.unit}` : "")}
                   </span>
-                  <span className="ml-auto rounded-full bg-brand-soft px-1.5 py-0.5 text-[10px] text-brand-dark">
+                  <span className="ml-auto rounded-full bg-brand-soft px-1.5 py-0.5 text-[12px] text-brand-dark">
                     {g.category}
                   </span>
-                  <span className="text-[10px] text-ink-soft">
+                  <span className="text-[12px] text-ink-soft">
                     〜{expiryOf(p.name)}
                     {aiDays[p.name] != null && (
                       <Bot size={11} strokeWidth={2} className="ml-0.5 inline-block align-[-0.15em] text-brand-dark" />

@@ -166,7 +166,7 @@ export default function AddItemForm({ onAdd }: Props) {
             </span>
           )}
           {pack?.hint && (
-            <span className="mt-1 block text-[11px] text-ink-soft">
+            <span className="mt-1 block text-xs text-ink-soft">
               目安：{pack.hint}（個数が分からなければ「1{pack.unit}」でOK）
             </span>
           )}
@@ -218,7 +218,7 @@ export default function AddItemForm({ onAdd }: Props) {
             }}
           />
           {aiNote && !expiryTouched && (
-            <span className="mt-1 block text-[11px] text-brand-dark">
+            <span className="mt-1 block text-xs text-brand-dark">
               <Bot size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
               {aiNote}
             </span>

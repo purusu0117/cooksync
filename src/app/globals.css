@@ -12,7 +12,9 @@
   --color-paper: #f0ece1; /* 温かいクリーム背景 */
   --color-surface: #ffffff; /* カード */
   --color-ink: #2b2a22; /* 本文（温かい黒） */
-  --color-ink-soft: #837c6f; /* 補助 */
+  /* 補助テキスト。旧 #837c6f はクリーム地でコントラスト比3.50＝WCAG AA(4.5)未満で、
+     これが11pxに当たっていたのが「小さい文字が見にくい」の主因だった。5.78 まで濃くする。 */
+  --color-ink-soft: #6b6559;
   --color-line: #e6e0d2; /* 罫線 */
 
   --color-brand: #2f9e60; /* フレッシュ緑：ボタン/バッジ/アクティブ */
@@ -25,6 +27,18 @@
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);
+
+  /*
+    文字サイズの底上げ（2026-07-31）。
+    日本語は漢字の画数があるぶん、欧文と同じpxでも実質的に小さく見える。
+    実測すると 12px以下が184箇所・16pxが9箇所という「小さい文字で出来たアプリ」だったので、
+    text-xs / text-sm を1段上げて日本語UIの下限(13px)を割らないようにする。
+    ここを直すと text-xs 113箇所・text-sm 121箇所が一括で効く。
+  */
+  --text-xs: 13.5px;
+  --text-xs--line-height: 1.7;
+  --text-sm: 15px;
+  --text-sm--line-height: 1.75;
 }
 
 html {
@@ -41,8 +55,19 @@ body {
   overscroll-behavior: none;
   color: var(--color-ink);
   font-family: var(--font-sans), system-ui, sans-serif;
+  /*
+    palt（詰め組み）は見出し向けの機能。本文に掛けると小さい文字で字が接近して読みにくくなるので、
+    body からは外して見出しだけに限定する。
+    -webkit-font-smoothing: antialiased も、線を細く描いて薄く見せるため外した。
+    どちらも「小さい文字が見にくい」に効いていた。
+  */
+}
+
+h1,
+h2,
+h3,
+.font-display {
   font-feature-settings: "palt";
-  -webkit-font-smoothing: antialiased;
 }
 
 /*

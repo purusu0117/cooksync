@@ -88,3 +88,6 @@ android/app/src/main/assets/capacitor.config.json
 .did
 .rid
 .runid*
+
+# dev サーバーのログ
+.dev3014.log

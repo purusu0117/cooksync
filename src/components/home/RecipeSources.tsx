@@ -207,7 +207,7 @@ export default function RecipeSources() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-bold">AIに今日の献立を提案してもらう</span>
-          <span className="mt-0.5 block text-[11px] leading-relaxed text-white/85">
+          <span className="mt-0.5 block text-xs leading-relaxed text-white/85">
             冷蔵庫の食材と気分から、作れる料理を提案します
           </span>
         </span>
@@ -263,7 +263,7 @@ export default function RecipeSources() {
                   作る
                 </button>
               </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
                 料理動画のURLを貼るだけ。概要欄と字幕から材料・手順を書き起こします（30〜120秒）。
               </p>
             </>
@@ -312,7 +312,7 @@ export default function RecipeSources() {
                   </button>
                 </>
               )}
-              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
                 レシピ本のページ、SNSのスクショ、手書きメモでOK（4枚まで）。
                 <strong>順番はバラバラでも大丈夫</strong>— 調理の進み方から並べ直して手順にします。
               </p>
@@ -360,7 +360,7 @@ function SourceCard({
         {icon}
       </span>
       <span className="text-sm font-bold text-ink">{title}</span>
-      <span className="text-[11px] text-ink-soft">{desc}</span>
+      <span className="text-xs text-ink-soft">{desc}</span>
     </button>
   );
 }

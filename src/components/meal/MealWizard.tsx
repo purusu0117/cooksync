@@ -729,7 +729,7 @@ export default function MealWizard() {
               </button>
             )}
           </div>
-          <p className="mt-1.5 mb-4 px-1 text-[11px] leading-relaxed text-ink-soft">
+          <p className="mt-1.5 mb-4 px-1 text-xs leading-relaxed text-ink-soft">
             「肉系」「魚」「さっぱり」などざっくりした言葉でOK（スペース区切りで重ねがけ）。
             ここに書いた言葉は、AIでレシピを探すときの条件にもそのまま使われます。
           </p>
@@ -880,7 +880,7 @@ export default function MealWizard() {
             </div>
 
             {/* どんな条件で探すかを明記（未選択は「おまかせ」） */}
-            <div className="mt-2 rounded-xl border border-line/60 bg-surface/70 px-3 py-2 text-[11px] leading-relaxed text-ink-soft">
+            <div className="mt-2 rounded-xl border border-line/60 bg-surface/70 px-3 py-2 text-xs leading-relaxed text-ink-soft">
               <p className="mb-0.5 font-semibold text-brand-dark">
                 この条件で探します（未選択は「おまかせ」）
               </p>
@@ -986,7 +986,7 @@ export default function MealWizard() {
                     <br />
                     {s.text}
                     {s.tip && (
-                      <span className="mt-0.5 block text-[11px] italic text-amber-700">
+                      <span className="mt-0.5 block text-xs italic text-amber-700">
                         <Lightbulb size={12} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
                         {s.tip}
                       </span>
@@ -996,7 +996,7 @@ export default function MealWizard() {
               </ol>
 
               {aiPreview.sources[0] && (
-                <p className="mt-3 text-[11px] text-ink-soft">
+                <p className="mt-3 text-xs text-ink-soft">
                   参考：
                   {aiPreview.sources[0].url ? (
                     <a
@@ -1057,19 +1057,19 @@ export default function MealWizard() {
                         <p className="mt-0.5 text-xs text-ink-soft">{r.catch}</p>
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {r.sources[0] && (
-                            <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-dark">
+                            <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-dark">
                               {r.sources[0].label}
                               {r.sources[0].popularity ? `・${r.sources[0].popularity}` : ""}
                             </span>
                           )}
                           {r.tags.cookTime && (
-                            <span className="rounded-full bg-paper px-2 py-0.5 text-[11px] text-ink-soft">
+                            <span className="rounded-full bg-paper px-2 py-0.5 text-xs text-ink-soft">
                               <Clock size={11} strokeWidth={2} className="mr-0.5 inline-block align-[-0.15em]" />
                               {r.tags.cookTime}分
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-[11px] text-brand-dark">
+                        <p className="mt-1 text-xs text-brand-dark">
                           タップで詳細 →
                         </p>
                       </div>
@@ -1101,18 +1101,18 @@ export default function MealWizard() {
                     <p className="mt-0.5 text-xs text-ink-soft">{r.recipe.catch}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {r.recipe.sources[0] && (
-                        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-dark">
+                        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand-dark">
                           {r.recipe.sources[0].label}
                           {r.recipe.sources[0].popularity ? `・${r.recipe.sources[0].popularity}` : ""}
                         </span>
                       )}
                       {r.usesExpiring.length > 0 && (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                           期限間近を{r.usesExpiring.length}品消費
                         </span>
                       )}
                       {r.missingNames.length <= 1 && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
                           買い足しほぼ無し
                         </span>
                       )}
@@ -1163,12 +1163,12 @@ export default function MealWizard() {
                     <span className="flex-1 text-sm text-ink">
                       {m.name} <span className="text-ink-soft">{m.amount}</span>
                       {m.inFridge && (
-                        <span className="ml-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-medium text-brand-dark">
+                        <span className="ml-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[12px] font-medium text-brand-dark">
                           在庫あり
                         </span>
                       )}
                     </span>
-                    <span className="text-[11px] text-ink-soft/70">{m.note}</span>
+                    <span className="text-xs text-ink-soft/70">{m.note}</span>
                   </label>
                 </li>
               ))}
@@ -1313,10 +1313,10 @@ function DirectionField({
 }) {
   return (
     <div className={last ? "" : "mb-3.5 border-b border-line/70 pb-3.5"}>
-      <p className="mb-1.5 text-[11px] font-semibold text-ink-soft">{label}</p>
+      <p className="mb-1.5 text-xs font-semibold text-ink-soft">{label}</p>
       <div className="flex flex-wrap gap-2">{children}</div>
       {hint && (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">{hint}</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{hint}</p>
       )}
     </div>
   );

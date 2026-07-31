@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Quicksand, Zen_Kaku_Gothic_New } from "next/font/google";
+import { Quicksand, M_PLUS_2 } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import AppGate from "@/components/AppGate";
@@ -7,15 +7,19 @@ import Onboarding from "@/components/Onboarding";
 import ScrollReset, { SCROLL_ROOT_ID } from "@/components/ScrollReset";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
-// ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝Zen角ゴ
+// ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝M PLUS 2
+//
+// 日本語を Zen角ゴ から M PLUS 2 に変更（2026-07-31・大翔が3案から選定）。
+// 理由は「同じpxでも字面が大きくふところが広い＝小さい文字が読める」こと。
+// 丸い骨格が Quicksand と同系統なので、CookSync の柔らかい雰囲気は変わらない。
+// 可変フォントなので、小さい文字だけ 500 に太らせる調整ができる。
 const display = Quicksand({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-display",
 });
 
-const sans = Zen_Kaku_Gothic_New({
-  weight: ["400", "500", "700"],
+const sans = M_PLUS_2({
   subsets: ["latin"],
   display: "swap",
   preload: false,

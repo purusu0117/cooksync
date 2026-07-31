@@ -69,7 +69,7 @@ export default function HomeDashboard() {
                   size={30}
                 />
                 {r.tags.cookTime && (
-                  <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-bold text-brand-dark">
+                  <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[12px] font-bold text-brand-dark">
                     {r.tags.cookTime}分
                   </span>
                 )}
@@ -77,7 +77,7 @@ export default function HomeDashboard() {
               <span className="line-clamp-2 min-h-[2.5rem] text-sm leading-snug font-bold text-ink">
                 {r.name}
               </span>
-              <span className="mt-1 text-[11px] text-ink-soft">
+              <span className="mt-1 text-xs text-ink-soft">
                 {r.kcal ? `${r.kcal}kcal` : ""}
               </span>
             </Link>
@@ -109,7 +109,7 @@ export default function HomeDashboard() {
                   }`}
                 >
                   <Icon size={26} strokeWidth={1.7} className="text-brand" />
-                  <span className="line-clamp-1 w-full text-center text-[11px] text-ink">
+                  <span className="line-clamp-1 w-full text-center text-xs text-ink">
                     {item.name}
                   </span>
                 </Link>
