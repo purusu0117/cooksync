@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import AppGate from "@/components/AppGate";
 import Onboarding from "@/components/Onboarding";
 import ScrollReset, { SCROLL_ROOT_ID } from "@/components/ScrollReset";
+import OfflineReady from "@/components/OfflineReady";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 // ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝M PLUS 2
@@ -78,6 +79,7 @@ export default function RootLayout({
         </main>
         <Nav />
         <ScrollReset />
+        <OfflineReady />
         <Onboarding />
       </body>
     </html>
