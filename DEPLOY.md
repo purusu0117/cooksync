@@ -81,8 +81,15 @@ node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey
 ```
 
 > ⚠️ **`ANTHROPIC_API_KEY` をローカルの `.env.local` に入れない。**
-> `ai.ts` はキーがあるとAPI課金経路に切り替わる。ローカルは `claude.exe` 経由＝Maxプラン枠で
-> **原価0**なので、入れると大翔自身の開発まで従量課金になる。キーは Vercel にだけ置く。
+> `ai.ts` はキーがあるとAPI課金経路に切り替わる（`USE_API = !!process.env.ANTHROPIC_API_KEY`）。
+> ローカルは `claude.exe` 経由＝Maxプラン枠で **原価0**なので、入れると大翔自身の開発まで
+> 従量課金になる。キーは Vercel にだけ置く。
+>
+> ⚠️ **Vercel でも `ANTHROPIC_API_KEY` の Environment は Production / Preview だけにする。**
+> **Development にチェックを入れてはいけない。** 入れると `vercel env pull` でローカルに降りてきて、
+> 上と同じことが起きる。Vercel では Sensitive を ON にすると Development が選べなくなるので、
+> **Sensitive ON のままにしておけば自動的に安全側**になる。
+> （他の `COOKSYNC_*` は Development に入っても害がないので全環境で構わない）
 
 ---
 
