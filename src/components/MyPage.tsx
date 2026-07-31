@@ -437,13 +437,13 @@ export default function MyPage() {
 
         {/* 未ログインでも規約・プライバシー・サポートに辿り着けるようにする（審査担当者もここを見る） */}
         <nav className="mt-5 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
-          <Link href="/legal/support" className="underline underline-offset-4">
+          <Link href="/legal/support" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
             サポート・FAQ
           </Link>
-          <Link href="/legal/privacy" className="underline underline-offset-4">
+          <Link href="/legal/privacy" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
             プライバシーポリシー
           </Link>
-          <Link href="/legal/terms" className="underline underline-offset-4">
+          <Link href="/legal/terms" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
             利用規約
           </Link>
         </nav>
@@ -626,13 +626,13 @@ export default function MyPage() {
       </div>
 
       <nav className="mt-6 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
-        <Link href="/legal/support" className="underline underline-offset-4">
+        <Link href="/legal/support" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           サポート・FAQ
         </Link>
-        <Link href="/legal/privacy" className="underline underline-offset-4">
+        <Link href="/legal/privacy" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           プライバシーポリシー
         </Link>
-        <Link href="/legal/terms" className="underline underline-offset-4">
+        <Link href="/legal/terms" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           利用規約
         </Link>
       </nav>

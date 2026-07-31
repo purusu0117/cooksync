@@ -12,16 +12,16 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
         {children}
       </div>
       <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
-        <Link href="/legal/support" className="underline underline-offset-4">
+        <Link href="/legal/support" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           サポート・FAQ
         </Link>
-        <Link href="/legal/privacy" className="underline underline-offset-4">
+        <Link href="/legal/privacy" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           プライバシーポリシー
         </Link>
-        <Link href="/legal/terms" className="underline underline-offset-4">
+        <Link href="/legal/terms" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           利用規約
         </Link>
-        <Link href="/mypage" className="underline underline-offset-4">
+        <Link href="/mypage" className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-4">
           アプリへ戻る
         </Link>
       </nav>

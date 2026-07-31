@@ -437,7 +437,7 @@ export default function RecipeDetail({ id }: Props) {
             type="button"
             onClick={decMade}
             disabled={madeCount === 0}
-            className="grid h-6 w-6 place-items-center rounded-full border border-line text-ink-soft transition hover:bg-paper disabled:opacity-40"
+            className="grid h-11 w-11 place-items-center rounded-full border border-line text-base text-ink-soft transition hover:bg-paper disabled:opacity-40"
             aria-label="1回減らす"
           >
             −
@@ -448,7 +448,7 @@ export default function RecipeDetail({ id }: Props) {
           <button
             type="button"
             onClick={incMade}
-            className="grid h-6 w-6 place-items-center rounded-full border border-line text-ink-soft transition hover:bg-paper"
+            className="grid h-11 w-11 place-items-center rounded-full border border-line text-base text-ink-soft transition hover:bg-paper"
             aria-label="1回増やす"
           >
             ＋
