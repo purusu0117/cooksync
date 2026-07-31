@@ -7,6 +7,9 @@ import { usePathname, useRouter } from "next/navigation";
 
 // ログイン不要で見せるルート
 const PUBLIC = new Set(["/mypage", "/lp"]);
+// ログイン不要で見せるルート（配下ごと）。
+// /legal は App Store のプライバシーポリシー/サポートURLとして**未ログインで開ける必要がある**。
+const PUBLIC_PREFIX = ["/legal"];
 
 export default function AppGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -20,7 +23,9 @@ export default function AppGate({ children }: { children: React.ReactNode }) {
     } catch {
       /* noop */
     }
-    const needsAuth = !PUBLIC.has(pathname);
+    const isPublic =
+      PUBLIC.has(pathname) || PUBLIC_PREFIX.some((p) => pathname.startsWith(p));
+    const needsAuth = !isPublic;
     /* eslint-disable react-hooks/set-state-in-effect */
     if (!session && needsAuth) {
       setBlocked(true);

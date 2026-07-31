@@ -305,7 +305,18 @@ export default function LandingPage() {
           <p className="mt-3 text-xs text-ink-soft">
             個人開発のキッチンアプリ。Next.js / TypeScript / ローカルAI（Claude）で構築。
           </p>
-          <p className="mt-1 text-[11px] text-ink-soft/70">© 2026 CookSync</p>
+          <nav className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-ink-soft">
+            <Link href="/legal/support" className="underline underline-offset-4">
+              サポート・FAQ
+            </Link>
+            <Link href="/legal/privacy" className="underline underline-offset-4">
+              プライバシーポリシー
+            </Link>
+            <Link href="/legal/terms" className="underline underline-offset-4">
+              利用規約
+            </Link>
+          </nav>
+          <p className="mt-3 text-[11px] text-ink-soft/70">© 2026 CookSync</p>
         </div>
       </footer>
     </div>

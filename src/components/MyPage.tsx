@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { APP_TAGLINE } from "@/lib/brand";
 import { setUid } from "@/lib/syncStore";
@@ -66,6 +67,8 @@ export default function MyPage() {
   const [mounted, setMounted] = useState(false);
   const [session, setSession] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     // マウント後にlocalStorageのセッションを反映＝外部状態との同期（意図的）。
@@ -222,6 +225,45 @@ export default function MyPage() {
     if (account) setAccs([{ ...account, loggedIn: false }]);
   }
 
+  /** アカウントと全データを削除する（審査ガイドライン 5.1.1(v) 対応）。
+   *  取り返しがつかないので2段階で確認し、成功したら端末側の残りも消して初期状態へ戻す。 */
+  async function deleteAccount() {
+    if (typeof window === "undefined" || deleting) return;
+    if (
+      !window.confirm(
+        "アカウントと、冷蔵庫・買い物リスト・レシピ・献立履歴のすべてを削除します。元に戻せません。続けますか？",
+      )
+    ) {
+      return;
+    }
+    if (!window.confirm("本当に削除しますか？この操作は取り消せません。")) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch("/api/account/delete", { method: "POST" });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setDeleteError(data.error || "削除に失敗しました。時間をおいてお試しください。");
+        return;
+      }
+      // 端末に残っているデータも消す（消さないと次の登録に前の人の内容が混ざる）
+      try {
+        for (const k of Object.keys(window.localStorage)) {
+          if (k.startsWith("cooksync:") || k.startsWith("fridge-app:")) {
+            window.localStorage.removeItem(k);
+          }
+        }
+      } catch {
+        /* noop */
+      }
+      window.location.href = "/mypage";
+    } catch {
+      setDeleteError("通信に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function resetAll() {
     if (typeof window === "undefined") return;
     if (!window.confirm("冷蔵庫・買い物・献立履歴をすべて削除します。よろしいですか？")) return;
@@ -344,6 +386,19 @@ export default function MyPage() {
         <p className="mt-4 text-center text-[11px] leading-relaxed text-ink-soft/80">
           メールとパスワードで登録すると、別の端末からも同じアカウントでログインできます。
         </p>
+
+        {/* 未ログインでも規約・プライバシー・サポートに辿り着けるようにする（審査担当者もここを見る） */}
+        <nav className="mt-5 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-ink-soft">
+          <Link href="/legal/support" className="underline underline-offset-4">
+            サポート・FAQ
+          </Link>
+          <Link href="/legal/privacy" className="underline underline-offset-4">
+            プライバシーポリシー
+          </Link>
+          <Link href="/legal/terms" className="underline underline-offset-4">
+            利用規約
+          </Link>
+        </nav>
       </div>
     );
   }
@@ -486,7 +541,11 @@ export default function MyPage() {
       <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
         <p className="text-sm font-semibold text-ink">データについて</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-          すべてのデータはこの端末（ブラウザ）にだけ保存されます。個人用なので外部に送信されません。
+          冷蔵庫・買い物リスト・レシピ・献立履歴はアカウントに紐づけて保存され、別の端末からログインしても引き継がれます。写真はAIの読み取りにだけ使い、サーバーには保存しません。詳しくは
+          <Link href="/legal/privacy" className="underline underline-offset-2">
+            プライバシーポリシー
+          </Link>
+          をご覧ください。
         </p>
         <button
           type="button"
@@ -495,7 +554,40 @@ export default function MyPage() {
         >
           すべてのデータをリセット
         </button>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-soft">
+          冷蔵庫・買い物・献立履歴だけを空にします（アカウントは残ります）。
+        </p>
+
+        {/* アカウント削除：App Store審査ガイドライン 5.1.1(v) で
+            「アプリ内から削除を開始できること」が必須。 */}
+        <div className="mt-4 border-t border-line pt-4">
+          <p className="text-sm font-semibold text-ink">アカウントを削除</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+            アカウントと、サーバーに保存された全データを完全に削除します。元に戻せません。
+          </p>
+          {deleteError && <p className="mt-2 text-xs text-red-600">{deleteError}</p>}
+          <button
+            type="button"
+            onClick={deleteAccount}
+            disabled={deleting}
+            className="mt-3 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+          >
+            {deleting ? "削除中…" : "アカウントを削除する"}
+          </button>
+        </div>
       </div>
+
+      <nav className="mt-6 mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-ink-soft">
+        <Link href="/legal/support" className="underline underline-offset-4">
+          サポート・FAQ
+        </Link>
+        <Link href="/legal/privacy" className="underline underline-offset-4">
+          プライバシーポリシー
+        </Link>
+        <Link href="/legal/terms" className="underline underline-offset-4">
+          利用規約
+        </Link>
+      </nav>
     </div>
   );
 }

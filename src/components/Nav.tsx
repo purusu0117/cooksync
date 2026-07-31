@@ -35,8 +35,9 @@ export default function Nav() {
     }
   }, [pathname]);
 
-  // ランディングページ(/lp)ではアプリのタブを出さない
-  if (pathname.startsWith("/lp")) return null;
+  // ランディングページ(/lp)と法務・サポートページ(/legal)ではアプリのタブを出さない
+  // （/legal は未ログインの審査担当者も開くページなので、アプリの導線を見せない）
+  if (pathname.startsWith("/lp") || pathname.startsWith("/legal")) return null;
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";

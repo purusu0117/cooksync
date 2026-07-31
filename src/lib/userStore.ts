@@ -56,6 +56,21 @@ export async function putUser(email: string, u: User): Promise<void> {
   await fs.writeFile(FILE, JSON.stringify(all), "utf8");
 }
 
+/** ユーザーをレジストリから消す（アカウント削除用）。存在しなくてもエラーにしない。 */
+export async function deleteUser(email: string): Promise<void> {
+  if (redis) {
+    await redis.hdel(USERS_KEY, email);
+    return;
+  }
+  try {
+    const all = JSON.parse(await fs.readFile(FILE, "utf8")) as Record<string, User>;
+    delete all[email];
+    await fs.writeFile(FILE, JSON.stringify(all), "utf8");
+  } catch {
+    /* ファイルが無い＝消すものが無い */
+  }
+}
+
 /**
  * Googleプロフィールからユーザーを解決する。
  *  - 同じメールの既存ユーザーが居る → **その dataId を引き継ぐ**（データを失わせない）
