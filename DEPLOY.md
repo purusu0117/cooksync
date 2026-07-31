@@ -16,7 +16,8 @@
 | データ保存 | **Upstash Redis**（無料枠） | `src/lib/kv.ts`。環境変数が無ければ自動でローカルJSONに落ちる |
 | AI | **Anthropic API**（CookSync専用Workspaceのキー） | `src/lib/ai.ts`。キーがあればAPI、無ければローカルの `claude` CLI |
 | 認証 | メール+パスワード（scrypt）＋**Googleログイン** | Googleは環境変数を入れれば有効化 |
-| 通知(Web Push) | VAPID鍵（環境変数） | 未設定でもアプリは動く（通知だけ出ない） |
+| 通知(Web Push) | VAPID鍵（環境変数） | ブラウザ/PWA向け。未設定でもアプリは動く（通知だけ出ない） |
+| 通知(iOSアプリ) | APNs認証キー(.p8)（環境変数） | WKWebViewは Web Push を受け取れないのでアプリ版はこちら。未設定なら送信をスキップ |
 | 決済 | Stripe / StoreKit | **未実装**。プレミアムは今のところ運用フラグ |
 
 **Postgres は使わない。** `DATABASE_URL` は不要。
@@ -71,13 +72,34 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | 変数 | 用途 |
 |---|---|
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Googleログイン。両方揃うとボタンが出る |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push。未設定でも本体は動く |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push（ブラウザ/PWA）。未設定でも本体は動く |
+| `APNS_KEY_BASE64` / `APNS_KEY_ID` / `APNS_TEAM_ID` | iOSアプリへの通知（APNs）。3つ揃って初めて送信する |
+| `APNS_BUNDLE_ID` / `APNS_PRODUCTION` | 既定 `com.daito.cooksync` / 本番。Xcode直挿しの開発ビルドで試すときだけ `APNS_PRODUCTION=0` |
 | `COOKSYNC_AI_MODEL` / `_CHEAP` | モデルの上書き（既定 sonnet-5 / haiku-4-5） |
 
 VAPID鍵の生成:
 
 ```bash
 node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey);console.log(k.privateKey)"
+```
+
+APNs認証キーの用意（iOSアプリの通知）:
+
+1. Apple Developer → Certificates, Identifiers & Profiles → **Keys** で
+   「Apple Push Notifications service (APNs)」を有効にしたキーを作り、`.p8` をダウンロード
+2. Identifiers の `com.daito.cooksync` で **Push Notifications** を ON にする
+   （ONにしたらプロビジョニングプロファイルを作り直す＝fastlaneが再取得する）
+3. `.p8` を base64 にして `APNS_KEY_BASE64` に入れる（**ファイル自体はリポジトリに置かない**）
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("AuthKey_XXXXXXXXXX.p8"))
+```
+
+設定後の疎通確認（自分の宛先にだけ送るテスト）:
+
+```bash
+curl -X POST https://<本番ドメイン>/api/push/test -H 'content-type: application/json' -d '{"u":"<localStorageのcooksync:uid>"}'
+# => {"ok":true,"apns":true,"web":0,"native":1} なら iPhone に届いている
 ```
 
 > ⚠️ **`ANTHROPIC_API_KEY` をローカルの `.env.local` に入れない。**
