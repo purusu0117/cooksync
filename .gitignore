@@ -101,3 +101,5 @@ android/app/src/main/assets/capacitor.config.json
 .bench/
 .shots-local/
 .shots-retention/
+
+.shots-store/
