@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { APP_TAGLINE } from "@/lib/brand";
-import { setUid } from "@/lib/syncStore";
+import { clearStoresServer, setUid } from "@/lib/syncStore";
 import { isNativeApp } from "@/lib/native";
 import { setGuide } from "@/lib/guide";
 import {
@@ -30,7 +30,9 @@ import {
   saveExpirySettings,
   type ExpiryNotifyConfig,
 } from "@/lib/pushClient";
-import { Bell, ChefHat, HelpCircle } from "lucide-react";
+import { Bell, ChefHat, ChevronRight, HelpCircle, Sparkles } from "lucide-react";
+import { HISTORY_WEEKS } from "./premium/recapData";
+import { getPurchaseAdapter } from "@/lib/premium";
 import PageHeader from "./PageHeader";
 import { OPEN_EVENT } from "./Onboarding";
 import AppIcon from "./AppIcon";
@@ -65,8 +67,8 @@ function GoogleMark() {
 export default function MyPage() {
   const router = useRouter();
   const [accs, setAccs] = usePersistentList(accountStore);
-  const [fridge, setFridge] = usePersistentList(fridgeStore);
-  const [shopping, setShopping] = usePersistentList(shoppingStore);
+  const [fridge] = usePersistentList(fridgeStore);
+  const [shopping] = usePersistentList(shoppingStore);
   const [meals, setMeals] = usePersistentList(mealStore);
   const usage = useUsage();
 
@@ -442,6 +444,11 @@ export default function MyPage() {
             window.localStorage.removeItem(k);
           }
         }
+        // ⚠️ logout と同じく端末IDを振り直し、メモリ上のキャッシュも空に戻す。
+        //    以前はここが抜けており、削除〜遷移の隙間に再送タイマーが発火すると
+        //    メモリに残った旧データが**新しい匿名uidとしてサーバーに再アップロード**される
+        //    競合があった（2026-08-01 QA 3周目。「削除は元に戻せません」の約束に反する）。
+        setUid(crypto.randomUUID());
       } catch {
         /* noop */
       }
@@ -456,9 +463,10 @@ export default function MyPage() {
   function resetAll() {
     if (typeof window === "undefined") return;
     if (!window.confirm("冷蔵庫・買い物・献立履歴をすべて削除します。よろしいですか？")) return;
-    setFridge([]);
-    setShopping([]);
-    setMeals([]);
+    // ⚠️ setFridge([]) 等の通常経路で消さない。あちらは3方向マージなので、
+    //    端末の同期状態によってはサーバー側の項目が生き残り「削除したのに残る」が起きる
+    //    （2026-08-01 QA 3周目）。forced（マージせず空で上書き）の専用経路で消す。
+    void clearStoresServer([fridgeStore.key, shoppingStore.key, mealStore.key]);
   }
 
   // ハイドレーション前は描画しない（SSRと不一致を避ける）
@@ -885,6 +893,47 @@ export default function MyPage() {
           同じ条件のレシピが既に見つかっている場合は、AIを使わずに返すので枠を消費しません。
         </p>
       </div>
+
+      {/* プレミアムの常設エントリ（premium.ts の PaywallPlacement "mypage"）。
+          枠切れシートと違って、いつでも自分から見に行ける入口。ここでは売り込まない。
+          読むのは既存ユーザーなので、特典の中身に踏み込んでよい（copywriting-audience.md）。
+          ⚠️ **ネイティブアプリでは、課金が「準備中」のあいだ出さない**（審査 2.1: 未完成の
+          機能を審査員に触らせない）。Webは審査対象外なので正直に「準備中」を出してよい。 */}
+      {(!native || usage.premium || getPurchaseAdapter().available()) && (
+      <div className="mb-6 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+        <h2 className="mb-1 inline-flex items-center gap-1.5 text-sm font-bold text-ink">
+          <Sparkles className="h-[18px] w-[18px] text-accent-dark" strokeWidth={1.75} />
+          プレミアム
+        </h2>
+        {usage.premium ? (
+          <p className="mb-3 text-xs leading-relaxed text-ink-soft">
+            ご利用中です。解約や更新日の確認は、iPhoneの「設定 → Apple ID →
+            サブスクリプション」から行えます。
+          </p>
+        ) : (
+          <p className="mb-3 text-xs leading-relaxed text-ink-soft">
+            AIの回数を増やして、作った料理の記録を過去{HISTORY_WEEKS}
+            週ぶんさかのぼれるプランです。無料でできることは変わりません。
+          </p>
+        )}
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/premium"
+            className="flex min-h-[48px] items-center justify-between gap-2 rounded-xl bg-paper px-3.5 text-sm font-semibold text-ink transition active:scale-[0.99]"
+          >
+            {usage.premium ? "プレミアムの内容を見る" : "プレミアムでできることを見る"}
+            <ChevronRight size={16} className="shrink-0 text-ink-soft" />
+          </Link>
+          <Link
+            href="/premium/recap"
+            className="flex min-h-[48px] items-center justify-between gap-2 rounded-xl bg-paper px-3.5 text-sm font-semibold text-ink transition active:scale-[0.99]"
+          >
+            作った料理の記録
+            <ChevronRight size={16} className="shrink-0 text-ink-soft" />
+          </Link>
+        </div>
+      </div>
+      )}
 
       <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
         <p className="text-sm font-semibold text-ink">データについて</p>

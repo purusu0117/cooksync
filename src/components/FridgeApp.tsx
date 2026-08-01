@@ -258,9 +258,13 @@ export default function FridgeApp() {
           審査担当が最初に見る画面の文言が App Privacy の申告とずれるのはリジェクト事由。
           プライバシーポリシー（/legal/privacy）の記述と揃えてある。
       */}
-      <p className="mt-8 text-center text-xs leading-relaxed text-ink-soft/70">
+      <p className="mt-8 text-center text-xs leading-relaxed text-ink-soft">
         データは端末に保存したうえで、サーバーにも保存して端末間で同期します（
-        <Link href="/legal/privacy" className="underline">
+        {/* インラインリンク：-my-3 で44pxのヒット領域ぶん行間が広がらないよう相殺 */}
+        <Link
+          href="/legal/privacy"
+          className="-my-3 inline-flex min-h-[44px] items-center px-1 underline"
+        >
           プライバシーポリシー
         </Link>
         ）。今日は {todayISO()}。

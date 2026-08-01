@@ -175,7 +175,7 @@ export default function RecipeList() {
   }, [filtered, sort, starsOf, madeCountOf]);
 
   const chip = (active: boolean) =>
-    `rounded-full border px-3 py-1 text-xs font-medium transition ${
+    `min-h-[44px] touch-manipulation rounded-full border px-3 py-1 text-xs font-medium transition ${
       active
         ? "border-brand bg-brand text-white"
         : "border-line bg-surface text-ink-soft hover:border-brand hover:text-brand-dark"
@@ -352,7 +352,7 @@ export default function RecipeList() {
               key={v}
               type="button"
               onClick={() => setSort(v)}
-              className={`shrink-0 rounded-full px-2.5 py-1.5 font-semibold transition ${
+              className={`min-h-[44px] shrink-0 touch-manipulation rounded-full px-2.5 py-1.5 font-semibold transition ${
                 sort === v ? "bg-brand text-white" : "text-ink-soft"
               }`}
             >

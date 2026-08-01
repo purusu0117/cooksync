@@ -705,16 +705,26 @@ export function updateServerList<T>(key: string, updater: (prev: T[]) => T[]): v
 }
 
 /**
- * 全データを消す（リセット用）。端末キャッシュも同時に空にする。
+ * 指定したストアだけを消す（リセット用）。端末キャッシュも同時に空にする。
  * ここだけはマージせずに空で上書きする（「消したのに別端末の分が残る」を避ける）。
+ *
+ * ⚠️ マイページの「すべてのデータをリセット」は**この forced 経路を通すこと**。
+ *    以前は setFridge([]) 等の通常マージ経路で消していたため、端末が dirty のまま
+ *    ベースラインが古いと、3方向マージでサーバー側の項目が生き残り
+ *    「すべて削除したのに残る」が起きた（2026-08-01 QA 3周目）。
  */
-export async function clearAllServer(): Promise<void> {
-  for (const store of ALL_STORES) {
-    forced.add(store.key);
-    applyWrite(store.key, []);
+export async function clearStoresServer(keys: string[]): Promise<void> {
+  for (const key of keys) {
+    forced.add(key);
+    applyWrite(key, []);
   }
   persistMeta(); // ★圏外で送れないままリロードされても「全消し」は覚えている（中-14）
   await runSync();
+}
+
+/** 全ストアを消す（アカウント含む全消し用）。 */
+export async function clearAllServer(): Promise<void> {
+  await clearStoresServer(ALL_STORES.map((s) => s.key));
 }
 
 // ---------------------------------------------------------------------------

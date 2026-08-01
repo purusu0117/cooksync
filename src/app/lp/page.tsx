@@ -220,7 +220,7 @@ const GALLERY = [
 
 function Kicker({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-center text-xs font-bold uppercase tracking-[0.25em] text-brand">
+    <p className="text-center text-xs font-bold uppercase tracking-[0.25em] text-brand-dark">
       {children}
     </p>
   );
@@ -378,7 +378,7 @@ export default function LandingPage() {
                   <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-soft">
                     <Icon size={28} strokeWidth={1.7} className="text-brand" />
                   </span>
-                  <p className="mt-4 text-xs font-bold tracking-wide text-brand">
+                  <p className="mt-4 text-xs font-bold tracking-wide text-brand-dark">
                     {p.eyebrow}
                   </p>
                   <h3 className="font-display mt-1 text-xl font-bold leading-snug text-ink">
@@ -498,7 +498,7 @@ export default function LandingPage() {
                 </span>
                 <div className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-5 py-4">
                   <div className="flex items-center gap-2">
-                    <span className="font-display text-lg font-extrabold text-brand">
+                    <span className="font-display text-lg font-extrabold text-brand-dark">
                       {s.n}
                     </span>
                     <h3 className="text-sm font-bold text-ink">{s.title}</h3>
@@ -509,7 +509,7 @@ export default function LandingPage() {
               );
             })}
           </ol>
-          <p className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-brand">
+          <p className="mt-6 flex items-center justify-center gap-2 text-xs font-semibold text-brand-dark">
             <Recycle size={18} strokeWidth={1.9} />
             そしてまた最初へ。半自動でずっと回る。
           </p>
@@ -554,7 +554,7 @@ export default function LandingPage() {
             <br className="sm:hidden" />
             決めてしまおう。
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/90">
+          <p className="mt-3 text-sm leading-relaxed text-white">
             いま家にあるものを{SUGGEST_THRESHOLD}つ入れるだけで、今日の一品と買い物リストが出ます。
             <br className="hidden sm:block" />
             登録もログインも要りません。
@@ -592,7 +592,7 @@ export default function LandingPage() {
               利用規約
             </Link>
           </nav>
-          <p className="mt-3 text-xs text-ink-soft/70">© 2026 {APP_NAME}</p>
+          <p className="mt-3 text-xs text-ink-soft">© 2026 {APP_NAME}</p>
         </div>
       </footer>
     </div>

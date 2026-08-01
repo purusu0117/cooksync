@@ -38,7 +38,7 @@ export default function StarRating({
             key={n}
             type="button"
             onClick={() => onChange?.(value === n ? 0 : n)}
-            className="p-0.5 transition active:scale-90"
+            className="touch-manipulation p-[7px] transition active:scale-90"
             aria-label={`${n}つ星`}
           >
             {star}

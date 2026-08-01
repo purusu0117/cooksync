@@ -310,7 +310,7 @@ export default function CookingTimer({
             key={m}
             type="button"
             onClick={() => addTimer(m)}
-            className="inline-flex items-center gap-0.5 rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
+            className="inline-flex min-h-[44px] touch-manipulation items-center gap-0.5 rounded-full bg-brand-soft px-3 py-1.5 text-xs font-semibold text-brand-dark transition hover:bg-brand hover:text-white"
           >
             <Plus size={12} />
             {m}分
