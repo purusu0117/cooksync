@@ -90,6 +90,21 @@ async function resolveTarget(
   return { uid: q, isAccount: false };
 }
 
+/**
+ * 日次アクティブの記録（D1/D7残存を出すための最小計測・2026-08-01 マーケ部門）。
+ * アプリを開くと必ず同期のGETが飛ぶので、そこに相乗りして日付ごとのSetにuidを入れるだけ。
+ * 計測は本流を止めない（失敗は握り潰す）。個人を追跡しない＝uid以外は何も持たない。
+ */
+function recordActive(uid: string): void {
+  if (!redis || !uid || uid === "anon") return;
+  const d = new Date().toISOString().slice(0, 10);
+  const k = `cooksync:active:${d}`;
+  void redis
+    .sadd(k, uid)
+    .then(() => redis!.expire(k, 60 * 24 * 3600)) // 60日で自然消滅（D30まで見られれば足りる）
+    .catch(() => {});
+}
+
 function forbidden(): Response {
   return Response.json(
     {
@@ -182,6 +197,7 @@ export async function GET(request: Request) {
   assertKvConfigured();
   const target = await resolveTarget(request, new URL(request.url).searchParams.get("u"));
   if (!target) return forbidden();
+  recordActive(target.uid);
   const { data, rev } = await readAllFor(target);
   return Response.json(data, { headers: revHeaders(rev) });
 }

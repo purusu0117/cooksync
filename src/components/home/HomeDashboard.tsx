@@ -14,6 +14,7 @@ import { SUGGEST_THRESHOLD, remainingToSuggest } from "@/lib/starter";
 import DishIcon from "@/components/DishIcon";
 import RecipeSources from "@/components/home/RecipeSources";
 import ResumeCooking from "@/components/home/ResumeCooking";
+import TodayPlan from "@/components/home/TodayPlan";
 import WeeklyRecap from "@/components/home/WeeklyRecap";
 import EmptyState, { EMPTY_STATES } from "@/components/EmptyState";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
@@ -71,7 +72,7 @@ export default function HomeDashboard() {
         <Link
           href="/mypage"
           aria-label="マイページ"
-          className="grid h-9 w-9 place-items-center rounded-full bg-brand-soft text-brand-dark"
+          className="grid h-11 w-11 place-items-center rounded-full bg-brand-soft text-brand-dark"
         >
           <User size={18} />
         </Link>
@@ -114,6 +115,9 @@ export default function HomeDashboard() {
         レシピを探す導線より先に置く。無い日は何も描かれない。
       */}
       <ResumeCooking />
+
+      {/* 今日の献立（ウィザードで確定した計画。決めた日に戻る理由の一等地） */}
+      <TodayPlan />
 
       {/* レシピをつくる（AI提案／動画／写真） */}
       <RecipeSources />
@@ -235,9 +239,10 @@ function SectionTitle({ title, href }: { title: string; href: string }) {
   return (
     <div className="mb-2.5 flex items-center justify-between">
       <h2 className="text-base font-bold text-brand-dark">{title}</h2>
+      {/* -my-2.5 で44pxのヒット領域ぶん見出し行が高くならないよう相殺 */}
       <Link
         href={href}
-        className="flex items-center text-xs font-medium text-ink-soft transition hover:text-brand"
+        className="-my-2.5 inline-flex min-h-[44px] items-center px-1 text-xs font-medium text-ink-soft transition hover:text-brand"
       >
         もっと見る
         <ChevronRight size={14} />
