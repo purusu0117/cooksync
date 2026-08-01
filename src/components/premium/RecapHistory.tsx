@@ -17,7 +17,9 @@ import { fridgeStore, mealStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { buildWeeklyRecap } from "@/lib/weeklyRecap";
 import { useUsage } from "@/lib/usage";
-import { HISTORY_WEEKS, buildRecapHistory, historyTotals } from "./recapHistory";
+// ⚠️ データ側は recapData.ts。「recapHistory.ts」に戻さない（このファイル名と
+//    大文字小文字だけ違う名前になり、Windows/macOSのビルドが崩れる）。
+import { HISTORY_WEEKS, buildRecapHistory, historyTotals } from "./recapData";
 
 export default function RecapHistory() {
   const { premium } = useUsage();

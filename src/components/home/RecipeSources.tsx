@@ -18,11 +18,13 @@ import { getUid } from "@/lib/syncStore";
 import { readApiError, useUsage } from "@/lib/usage";
 import { isNativeApp } from "@/lib/native";
 import { MAX_RECIPE_PHOTOS, pickPhotosFromLibrary, takePhoto } from "@/lib/nativeCamera";
+import QuotaPaywall, { useQuotaPaywall } from "@/components/premium/QuotaPaywall";
 
 type Mode = "video" | "photo" | null;
 
 export default function RecipeSources() {
   const usage = useUsage();
+  const paywall = useQuotaPaywall();
   const [mode, setMode] = useState<Mode>(null);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -192,6 +194,9 @@ export default function RecipeSources() {
         // 読み取れなかった422のときはサーバーが枠を戻すので、こちらの表示も戻す。
         const fail = readApiError(data, "レシピを読み取れませんでした");
         usage.syncFromServer("import", fail.quota);
+        // 本人の枠切れ（reason:"user"）のときだけ、週1回までプレミアムの案内を出す。
+        // 出す/出さないの判定は shouldShowQuotaPaywall（premium.ts）に集約してある。
+        paywall.open({ kind: "import", reason: fail.quota?.reason, premium: usage.premium });
         throw new Error(fail.message);
       }
       if (!data.recipe) throw new Error("レシピを読み取れませんでした");
@@ -211,6 +216,7 @@ export default function RecipeSources() {
 
   return (
     <section className="mb-7">
+      <QuotaPaywall state={paywall.state} onClose={paywall.close} />
       <h2 className="mb-2.5 text-base font-bold text-brand-dark">レシピをつくる</h2>
 
       {/* ①主役：AIに提案してもらう */}

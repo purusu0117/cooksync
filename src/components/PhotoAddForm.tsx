@@ -8,6 +8,7 @@ import { readApiError, useUsage } from "@/lib/usage";
 import { getUid } from "@/lib/syncStore";
 import { isNativeApp } from "@/lib/native";
 import { takeOrPickPhoto } from "@/lib/nativeCamera";
+import QuotaPaywall, { useQuotaPaywall } from "@/components/premium/QuotaPaywall";
 
 interface Props {
   onAddMany: (items: FridgeItem[]) => void;
@@ -28,6 +29,7 @@ export default function PhotoAddForm({ onAddMany }: Props) {
   // 初期値falseでマウント後に確定させる＝サーバー描画（＝Web版）とズレさせない。
   const [native, setNative] = useState(false);
   const usage = useUsage();
+  const paywall = useQuotaPaywall();
 
   useEffect(() => {
     // マウント後に確定させる（effect本体での同期setStateを避ける）
@@ -81,6 +83,9 @@ export default function PhotoAddForm({ onAddMany }: Props) {
         // 全体／予算）はサーバーしか知らないので、こちらで書き換えると嘘になる。
         const fail = readApiError(data, "認識に失敗しました");
         usage.syncFromServer("scan", fail.quota); // 表示カウンタをサーバーの実態に合わせる
+        // 本人の枠切れ（reason:"user"）のときだけ、週1回までプレミアムの案内を出す。
+        // 出す/出さないの判定は shouldShowQuotaPaywall（premium.ts）に集約してある。
+        paywall.open({ kind: "scan", reason: fail.quota?.reason, premium: usage.premium });
         throw new Error(fail.message);
       }
       if (!Array.isArray(data.items) || data.items.length === 0) {
@@ -130,6 +135,7 @@ export default function PhotoAddForm({ onAddMany }: Props) {
 
   return (
     <div className="rounded-3xl border border-line bg-surface p-4 shadow-sm">
+      <QuotaPaywall state={paywall.state} onClose={paywall.close} />
       <p className="mb-3 text-xs text-ink-soft">
         <Camera size={13} strokeWidth={2} className="mr-1 inline-block align-[-0.15em]" />
         冷蔵庫や食材を撮るだけ。AIが食材名を読み取り、

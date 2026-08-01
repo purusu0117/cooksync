@@ -103,3 +103,6 @@ android/app/src/main/assets/capacitor.config.json
 .shots-retention/
 
 .shots-store/
+
+# QA部門の作業ファイル（読み取り専用監査のスクリプトとスクショ）
+.qa-tmp/

@@ -25,7 +25,7 @@ import Link from "next/link";
 import { Sparkles, X } from "lucide-react";
 import { AI_LABEL, weekKey, type AiKind } from "@/lib/aiLimits";
 import { PREMIUM_LIMITS } from "@/lib/aiLimits";
-import { quotaPaywallBody, shouldShowQuotaPaywall } from "@/lib/premium";
+import { getPurchaseAdapter, quotaPaywallBody, shouldShowQuotaPaywall } from "@/lib/premium";
 import { resetHint } from "@/lib/usage";
 
 /** 「この週はもう出した」を覚えておく場所。**追加のキー**（既存のキーは触らない）。 */
@@ -65,6 +65,9 @@ export function useQuotaPaywall() {
   const [state, setState] = useState<QuotaPaywallState>({ open: false, kind: "research" });
 
   const open = useCallback((input: OpenInput): boolean => {
+    // 課金が「準備中」のあいだは出さない。買えないものを売り込むのは邪魔なだけで、
+    // 週1回しかない表示チャンスも浪費する（審査 2.1 の「未完成の導線」回避も兼ねる）。
+    if (!getPurchaseAdapter().available()) return false;
     const currentWeek = weekKey();
     const allowed = shouldShowQuotaPaywall({
       reason: input.reason,
