@@ -374,6 +374,19 @@ export default function MyPage() {
       }
       // 本人のデータIDに切り替え→reloadして本人のデータを読み込む
       setUid(data.dataId);
+      // アカウント表示用のレコードを端末にも作る（登録時と同じ）。
+      // 通常はサーバーから同期で届くが、サーバー側にレコードが無い状態
+      // （2026-08-01 の users.json 復旧のような場合）だと、これが無い限り
+      // マイページが「アカウント情報を読み込めませんでした」で永久に止まる。
+      // アカウントはマージ不可キー＝手元優先なので、サーバーに正がある場合も壊さない。
+      setAccs([
+        {
+          name: typeof data.name === "string" && data.name ? data.name : email.trim(),
+          email: email.trim().toLowerCase(),
+          createdAt: Date.now(),
+          loggedIn: true,
+        },
+      ]);
       window.localStorage.setItem("cooksync:session", "1");
       window.location.reload();
     } catch {
