@@ -137,7 +137,10 @@ async function apiVisionItems(imagePath: string): Promise<string[]> {
 // 役割固定の system prompt（英語＝Windows argvでも文字化けしない）。
 // プロジェクトのCLAUDE.md/AGENTS.mdに引きずられないよう明示。
 const SYSTEM_JSON =
-  "You are a recipe-research API. Output ONLY the single JSON object that the user asks for — no surrounding prose, no markdown code fences, no explanation. Never edit files, write code, or perform any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
+  // ⚠️ 日本語の強制はここ（system）に置く。ユーザープロンプトが日本語でも、
+  //    Web検索が英語ソースを拾うとモデルが英語で書いてしまうことがある
+  //    （2026-08-01・ローカルCLI経路のAI探索が全部英語になった実害）。
+  "You are a recipe-research API. All human-readable string values in your JSON output (name, catch, steps, tips, labels, storage notes, etc.) MUST be written in natural Japanese — translate into Japanese even when your web sources are in English. Output ONLY the single JSON object that the user asks for — no surrounding prose, no markdown code fences, no explanation. Never edit files, write code, or perform any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
 
 const SYSTEM_TEXT =
   "You are a friendly Japanese home-cooking assistant inside an app. Answer concisely in Japanese plain text only (no markdown, no code). Never edit files or do any other task. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
