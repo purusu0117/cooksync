@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { APP_TAGLINE } from "@/lib/brand";
-import { clearStoresServer, setUid } from "@/lib/syncStore";
+import { clearStoresServer, getUid, setUid } from "@/lib/syncStore";
 import { isNativeApp } from "@/lib/native";
 import { setGuide } from "@/lib/guide";
 import {
@@ -89,6 +89,8 @@ export default function MyPage() {
   const [deleteError, setDeleteError] = useState("");
   /** ログイン済みなのにアカウントが読めない状態が続いたか（永久ローディング防止） */
   const [loadTimedOut, setLoadTimedOut] = useState(false);
+  /** この端末のID（サポート・復旧用の表示）。マウント後に localStorage から読む */
+  const [deviceId, setDeviceId] = useState("");
 
   // ---- 賞味期限のお知らせ ----
   /** サーバーに保存されている設定と選択肢（読み込み前は null） */
@@ -105,6 +107,7 @@ export default function MyPage() {
     setNative(isNativeApp());
     try {
       setSession(window.localStorage.getItem("cooksync:session") === "1");
+      setDeviceId(getUid());
     } catch {
       /* noop */
     }
@@ -641,6 +644,15 @@ export default function MyPage() {
             利用規約
           </Link>
         </nav>
+
+        {/* サポート・復旧用の端末ID。ログインできないとき、この端末のデータ領域を
+            特定する唯一の手がかりになる（2026-08-01 users.json消失の復旧で必要になった）。
+            秘密ではない（自分の端末にしか出ない・他人は使えない）。 */}
+        {deviceId && (
+          <p className="mb-2 text-center text-[11px] text-ink-soft select-all">
+            端末ID: {deviceId}
+          </p>
+        )}
       </div>
     );
   }
