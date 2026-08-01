@@ -17,8 +17,12 @@ interface ProofreadBody {
 
 export async function POST(request: Request) {
   try {
-    // 予算とIPの防御（ユーザー枠を持たない経路なので guardAi を通す）
-    const g = await guardAi(request, EST_YEN.text);
+    // 予算・利用者日次・IPの防御（ユーザー枠を持たない経路なので guardAi を通す）
+    const g = await guardAi(
+      request,
+      EST_YEN.text,
+      request.headers.get("x-cooksync-uid") ?? undefined,
+    );
     if (!g.ok) return Response.json({ error: g.message }, { status: 429 });
     const body = (await request.json()) as ProofreadBody;
     const name = body.name ?? "";

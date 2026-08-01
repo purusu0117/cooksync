@@ -7,7 +7,7 @@ import path from "node:path";
 import { askClaudeForJsonNoWeb } from "@/lib/ai";
 import { redis } from "@/lib/kv";
 import { guardAi } from "@/lib/quotaServer";
-import { EST_YEN } from "@/lib/aiCost";
+import { estimateExpiryEstYen } from "@/lib/aiCost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -132,8 +132,13 @@ export async function POST(request: Request) {
         }
       }
 
-      // 予算とIPの防御。キャッシュに当たった分は原価0なので、**実際にAIを呼ぶ直前**に見る。
-      const g = await guardAi(request, EST_YEN.text);
+      // 予算・利用者日次・IPの防御。キャッシュに当たった分は原価0なので、**実際にAIを呼ぶ直前**に見る。
+      // 原価は固定値ではなく**実際にAIへ聞く件数**でスケールさせる（監査 3。40件を¥0.3で申告していた）。
+      const g = await guardAi(
+        request,
+        estimateExpiryEstYen(ask.length),
+        request.headers.get("x-cooksync-uid") ?? undefined,
+      );
       if (!g.ok) return Response.json({ results, capped: true, reason: g.message });
 
       const out = await askClaudeForJsonNoWeb<{ items?: unknown[] }>(

@@ -31,7 +31,7 @@ import { todayISO, type FridgeItem } from "@/lib/food";
 import type { ShoppingItem } from "@/lib/shopping";
 import type { MealEntry } from "@/lib/mealplan";
 import { useAllRecipes, usePersistentList } from "@/lib/useStore";
-import { useSyncState } from "@/lib/syncStore";
+import { getUid, useSyncState } from "@/lib/syncStore";
 import SyncNotice, { LoadingOrOffline } from "@/components/SyncNotice";
 import CookingTimer from "@/components/CookingTimer";
 import StarRating from "@/components/StarRating";
@@ -241,7 +241,8 @@ export default function RecipeDetail({ id }: Props) {
     try {
       const res = await fetch("/api/proofread", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // uid はサーバー側の「利用者ごとの日次上限」用（無ければIP単位で数えられる）
+        headers: { "Content-Type": "application/json", "x-cooksync-uid": getUid() },
         body: JSON.stringify({ name: recipe.name, steps: recipe.steps }),
       });
       const data = await res.json();
@@ -572,7 +573,7 @@ export default function RecipeDetail({ id }: Props) {
                 type="button"
                 onClick={() => setServings(n)}
                 aria-pressed={viewServings === n}
-                className={`px-4 py-2 text-sm font-semibold transition ${
+                className={`min-h-[44px] touch-manipulation px-4 py-2 text-sm font-semibold transition ${
                   viewServings === n
                     ? "bg-brand text-white"
                     : "bg-surface text-ink-soft hover:bg-paper"
@@ -714,7 +715,7 @@ export default function RecipeDetail({ id }: Props) {
             type="button"
             onClick={clearTasks}
             disabled={doneCount === 0}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-line px-3.5 text-xs font-semibold text-ink-soft transition hover:border-brand hover:text-brand-dark disabled:opacity-40"
+            className="inline-flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-full border border-line px-3.5 text-xs font-semibold text-ink-soft transition hover:border-brand hover:text-brand-dark disabled:opacity-40"
           >
             <RotateCcw size={15} strokeWidth={2} />
             チェックを全部消す
@@ -828,7 +829,7 @@ export default function RecipeDetail({ id }: Props) {
             <button
               type="button"
               onClick={backToCurrentTask}
-              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
+              className="inline-flex min-h-[44px] touch-manipulation items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-soft transition hover:border-brand hover:text-brand-dark"
             >
               <ArrowUp size={13} strokeWidth={1.8} />
               作業中の場所へ戻る
@@ -879,7 +880,7 @@ export default function RecipeDetail({ id }: Props) {
                     href={src.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-brand-dark underline"
+                    className="inline-flex min-h-[44px] items-center px-1 text-brand-dark underline"
                   >
                     {src.label}
                   </a>

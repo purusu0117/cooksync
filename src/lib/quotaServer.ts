@@ -23,7 +23,8 @@ import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "./kv";
-import { EST_YEN, monthYenSpent } from "./aiCost";
+import { EST_YEN, monthYenSpent, preChargeYen, releasePreChargeYen } from "./aiCost";
+import { PREMIUM_AI_COST_CAP_YEN } from "./pricing";
 import {
   FREE_LIMITS,
   PREMIUM_LIMITS,
@@ -217,7 +218,18 @@ function denyGlobal(limit: number, premium: boolean): QuotaResult {
 const BUDGET_MESSAGE =
   "ただいまAI機能の提供上限に達しています（アプリ側の都合です）。翌月1日に再開します。";
 
-function denyBudget(limit: number, premium: boolean): QuotaResult {
+/**
+ * 支出額が**読めない**ときの文言。
+ *
+ * ⚠️ 以前は monthYenSpent が失敗時に 0 を返し、Redis障害中は「1円も使っていない」扱いで
+ *    **¥3,000 の天井が静かに消えていた**（2026-08-01 監査 2）。
+ *    いくら使ったか分からない状態でAIを回すと損失に上限が無くなるので、fail-closed＝止める。
+ *    「翌月1日に再開」は嘘になる（障害が直れば再開する）ので、文言も分ける。
+ */
+const BUDGET_UNKNOWN_MESSAGE =
+  "ただいまAIの利用状況を確認できないため、一時的に停止しています。時間をおいてお試しください。";
+
+function denyBudget(limit: number, premium: boolean, message = BUDGET_MESSAGE): QuotaResult {
   return {
     ok: false,
     reason: "budget",
@@ -225,7 +237,7 @@ function denyBudget(limit: number, premium: boolean): QuotaResult {
     limit,
     remaining: 0,
     premium,
-    message: BUDGET_MESSAGE,
+    message,
   };
 }
 function denyIp(limit: number, premium: boolean): QuotaResult {
@@ -286,8 +298,27 @@ export async function consume(
 
   // ④ 金額の最終防衛線。**これから使う分を足しても予算内か**で判定するので上振れしない。
   //    原価ログは呼び出し後に付くため、事前の見積もり(EST_YEN)を足して先に見る。
+  //    支出額が読めない（null）ときは fail-closed＝止める（監査 2）。
   const spent = await monthYenSpent(m);
+  if (spent === null) return denyBudget(limit, premium, BUDGET_UNKNOWN_MESSAGE);
   if (spent + EST_YEN[kind] > monthlyBudgetYen()) return denyBudget(limit, premium);
+
+  // ①b プレミアムの**1人あたり月間原価上限**（¥220・pricing.PREMIUM_AI_COST_CAP_YEN）。
+  //    採算の要：¥480の手取り¥371に対し、枠フル使用の原価は¥1,730＝回数だけでは赤字。
+  //    回数上限は「使い方の目安」、こちらが「お金の上限」（設計は pricing.ts のコメント）。
+  //    見積もり(EST_YEN)ベースで数える＝安全側。無料ユーザーには掛けない
+  //    （無料の週次枠をフルに使うと月¥296 > ¥220 で、正当な利用を止めてしまうため。
+  //      無料側の上限は週次枠そのものが担っている）。
+  const capMsg = `今月の${KIND_LABEL[kind]}が公平利用の上限に達しました。来月1日に戻ります。`;
+  const denyUserCap = (): QuotaResult => ({
+    ok: false,
+    reason: "user",
+    used: limit,
+    limit,
+    remaining: 0,
+    premium,
+    message: capMsg,
+  });
 
   // ⚠️ **判定は内側（ユーザー）から外側（全体）の順に行い、拒否したら必ず戻す。**
   //    以前は外側の「全体の月間回数」を最初に incr していて、**拒否しても戻していなかった**。
@@ -306,12 +337,28 @@ export async function consume(
       return denyUser(kind, limit, premium);
     }
 
+    // ①b プレミアムの1人あたり月間原価上限（見積もりベース・月次）
+    const ck = `cooksync:uyen:${id}:${m}`;
+    if (premium) {
+      const cy = Number(await redis.incrbyfloat(ck, EST_YEN[kind]));
+      if (cy <= EST_YEN[kind] + 1e-9) await redis.expire(ck, 70 * 24 * 3600);
+      if (cy > PREMIUM_AI_COST_CAP_YEN) {
+        await redis.incrbyfloat(ck, -EST_YEN[kind]);
+        await redis.hincrby(uk, kind, -1);
+        return denyUserCap();
+      }
+    }
+    const rollbackCap = async () => {
+      if (premium) await redis!.incrbyfloat(ck, -EST_YEN[kind]);
+    };
+
     // ② IP日次上限
     const ik = `cooksync:ipday:${ipk}:${d}`;
     const i = await redis.incr(ik);
     if (i === 1) await redis.expire(ik, 2 * 24 * 3600);
     if (i > ipDailyCap()) {
       await redis.decr(ik);
+      await rollbackCap();
       await redis.hincrby(uk, kind, -1);
       return denyIp(limit, premium);
     }
@@ -323,8 +370,20 @@ export async function consume(
     if (g > globalMonthlyCap()) {
       await redis.decr(gk);
       await redis.decr(ik);
+      await rollbackCap();
       await redis.hincrby(uk, kind, -1);
       return denyGlobal(limit, premium);
+    }
+
+    // ⑤ 見積もり額を**先に計上**する（バースト超過対策・監査 6）。
+    //    これで同時に来た次のリクエストの④に、この1回ぶんの見積もりが見える。
+    //    計上できない＝支出を追えなくなるので、通さずに全カウンタを戻す。
+    if (!(await preChargeYen(kind))) {
+      await redis.decr(gk);
+      await redis.decr(ik);
+      await rollbackCap();
+      await redis.hincrby(uk, kind, -1);
+      return denyBudget(limit, premium, BUDGET_UNKNOWN_MESSAGE);
     }
     return { ok: true, used, limit, remaining: Math.max(0, limit - used), premium };
   }
@@ -337,6 +396,11 @@ export async function consume(
   const used = (rec[kind] ?? 0) + 1;
   if (used > limit) return denyUser(kind, limit, premium);
 
+  // ①b プレミアムの1人あたり月間原価上限（Redis分岐と同じ。通ったときだけ最後に書く）
+  const capKey = `uyen:${id}:${m}`;
+  const capYen = (db.ip[capKey] ?? 0) + EST_YEN[kind];
+  if (premium && capYen > PREMIUM_AI_COST_CAP_YEN) return denyUserCap();
+
   const ikey = `${ipk}:${d}`;
   const ipCount = (db.ip[ikey] ?? 0) + 1;
   if (ipCount > ipDailyCap()) return denyIp(limit, premium);
@@ -344,7 +408,11 @@ export async function consume(
   const globalCount = (db.global[m] ?? 0) + 1;
   if (globalCount > globalMonthlyCap()) return denyGlobal(limit, premium);
 
+  // 見積もり額の事前計上（Redis分岐の⑤と同じ理由）。失敗したら書かずに止める。
+  if (!(await preChargeYen(kind))) return denyBudget(limit, premium, BUDGET_UNKNOWN_MESSAGE);
+
   rec[kind] = used;
+  if (premium) db.ip[capKey] = capYen;
   db.ip[ikey] = ipCount;
   db.global[m] = globalCount;
   await writeLocal(db);
@@ -356,8 +424,62 @@ export async function consume(
  * 共有プールから返せるとき（＝AI原価が0のとき）に使う。原価が出ないのに月間枠を
  * 減らすのは筋が悪いので枠は消費せず、連打への最低限の歯止めだけかける。
  */
+/** 補助AI（suggest/proofread/estimate-expiry）の、1人あたり日次上限。 */
+function textDailyCap(): number {
+  return Number(process.env.COOKSYNC_TEXT_DAILY_CAP) || 30;
+}
+
 /**
- * ユーザー枠を持たないAI経路の防御。**月間予算 → IP日次上限** の順に見る。
+ * 補助AIの**利用者ごと**の日次カウンタ。+1して上限内なら true。
+ *
+ * ⚠️ 以前この3ルートの制限はIP日次上限（全AI共用・30/日）だけだった（監査 4・5）。
+ *    CGNATや共有回線では「攻撃者には緩すぎ、同居人には厳しすぎる」ので、
+ *    利用者単位（uid、無ければIP）でも別に数える。uidは偽装できるが、
+ *    偽装してuidを回しても外側のIP日次上限と月間予算で止まる（防御の多層は維持）。
+ */
+async function bumpTextDaily(id: string): Promise<boolean> {
+  const d = day();
+  try {
+    if (redis) {
+      const k = `cooksync:textday:${id}:${d}`;
+      const n = await redis.incr(k);
+      if (n === 1) await redis.expire(k, 2 * 24 * 3600);
+      if (n > textDailyCap()) {
+        await redis.decr(k);
+        return false;
+      }
+      return true;
+    }
+    const db = await readLocal();
+    const key = `text:${id}:${d}`;
+    const n = (db.ip[key] ?? 0) + 1;
+    if (n > textDailyCap()) return false;
+    db.ip[key] = n;
+    await writeLocal(db);
+    return true;
+  } catch {
+    return true; // 数えられないときは通す（この経路の上限はまだ予算とIPが残る）
+  }
+}
+
+async function unbumpTextDaily(id: string): Promise<void> {
+  const d = day();
+  try {
+    if (redis) {
+      await redis.decr(`cooksync:textday:${id}:${d}`);
+      return;
+    }
+    const db = await readLocal();
+    const key = `text:${id}:${d}`;
+    if (db.ip[key]) db.ip[key] = Math.max(0, db.ip[key] - 1);
+    await writeLocal(db);
+  } catch {
+    /* 戻せなくても致命傷ではない */
+  }
+}
+
+/**
+ * ユーザー枠を持たないAI経路の防御。**月間予算 → 利用者日次 → IP日次** の順に見る。
  *
  * ⚠️ これが無かったせいで、AIを呼ぶ7つのAPIのうち4つ
  *    （suggest / estimate-expiry / proofread / import-video）が
@@ -366,22 +488,43 @@ export async function consume(
  *    ＝「損失は¥3,000で頭打ち」という前提そのものが成立していなかった。
  *
  * @param estYen この呼び出しの見積もり原価（円）。予算判定に足して先に見る。
+ *               estimate-expiry のように件数で原価が変わる経路は、呼び出し側でスケールさせる。
+ * @param uid 利用者ID（`x-cooksync-uid` ヘッダ等）。無ければIP単位で数える。
  */
 export async function guardAi(
   request: Request,
   estYen: number,
+  uid?: string,
 ): Promise<{ ok: boolean; message?: string }> {
   if (!quotaEnforced()) return { ok: true };
 
+  // 支出額が読めないときは fail-closed（監査 2。consume の④と同じ向き）
   const spent = await monthYenSpent(month());
+  if (spent === null) return { ok: false, message: BUDGET_UNKNOWN_MESSAGE };
   if (spent + estYen > monthlyBudgetYen()) {
     return { ok: false, message: BUDGET_MESSAGE };
   }
+
+  const id = uid && uid !== "anon" ? uid : `ip-${hashIp(clientIp(request))}`;
+  if (!(await bumpTextDaily(id))) {
+    return {
+      ok: false,
+      message: "本日のAI補助機能の利用が上限に達しました。明日またお試しください。",
+    };
+  }
+
   if (!(await checkIpOnly(request))) {
+    await unbumpTextDaily(id); // 使わせなかった分は戻す（consume と同じ方針）
     return {
       ok: false,
       message: "この回線からのAI利用が今日の上限に達しました。明日またお試しください。",
     };
+  }
+
+  // 見積もり額の事前計上（バースト超過対策・監査 6）。計上できなければ止める。
+  if (!(await preChargeYen("text", estYen))) {
+    await unbumpTextDaily(id);
+    return { ok: false, message: BUDGET_UNKNOWN_MESSAGE };
   }
   return { ok: true };
 }
@@ -455,17 +598,28 @@ export async function checkIpOnly(request: Request): Promise<boolean> {
 /** AI呼び出しが失敗したときに枠を戻す（ユーザーに損をさせない）。 */
 export async function refund(uid: string, kind: AiKind, request: Request): Promise<void> {
   if (!quotaEnforced()) return;
+  // AIを呼ばずに終わった（＝原価が出ていない）ので、事前計上した見積もりも取り消す。
+  // すでに logAiCost が実測で置き換えた後なら何もしない（FIFOが空）。
+  await releasePreChargeYen(kind);
   const p = period();
+  const m = month();
   const ipk = hashIp(clientIp(request));
   const id = uid && uid !== "anon" ? uid : `ip-${ipk}`;
   try {
+    // プレミアムの月間原価カウンタ（①b）も見積もりぶん戻す（使っていないので）
+    const prem = await isPremium(uid);
     if (redis) {
       await redis.hincrby(`cooksync:usage:${id}:${p}`, kind, -1);
+      if (prem) await redis.incrbyfloat(`cooksync:uyen:${id}:${m}`, -EST_YEN[kind]);
       return;
     }
     const db = await readLocal();
     const rec = db.usage[`${id}:${p}`];
     if (rec && rec[kind]) rec[kind] = Math.max(0, rec[kind] - 1);
+    if (prem) {
+      const capKey = `uyen:${id}:${m}`;
+      if (db.ip[capKey]) db.ip[capKey] = Math.max(0, db.ip[capKey] - EST_YEN[kind]);
+    }
     await writeLocal(db);
   } catch {
     /* 戻せなくても致命傷ではない */

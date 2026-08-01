@@ -4,6 +4,8 @@
 // 決定論テーブル（guess.ts）に無い食材だけを /api/estimate-expiry に投げ、
 // 結果は端末にもキャッシュして同じ食材を二度聞かない。
 
+import { getUid } from "./syncStore";
+
 export interface ExpiryEstimate {
   name: string;
   days: number;
@@ -62,7 +64,8 @@ export async function estimateExpiryDays(
   try {
     const res = await fetch("/api/estimate-expiry", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // uid はサーバー側の「利用者ごとの日次上限」用（無ければIP単位で数えられる）
+      headers: { "Content-Type": "application/json", "x-cooksync-uid": getUid() },
       body: JSON.stringify({ items: ask }),
     });
     const data = (await res.json()) as { results?: ExpiryEstimate[] };

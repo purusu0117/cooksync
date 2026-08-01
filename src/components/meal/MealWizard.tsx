@@ -58,6 +58,7 @@ import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
 import { getUid, useSyncState } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
 import { readApiError, useUsage } from "@/lib/usage";
+import QuotaPaywall, { useQuotaPaywall } from "@/components/premium/QuotaPaywall";
 import EmptyState, { EMPTY_STATES } from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StarRating from "@/components/StarRating";
@@ -119,6 +120,7 @@ export default function MealWizard() {
   const usage = useUsage();
   const guide = useGuide();
   const sync = useSyncState();
+  const paywall = useQuotaPaywall();
 
   const [timing, setTiming] = useState<MealTiming>("夜");
   const [filters, setFilters] = useState<RecipeTags>({});
@@ -243,6 +245,7 @@ export default function MealWizard() {
   }
 
   function pickRecipe(recipe: Recipe) {
+    setGuide("done"); // おすすめから選んでも初回ガイドは完了（AI探索だけを到達点にしない）
     const slot = slots[slotIndex];
     const nextPicks = [...picks, { ...slot, recipe }];
     setPicks(nextPicks);
@@ -422,6 +425,9 @@ export default function MealWizard() {
         // こちらで文言を作ると「無料枠を使い切りました」等の嘘になることがある。
         const fail = readApiError(data, "開始に失敗しました");
         usage.syncFromServer("research", fail.quota); // 表示カウンタをサーバーの実態に合わせる
+        // 本人の枠切れ（reason:"user"）のときだけ、週1回までプレミアムの案内を出す。
+        // 出す/出さないの判定は shouldShowQuotaPaywall（premium.ts）に集約してある。
+        paywall.open({ kind: "research", reason: fail.quota?.reason, premium: usage.premium });
         throw new Error(fail.message);
       }
       if (!data.jobId) throw new Error("開始に失敗しました");
@@ -615,7 +621,8 @@ export default function MealWizard() {
     try {
       const res = await fetch("/api/suggest", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // uid はサーバー側の「利用者ごとの日次上限」用（無ければIP単位で数えられる）
+        headers: { "Content-Type": "application/json", "x-cooksync-uid": getUid() },
         body: JSON.stringify({
           menu: picks.map((p) => ({ slot: p.slot, name: p.recipe.name })),
           fridge: fridge.map((f) => f.name),
@@ -672,12 +679,17 @@ export default function MealWizard() {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <PageHeader title="献立を決める" Icon={ChefHat} iconClass="text-accent" />
+      <QuotaPaywall state={paywall.state} onClose={paywall.close} />
 
       {guide === "meal" && (
         <div className="mb-5 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-3.5">
           <p className="text-sm font-semibold leading-relaxed text-accent-dark">
-            {/* アプリ版もAPNsで通知が届くようになったので、案内はWeb版と同じ文言でよい */}
-            最後のステップ！条件はお好みでOK。下の「AIでレシピを探す」を押してみましょう（3〜4分かかります。完了したら通知でお知らせします）。
+            {/* ⚠️ 初回の成功体験は**待ち時間ゼロの「おすすめ」**に誘導する。
+                以前はAI探索（数分待ち）を到達点にしていて、初回の献立が出るまでが
+                いちばん遅い経路になっていた（2026-08-01 マーケ部門の指摘）。
+                AI探索は「じっくり派の選択肢」として添える。所要時間はローディング表示
+                （最大1〜2分）と食い違う数字を書かない。 */}
+            最後のステップ！下の「おすすめから選ぶ」をタップすると、いま家にあるものから今日の献立がすぐ決まります。じっくり探すなら「AIでレシピを探す」もどうぞ（完了したら通知でお知らせします）。
           </p>
         </div>
       )}
@@ -1122,7 +1134,7 @@ export default function MealWizard() {
           )}
 
           <p className="mb-2 text-xs font-semibold text-ink-soft">
-            または、おすすめから選ぶ
+            おすすめから選ぶ（待たずに決まります）
           </p>
           <ul className="flex flex-col gap-3">
             {ranked.slice(0, 4).map((r) => (

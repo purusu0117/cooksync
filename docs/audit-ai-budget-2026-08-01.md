@@ -76,3 +76,16 @@ CGNAT や共有回線では**攻撃者には緩すぎ、同居人には厳しす
 ### 7. 問題なしを確認したもの
 `research` のプール当たり経路（`:151-166`）は予算も枠も通らないが、
 **キャッシュ済みレシピを¥0で返すだけ**で、`checkIpOnly`（`:153`）は通っている。正しい。
+
+## 対応記録（2026-08-01 同日）
+
+| # | 対応 | 実装 |
+|---|---|---|
+| 1 | ✅ 画像生成に日次上限（既定40回/日、`COOKSYNC_IMAGE_DAILY_CAP`）。超過は429。生成のたびに消費数をログ | `imageJobs.ts`（bumpImageDaily）・`recipe-image/route.ts` |
+| 2 | ✅ `monthYenSpent` は失敗時 **null** を返し、consume/guardAi は **fail-closed**（「利用状況を確認できないため一時停止」）。`logAiCost` の書き込み失敗はインスタンス内 `unloggedYen` に応急計上して spent に足す | `aiCost.ts`・`quotaServer.ts` |
+| 3 | ✅ `estimate-expiry` の見積もりを件数でスケール（`estimateExpiryEstYen`、1件¥0.15・最低¥0.3。40件→¥6） | `aiCost.ts`・`estimate-expiry/route.ts` |
+| 4 | ✅ `guardAi` に**利用者ごとの日次上限**（既定30/日、`COOKSYNC_TEXT_DAILY_CAP`）。uid（`x-cooksync-uid`）が無ければIP単位。クライアント3箇所（suggest/proofread/estimate-expiry）がヘッダを送るようにした | `quotaServer.ts`・各route・MealWizard/expiryAI/RecipeDetail |
+| 5 | ⚠️ 部分対応。4の利用者別上限で緩和したが、uid偽装は残る（IP日次＋予算で頭打ち）。本質対応は Sign in with Apple / Google OAuth 移行後（uid=OAuth subject） | — |
+| 6 | ✅ **見積もりの事前計上**。consume/guardAi のチェック通過と同時に EST_YEN を支出に計上し、`logAiCost` が実測で差し替え（FIFO）。AIを呼ばず終わったら `refund` が取り消す。バースト時も同時リクエストに計上済み見積もりが見える | `aiCost.ts`（preChargeYen/releasePreChargeYen）・`quotaServer.ts` |
+
+テスト: `src/lib/__tests__/budgetGuard.test.ts` で固定（バースト・差し替え・refund取り消し・利用者日次・匿名IP別）。

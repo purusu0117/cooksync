@@ -46,6 +46,7 @@ async function costBlock(month: string) {
   }
   // CookSync自身の月間予算に対して今どこにいるか（組織全体の上限とは別物）
   const budget = Number(process.env.COOKSYNC_MONTHLY_BUDGET_YEN) || 3000;
+  // null＝支出額が読めない（この状態のあいだAIは fail-closed で止まっている）
   const spent = await monthYenSpent(month);
   return {
     month: c.month,
@@ -53,12 +54,15 @@ async function costBlock(month: string) {
     yenTotal: Number(c.total.yen.toFixed(1)),
     yenPerCall: Number(avgYenPerCall(c.total).toFixed(2)),
     webSearches: c.total.webSearches,
-    budget: {
-      yen: budget,
-      spentYen: Number(spent.toFixed(1)),
-      remainingYen: Number(Math.max(0, budget - spent).toFixed(1)),
-      usedPct: Number(((spent / budget) * 100).toFixed(1)),
-    },
+    budget:
+      spent === null
+        ? { yen: budget, unavailable: true }
+        : {
+            yen: budget,
+            spentYen: Number(spent.toFixed(1)),
+            remainingYen: Number(Math.max(0, budget - spent).toFixed(1)),
+            usedPct: Number(((spent / budget) * 100).toFixed(1)),
+          },
     byFeature: per,
   };
 }
@@ -79,6 +83,46 @@ async function affiliateBlock(month: string) {
     byPartner: s.byPartner,
     // 未設定の送客先は画面に出ないので、押されていない理由の切り分けに使う
     configured: PARTNERS.filter((p) => !!process.env[p.envKey]).map((p) => p.id),
+  };
+}
+
+/**
+ * 日次アクティブ（/api/store の GET で記録した cooksync:active:<日付> のSet）から
+ * DAUと簡易の残存率を出す。ユーザー数が少ないうちは率より生の人数が読みやすいので両方返す。
+ *   d1: 前日に開いた人のうち、その翌日も開いた人の割合（直近7ペアの平均）
+ *   d7: 7日前に開いた人のうち、7日後にも開いた人の割合（直近7ペアの平均）
+ */
+async function activeBlock() {
+  if (!redis) return null;
+  const days: string[] = [];
+  for (let i = 0; i < 15; i++) {
+    days.push(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10));
+  }
+  const sets = await Promise.all(
+    days.map(async (d) => {
+      try {
+        return new Set((await redis!.smembers(`cooksync:active:${d}`)) ?? []);
+      } catch {
+        return new Set<string>();
+      }
+    }),
+  );
+  const retention = (gapDays: number): number | null => {
+    let came = 0;
+    let base = 0;
+    // sets[0]=今日。基準日 j=gap..gap+6（データのある範囲だけ）
+    for (let j = gapDays; j < Math.min(gapDays + 7, sets.length); j++) {
+      for (const uid of sets[j]) {
+        base += 1;
+        if (sets[j - gapDays].has(uid)) came += 1;
+      }
+    }
+    return base > 0 ? Number(((came / base) * 100).toFixed(1)) : null;
+  };
+  return {
+    dau: days.map((date, i) => ({ date, users: sets[i].size })),
+    d1Pct: retention(1),
+    d7Pct: retention(7),
   };
 }
 
@@ -138,6 +182,7 @@ export async function GET(request: Request) {
   return Response.json({
     users: accounts.length,
     aiThisMonth,
+    active: await activeBlock(),
     cost: await costBlock(month),
     affiliate: await affiliateBlock(month),
     accounts: accounts.sort(

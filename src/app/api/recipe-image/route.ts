@@ -26,6 +26,13 @@ export async function POST(request: Request) {
     // 申告された uid をそのまま使うと、他人に通知を送りつける口になる。
     const target = await resolvePushTarget(request, body.uid);
     const jobId = startImageJob(safeId, name, target?.uid);
+    // 日次上限（監査 1）。絵文字表示のフォールバックがあるので、正直に断ってよい
+    if (!jobId) {
+      return Response.json(
+        { error: "今日の画像生成の上限に達しました。明日またお試しください。" },
+        { status: 429 },
+      );
+    }
     return Response.json({ jobId });
   } catch (e) {
     return Response.json(

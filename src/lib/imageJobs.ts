@@ -30,11 +30,41 @@ function gc() {
   for (const [id, j] of jobs) if (j.createdAt < cutoff) jobs.delete(id);
 }
 
-export function startImageJob(recipeId: string, name: string, uid?: string): string {
+// ---- 日次の生成回数上限（2026-08-01 監査 1） ----
+// このルートはローカル構成専用（本番=APIキー構成では disabled）だが、
+// HiggsField の画像クレジットを**計測なし・上限なし**で消費できる状態だった。
+// ホストに到達できる人がループを回しても、1日の消費がここで頭打ちになる。
+let capDay = "";
+let capCount = 0;
+
+function imageDailyCap(): number {
+  return Number(process.env.COOKSYNC_IMAGE_DAILY_CAP) || 40;
+}
+
+/** 今日の残り生成回数があるなら数えて true。上限に達していたら false。 */
+function bumpImageDaily(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (capDay !== today) {
+    capDay = today;
+    capCount = 0;
+  }
+  if (capCount >= imageDailyCap()) return false;
+  capCount += 1;
+  console.log(`[imageJobs] 生成 ${capCount}/${imageDailyCap()}（${today}）`);
+  return true;
+}
+
+/**
+ * 生成ジョブを開始する。**上限に達していたら null**（呼び出し側は429を返す）。
+ * 実行中の同じレシピには相乗りするので、上限は「新しく走る生成」だけを数える。
+ */
+export function startImageJob(recipeId: string, name: string, uid?: string): string | null {
   gc();
   // 同じレシピの生成が走っていたらそのジョブに相乗り（再タップ・自動+手動の重複を吸収）
   const existing = inFlightByRecipe.get(recipeId);
   if (existing && jobs.get(existing)?.status === "pending") return existing;
+
+  if (!bumpImageDaily()) return null;
 
   const id = randomUUID();
   jobs.set(id, { status: "pending", createdAt: Date.now() });

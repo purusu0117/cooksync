@@ -11,7 +11,7 @@ import {
   recentUsageMonths,
   refund,
 } from "../quotaServer";
-import { logAiCost } from "../aiCost";
+import { logAiCost, resetPreCharge } from "../aiCost";
 import { weekKey } from "../aiLimits";
 import { quotaMessage, readApiError } from "../usage";
 
@@ -28,6 +28,9 @@ async function clean() {
 beforeEach(async () => {
   process.env.COOKSYNC_ENFORCE_QUOTA = "1";
   process.env.COOKSYNC_USD_JPY = "155";
+  // 事前計上のFIFOはメモリ内なので、ファイルの clean() だけでは前のテストの
+  // 計上が持ち越され、logAiCost が無関係の見積もりを差し引いてしまう
+  resetPreCharge();
   await clean();
 });
 afterEach(async () => {
