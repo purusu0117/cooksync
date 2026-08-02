@@ -12,7 +12,6 @@ import {
   FRESHNESS,
   freshnessOf,
   sortByExpiry,
-  todayISO,
   type FreshnessBucket,
   type FridgeItem,
 } from "@/lib/food";
@@ -267,7 +266,12 @@ export default function FridgeApp() {
         >
           プライバシーポリシー
         </Link>
-        ）。今日は {todayISO()}。
+        {/* ⚠️ ここに「今日は {todayISO()}」を出さない（2026-06-08から残っていた開発用の名残）。
+            この画面は**静的生成**なので、描画されるのは"ビルドした日"で固定される。
+            日付が変わった翌日から画面が古い日付を表示し（＝嘘）、さらにSSRとクライアントで
+            文字が食い違ってハイドレーションエラー(React #418)になっていた。
+            日付を出す必要が出たら、必ずマウント後（useEffect）にクライアントだけで描くこと。 */}
+        ）。
       </p>
     </div>
   );
