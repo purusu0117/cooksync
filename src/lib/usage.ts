@@ -21,6 +21,7 @@ import {
 } from "./aiLimits";
 import { usePersistentList } from "./useStore";
 import { todayISO } from "./food";
+import { useSyncExternalStore } from "react";
 
 // 枠の数字と期間は src/lib/aiLimits.ts に一本化した（ここに書くとサーバー側とズレる）。
 export type { AiKind } from "./aiLimits";
@@ -123,9 +124,85 @@ export function readApiError(
  *
  * この性質は usage.test.ts / quotaServer.test.ts で固定している。
  */
+/**
+ * AI枠を**サーバーが実際に強制しているか**（/api/health の quotaEnforced）。
+ *
+ * ⚠️ これが無いと、ローカル版（claude.exe＝原価0でサーバーは枠を一切見ない）でも
+ *    **画面側のカウンタだけが先に止める**。実際に大翔のローカルで起きた（2026-08-02）。
+ *    しかも本番から使用回数レコードを引っ越した直後だったため、初日から枠切れ表示になった。
+ *    枠の判定はサーバーが唯一の正なので、強制していないなら画面も止めない。
+ *
+ * 既定は true（取得できるまでは従来どおり制限を見せる＝公開側で緩みっぱなしにしない安全側）。
+ */
+const ENFORCED_CACHE_KEY = "cooksync:quotaEnforced";
+let enforced: boolean | null = null;
+let enforcedLoading = false;
+const enforcedListeners = new Set<() => void>();
+
+/**
+ * 前回の答えを端末に覚えておく。
+ * /api/health の往復が終わるまでは既定の「制限あり」で描くので、その数百msのあいだに
+ * AIボタンを押すと**制限のない環境でも一度だけ断られる**。覚えておけばその隙間が消える。
+ *
+ * ⚠️ 読み出すのは subscribe（＝マウント後）だけ。モジュール読み込み時に読むと
+ *    サーバー描画の値とクライアント初回描画の値が食い違ってハイドレーションが壊れる。
+ */
+function readEnforcedCache(): boolean | null {
+  try {
+    const v = window.localStorage.getItem(ENFORCED_CACHE_KEY);
+    return v === "1" ? true : v === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function ensureEnforcedFlag() {
+  if (enforced === null) {
+    const cached = readEnforcedCache();
+    if (cached !== null) {
+      enforced = cached;
+      enforcedListeners.forEach((l) => l());
+    }
+  }
+  if (enforcedLoading) return;
+  enforcedLoading = true;
+  fetch("/api/health")
+    .then((r) => r.json())
+    .then((j) => {
+      // 旧サーバー（このフィールドが無い）は従来どおり制限ありとして扱う
+      enforced = j?.quotaEnforced !== false;
+      try {
+        window.localStorage.setItem(ENFORCED_CACHE_KEY, enforced ? "1" : "0");
+      } catch {
+        /* 保存できなくても次回また聞くだけ */
+      }
+    })
+    .catch(() => {
+      // 取れないときは覚えている答えを使い、それも無ければ安全側（制限あり）
+      if (enforced === null) enforced = true;
+    })
+    .finally(() => {
+      enforcedLoading = false;
+      enforcedListeners.forEach((l) => l());
+    });
+}
+
+export function useQuotaEnforced(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      enforcedListeners.add(cb);
+      ensureEnforcedFlag();
+      return () => enforcedListeners.delete(cb);
+    },
+    () => enforced !== false,
+    () => true, // SSRは常に true（クライアント初期値と揃えてハイドレーション不一致を出さない）
+  );
+}
+
 export function useUsage() {
   const [records, setRecords] = usePersistentList(usageStore);
   const [accounts] = usePersistentList(accountStore);
+  const quotaOn = useQuotaEnforced();
   const premium = accounts[0]?.premium ?? false;
   const month = currentPeriod();
   const rec: UsageRecord =
@@ -147,6 +224,9 @@ export function useUsage() {
     return Math.max(0, limits[kind] - (rec[kind] ?? 0));
   }
   function canUse(kind: AiKind): boolean {
+    // サーバーが枠を強制していない構成（ローカル）では、画面側で止めない。
+    // ここで止めると「サーバーは通すのに画面が断る」＝一番たちの悪い嘘になる。
+    if (!quotaOn) return true;
     return (rec[kind] ?? 0) < limits[kind];
   }
   // 今週のレコードを1つだけ書き換える共通処理（無ければ作る）。
@@ -191,6 +271,8 @@ export function useUsage() {
 
   return {
     premium,
+    /** サーバーが枠を強制しているか。false（ローカル）ならメーターは出さない */
+    quotaEnforced: quotaOn,
     used,
     limitOf,
     remaining,

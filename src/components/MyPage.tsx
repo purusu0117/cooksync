@@ -888,6 +888,14 @@ export default function MyPage() {
             ここに「今月」「毎月1日」と書くと画面が嘘をつく。
             期間の言い回しは src/lib/usage.ts に1本化してあり、テストで固定されている。 */}
         <h2 className="mb-1 text-sm font-bold text-ink">{QUOTA_METER_TITLE}</h2>
+        {!usage.quotaEnforced ? (
+          /* サーバーが枠を強制していない構成（ローカル＝claude.exe・原価0）。
+             ここで残量メーターを出すと、実際には止まらないのに「残り0回」と嘘をつく。 */
+          <p className="text-xs leading-relaxed text-ink-soft">
+            この環境では回数の制限はありません。AIはいつでも使えます。
+          </p>
+        ) : (
+        <>
         <p className="mb-3 text-xs leading-relaxed text-ink-soft">
           {quotaMeterNote(usage.premium)}
         </p>
@@ -917,6 +925,8 @@ export default function MyPage() {
         <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">
           同じ条件のレシピが既に見つかっている場合は、AIを使わずに返すので枠を消費しません。
         </p>
+        </>
+        )}
       </div>
 
       {/* プレミアムの常設エントリ（premium.ts の PaywallPlacement "mypage"）。
