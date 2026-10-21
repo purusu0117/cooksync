@@ -11,6 +11,7 @@ import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { isSameDish, type Cuisine, type Recipe } from "@/lib/recipe";
 import DishIcon from "@/components/DishIcon";
 import { useOptionalKitchen } from "@/lib/kitchen/client";
+import { videoEvidenceLabel } from "@/lib/kitchen/videoFrames";
 
 export interface RawRecipe {
   draft?: boolean;
@@ -129,6 +130,7 @@ export default function ImportedRecipePreview({
 
   return (
     <div className="mt-3 rounded-2xl border border-line bg-paper p-3">
+      {videoEvidenceLabel(result.evidence) && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">{videoEvidenceLabel(result.evidence)}</p>}
       {r.draft && <p role="status" className="mb-3 text-sm text-amber-900">材料または手順が欠けています。下書きとして保存し、確認・補完してから献立に使えます。</p>}
       <div className="flex items-start gap-2.5">
         <DishIcon name={r.name || ""} size={26} />

@@ -14,6 +14,7 @@ import DeviceImport from "./DeviceImport";
 import VerifiedDeviceCopy from "./VerifiedDeviceCopy";
 import StorageGuidance from "./StorageGuidance";
 import { operationSummary } from "@/lib/kitchen/operationSummary";
+import { videoEvidenceLabel } from "@/lib/kitchen/videoFrames";
 import { MealSelection, MealManager, EatingPlans, RecipeDrafts, StepControls } from "./KitchenFollowThrough";
 
 type Tab = "plans" | "shopping" | "inventory" | "settings" | "history";
@@ -202,6 +203,7 @@ function PlanPanel({ plan: p, state }: { plan: Plan; state: KitchenState }) {
 function RecipeEvidence({ recipe }: { recipe: Recipe }) {
   const evidence = recipe.importEvidence;
   return <div className="space-y-2 text-xs text-stone-600">
+    {videoEvidenceLabel(evidence?.evidence) && <p>{videoEvidenceLabel(evidence?.evidence)}</p>}
     {recipe.sources.filter(s => /^https?:\/\//.test(s.url)).map((s, i) => <a key={i} href={s.url} target="_blank" rel="noreferrer" className="block underline">出典：{s.label}</a>)}
     {evidence && <><p>取り込み後も、元の読み取り結果と本人の修正を保持しています。</p><p>読取元：{evidence.evidence?.kind === "video" ? "動画から取得できた素材" : evidence.evidence?.kind === "photo" ? "アップロードした写真" : "レシピ探索"} / {evidence.confidence === "high" ? "読み取り結果を確認して使用" : "推定や欠損の確認が必要"}</p>{Array.isArray(evidence.missing) && evidence.missing.length > 0 && <p>取り込み時の欠損：{evidence.missing.join("、")}</p>}{Array.isArray(evidence.corrections) && evidence.corrections.map((c, i) => <p key={i}>本人修正：{c.note}</p>)}</>}
   </div>;

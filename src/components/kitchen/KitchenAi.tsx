@@ -7,6 +7,7 @@ import { feedbackMatches } from "@/lib/kitchen/quality";
 import { showQuantity } from "@/lib/kitchen/quantity";
 import { photoUploadError } from "@/lib/kitchen/limits";
 import { readAiResponse } from "@/lib/kitchen/aiResponse";
+import VideoFrameInput from "./VideoFrameInput";
 const field = "w-full min-h-11 rounded-lg border border-stone-300 bg-white p-3 text-sm";
 interface Job { endpoint: string; id: string; owner: string; locationId: string }
 export default function KitchenAi() {
@@ -79,6 +80,7 @@ export default function KitchenAi() {
       <form className="space-y-2" onSubmit={research}><label className="block text-sm">作りたい料理・今の予定<input name="wish" className={field} placeholder="作り置きを使って、20分で作りたい" /></label><button className={`${field} font-bold text-emerald-900`} type="submit">在庫・道具・感想を使って候補を探す</button></form>
       <form className="space-y-2" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget), files = form.getAll("image").filter((v): v is File => v instanceof File), error = photoUploadError(files); if (error) { setMessage(error); return; } void start("/api/import-photo", form, false); }}><label className="block text-sm">レシピの写真（4枚まで、合計3MB以内）<input type="file" name="image" multiple accept="image/jpeg,image/png,image/webp,image/gif" className={field} required /></label><button className={`${field} font-bold text-emerald-900`} type="submit">写真を読み取る</button></form>
       <form className="space-y-2" onSubmit={e => { e.preventDefault(); const url = new FormData(e.currentTarget).get("url"); void start("/api/import-video", JSON.stringify({ url }), true); }}><label className="block text-sm">公開されている料理動画のURL<input type="url" name="url" className={field} required /></label><button className={`${field} font-bold text-emerald-900`} type="submit">取得できた素材から読み取る</button></form>
+      <VideoFrameInput key={currentScope} onSubmit={form => void start("/api/import-photo", form, false)} />
     </fieldset>
     {message && <p role="status" className="rounded-lg bg-stone-50 p-3 text-sm">{message}</p>}
     {(busy || job) && <button type="button" className={field} onClick={() => void cancel()}>このAI処理を取り消す</button>}
