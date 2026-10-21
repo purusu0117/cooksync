@@ -84,8 +84,8 @@ export async function managedMessage(client: Anthropic, params: Anthropic.Messag
   const rate = APPROVED_AI_RATES[params.model]; if (!rate) throw new KitchenError("このモデルの料金と利用可否を確認してください", 503);
   if (JSON.stringify(params).length > 24 * 1024 * 1024 || params.max_tokens > 16000) throw new KitchenError("AI入力が上限を超えています", 413);
   // No prompt caching or unbounded tool loops. Search limit is explicit for each request.
-  const tools = params.tools?.map(tool => tool.type?.startsWith("web_search") ? { ...tool, max_uses: 2 } : tool);
-  if (tools?.some(t => !t.type?.startsWith("web_search"))) throw new KitchenError("未確認のAIツールです", 503);
+  const tools = params.tools?.map(tool => tool.type === "web_search_20250305" ? { ...tool, max_uses: 2, allowed_callers: ["direct" as const] } : tool);
+  if (tools?.some(t => t.type !== "web_search_20250305")) throw new KitchenError("未確認のAIツールです", 503);
   // Text bytes conservatively bound tokens; each validated image reserves 32k tokens.
   // Search may fill context, so reserve the entire 1M-token ceiling for those requests.
   let inputBound = Buffer.byteLength(JSON.stringify(params.system || "")) + 4096;
