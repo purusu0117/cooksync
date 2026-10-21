@@ -24,6 +24,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Camera, ChefHat, Hand, X } from "lucide-react";
 import { setGuide } from "@/lib/guide";
 import { SUGGEST_THRESHOLD } from "@/lib/starter";
+import { useOptionalKitchen } from "@/lib/kitchen/client";
 
 const FLAG = "cooksync:onboarded:v1";
 export const OPEN_EVENT = "cooksync:tutorial";
@@ -39,6 +40,7 @@ const POINTS: { Icon: typeof Camera; text: string }[] = [
 export default function Onboarding() {
   const router = useRouter();
   const pathname = usePathname();
+  const kitchen = useOptionalKitchen();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export default function Onboarding() {
     setOpen(false);
   }, []);
 
-  if (!open || pathname === "/lp") return null;
+  if (!open || pathname === "/lp" || pathname.startsWith("/kitchen") || kitchen?.snapshot?.state) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 px-4 py-6 sm:items-center">

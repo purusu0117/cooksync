@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type MouseEvent } from "react";
+import { useOptionalKitchen } from "@/lib/kitchen/client";
 import {
   Home,
   BookOpen,
@@ -24,6 +25,14 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
+  const kitchen = useOptionalKitchen();
+  const activeKitchen = !!kitchen?.snapshot?.state;
+  const tabs = activeKitchen ? [
+    { href: "/kitchen", label: "献立", icon: Home },
+    { href: "/shopping", label: "買い物", icon: ShoppingCart },
+    { href: "/fridge", label: "在庫", icon: Refrigerator },
+    { href: "/mypage", label: "マイページ", icon: User },
+  ] : TABS;
 
   // レシピ内のページ（一覧/詳細）に来たら、最後に開いた場所を覚える
   useEffect(() => {
@@ -41,6 +50,7 @@ export default function Nav() {
   if (pathname.startsWith("/lp") || pathname.startsWith("/legal")) return null;
 
   function isActive(href: string) {
+    if (activeKitchen && href === "/kitchen") return ["/", "/kitchen", "/meal"].includes(pathname) || pathname.startsWith("/recipes");
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   }
@@ -61,15 +71,16 @@ export default function Nav() {
   return (
     // position:fixed をやめ、アプリシェル（body=flex縦）の最下段に置く。
     // document がスクロールしないので、iOSで画面を引っ張ってもタブは動かない。
-    <nav className="shrink-0 border-t border-line bg-surface/95 backdrop-blur-md">
+    <nav aria-label="メインメニュー" className="shrink-0 border-t border-line bg-surface/95 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around px-2 pb-[env(safe-area-inset-bottom)]">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = isActive(t.href);
           const Icon = t.icon;
           return (
             <Link
               key={t.href}
               href={t.href}
+              aria-current={active ? "page" : undefined}
               onClick={(e) => handleTabClick(t.href, e)}
               className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[12px] font-medium transition ${
                 active ? "text-brand-dark" : "text-ink-soft hover:text-brand"

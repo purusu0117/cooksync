@@ -6,6 +6,7 @@ import AppGate from "@/components/AppGate";
 import Onboarding from "@/components/Onboarding";
 import ScrollReset, { SCROLL_ROOT_ID } from "@/components/ScrollReset";
 import OfflineReady from "@/components/OfflineReady";
+import { KitchenProvider } from "@/lib/kitchen/client";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 // ロゴ/欧文＝Quicksand（丸い幾何サンセリフ）／日本語＝M PLUS 2
@@ -77,7 +78,7 @@ export default function RootLayout({
           （大翔の実機報告・2026-07-31「上が見えない」「一番上が触れない」）。
           下端だけ Nav で対応していて、上端が抜けていた。
         */}
-        <main
+        <KitchenProvider><main
           id={SCROLL_ROOT_ID}
           className="flex-1 overflow-y-auto overscroll-contain pt-[env(safe-area-inset-top)] pb-6"
         >
@@ -87,6 +88,7 @@ export default function RootLayout({
         <ScrollReset />
         <OfflineReady />
         <Onboarding />
+        </KitchenProvider>
       </body>
     </html>
   );
