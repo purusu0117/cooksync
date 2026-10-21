@@ -33,6 +33,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { KITCHEN_KEY, LEGACY_MUTABLE } from "./kitchen/model";
 
 // 保存先。COOKSYNC_DATA_DIR で差し替えられる（テストが大翔の実データを壊さないため）。
 function dir(): string {
@@ -69,11 +70,12 @@ async function readFile(): Promise<LocalFile> {
   let raw: unknown;
   try {
     raw = JSON.parse(await fs.readFile(file(), "utf8"));
-  } catch {
-    return { __ns: NS_VERSION, users: {} };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { __ns: NS_VERSION, users: {} };
+    throw new Error("保存データを読み取れません。原本を保持したまま復旧が必要です");
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { __ns: NS_VERSION, users: {} };
+    throw new Error("保存データの形式が不正です。上書きを停止しました");
   }
   const obj = raw as LocalFile;
   if (obj.__ns === NS_VERSION) return { ...obj, users: obj.users ?? {} };
@@ -85,7 +87,8 @@ async function writeFile(f: LocalFile): Promise<void> {
   await fs.mkdir(dir(), { recursive: true });
   const target = file();
   const tmp = `${target}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(f), "utf8");
+  const handle = await fs.open(tmp, "w");
+  try { await handle.writeFile(JSON.stringify(f), "utf8"); await handle.sync(); } finally { await handle.close(); }
   await fs.rename(tmp, target);
 }
 
@@ -93,7 +96,22 @@ async function writeFile(f: LocalFile): Promise<void> {
 // 版番号の突き合わせ→書き込みも、このロックの中でやるので**不可分**。
 let lock: Promise<unknown> = Promise.resolve();
 function withFile<T>(fn: (f: LocalFile) => Promise<T>): Promise<T> {
-  const op = lock.catch(() => {}).then(async () => fn(await readFile()));
+  const op = lock.catch(() => {}).then(async () => {
+    await fs.mkdir(dir(), { recursive: true });
+    const lockPath = path.join(dir(), "store.lock");
+    const deadline = Date.now() + 5000;
+    let handle;
+    while (!handle) {
+      try { handle = await fs.open(lockPath, "wx"); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (Date.now() >= deadline) throw new Error("保存処理を待っています。中断した処理のロックが残る場合は原本を保全して復旧してください");
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }
+    try { return await fn(await readFile()); }
+    finally { await handle.close(); await fs.unlink(lockPath); }
+  });
   lock = op;
   return op;
 }
@@ -168,7 +186,7 @@ export async function localSetKey(
   uid: string,
   key: string,
   value: unknown,
-  opts: LocalOpts & { expectRev?: number | null } = {},
+  opts: LocalOpts & { expectRev?: number | null; kitchenWrite?: boolean } = {},
 ): Promise<LocalWriteResult> {
   return withFile(async (f) => {
     const cur = revOf(f, uid);
@@ -177,6 +195,8 @@ export async function localSetKey(
     }
     const users = f.users ?? {};
     const own = users[uid] ?? claimLegacy(f, uid, !!opts.isAccount) ?? {};
+    if (key === KITCHEN_KEY && !opts.kitchenWrite) throw new Error("このデータは専用の操作から保存してください");
+    if (own[KITCHEN_KEY] && LEGACY_MUTABLE.includes(key)) throw new Error("新しい在庫管理が有効です。画面を更新してください");
     own[key] = value;
     users[uid] = own;
     f.users = users;
@@ -184,6 +204,11 @@ export async function localSetKey(
     await writeFile(f);
     return { ok: true, rev };
   });
+}
+
+/** Read-only lookup: unlike the legacy reader, never claims shared legacy data. */
+export async function localPeek(uid: string): Promise<{ data: Record<string, unknown>; rev: number }> {
+  return withFile(async f => ({ data: f.users?.[uid] ?? {}, rev: revOf(f, uid) }));
 }
 
 /** アカウント削除用：その uid のバケツ**だけ**を消す（他の uid には触れない） */

@@ -1,3 +1,4 @@
+import { requireAiScope, withAiRequest } from "@/lib/kitchen/managedAi";
 import { askClaudeForJsonNoWeb } from "@/lib/ai";
 import { guardAi } from "@/lib/quotaServer";
 import { EST_YEN } from "@/lib/aiCost";
@@ -15,13 +16,13 @@ interface ProofreadBody {
   steps?: Step[];
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     // 予算・利用者日次・IPの防御（ユーザー枠を持たない経路なので guardAi を通す）
     const g = await guardAi(
       request,
       EST_YEN.text,
-      request.headers.get("x-cooksync-uid") ?? undefined,
+      requireAiScope().owner,
     );
     if (!g.ok) return Response.json({ error: g.message }, { status: 429 });
     const body = (await request.json()) as ProofreadBody;
@@ -56,3 +57,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export const POST = withAiRequest(handlePost);

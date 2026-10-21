@@ -1,3 +1,4 @@
+import { requireAiScope, withAiRequest } from "@/lib/kitchen/managedAi";
 // 写真（レシピ本のページ・SNSのスクショ・手書きメモ・料理写真）からレシピを起こす。
 // **複数枚まとめて**渡せる。順番がバラバラでも、調理の進行から並べ直して手順にする。
 //
@@ -9,7 +10,10 @@ import os from "os";
 import path from "path";
 import { askClaudeVisionRecipe } from "@/lib/ai";
 import { consume, quotaResponse, refund } from "@/lib/quotaServer";
-import { identify } from "@/lib/session";
+
+import { normalizePhoto, validateImportedRecipe } from "@/lib/kitchen/importValidation";
+import { KitchenError } from "@/lib/kitchen/engine";
+import { photoUploadError } from "@/lib/kitchen/limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -19,9 +23,9 @@ export const maxDuration = 300;
  *  （高解像度画像は1枚あたり最大4,784トークン＝8枚で1回¥22、4枚なら¥13）。 */
 const MAX_IMAGES = 4;
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const tmps: string[] = [];
-  const uid = identify(request, request.headers.get("x-cooksync-uid") ?? undefined).uid;
+  const uid = requireAiScope().owner;
   try {
     const form = await request.formData();
     const files = form.getAll("image").filter((f): f is File => f instanceof File);
@@ -34,11 +38,10 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const total = files.reduce((n, f) => n + f.size, 0);
-    if (total > 30 * 1024 * 1024) {
-      return Response.json({ error: "画像の合計が大きすぎます（30MBまで）。" }, { status: 400 });
-    }
+    const uploadError = photoUploadError(files);
+    if (uploadError) return Response.json({ error: uploadError }, { status: 413 });
 
+    const images = await Promise.all(files.map(normalizePhoto));
     // AIを呼ぶ前に枠を確認する（サーバー側が唯一の判定者）
     const q = await consume(uid, "import", request);
     if (!q.ok) return quotaResponse(q, "import");
@@ -46,11 +49,9 @@ export async function POST(request: Request) {
     // Vercelは /tmp のみ書き込み可。os.tmpdir() でローカルとも両対応。
     const dir = path.join(os.tmpdir(), "cooksync-recipe-photo");
     await fs.mkdir(dir, { recursive: true });
-    for (const file of files) {
-      const buf = Buffer.from(await file.arrayBuffer());
-      const ext = file.type.includes("png") ? "png" : "jpg";
-      const tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.${ext}`);
-      await fs.writeFile(tmp, buf);
+    for (const image of images) {
+      const tmp = path.join(dir, `${globalThis.crypto.randomUUID()}.jpg`);
+      await fs.writeFile(tmp, image.bytes);
       tmps.push(tmp);
     }
 
@@ -78,22 +79,26 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
+    const checked = validateImportedRecipe(out.recipe, true);
     return Response.json({
-      recipe: out.recipe,
-      missing: Array.isArray(out.missing) ? out.missing : [],
+      recipe: checked.recipe,
+      evidence: { kind: "photo", obtained: ["uploaded-images"], images: images.map(i => i.evidence), capturedAt: new Date().toISOString(), missing: checked.missing },
+      missing: [...checked.missing, ...(Array.isArray(out.missing) ? out.missing.filter(v => typeof v === "string") : [])],
       confidence: typeof out.confidence === "string" ? out.confidence : undefined,
       // 並べ替えた結果（渡した画像の1始まりの番号）。UIで「この順と判断しました」と見せる。
       photoOrder: Array.isArray(out.photoOrder)
-        ? out.photoOrder.filter((n): n is number => typeof n === "number")
+        ? [...new Set(out.photoOrder.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= files.length))]
         : [],
       photoCount: files.length,
     });
   } catch (e) {
     return Response.json(
-      { error: e instanceof Error ? e.message : "読み取りに失敗しました" },
-      { status: 500 },
+      { error: e instanceof KitchenError ? e.message : "読み取りを完了できませんでした" },
+      { status: e instanceof KitchenError ? e.status : 500 },
     );
   } finally {
     await Promise.all(tmps.map((t) => fs.rm(t, { force: true }).catch(() => {})));
   }
 }
+
+export const POST = withAiRequest(handlePost);

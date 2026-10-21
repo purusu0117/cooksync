@@ -22,23 +22,23 @@ afterEach(async () => {
 });
 
 describe("costUsd", () => {
-  it("Sonnet 5 の入出力単価（$3 / $15 per MTok）", () => {
+  it("Sonnet 5 の確認済み単価（$2 / $10 per MTok）", () => {
     const usd = costUsd({
       model: "claude-sonnet-5",
       inputTokens: 1_000_000,
       outputTokens: 0,
     });
-    expect(usd).toBeCloseTo(3, 6);
+    expect(usd).toBeCloseTo(2, 6);
     expect(
       costUsd({ model: "claude-sonnet-5", inputTokens: 0, outputTokens: 1_000_000 }),
-    ).toBeCloseTo(15, 6);
+    ).toBeCloseTo(10, 6);
   });
 
-  it("Haiku 4.5 は Sonnet 5 の 1/3（$1 / $5）", () => {
+  it("Haiku 4.5 の確認済み単価（$1 / $5）", () => {
     const h = costUsd({ model: "claude-haiku-4-5", inputTokens: 1_000_000, outputTokens: 0 });
     const s = costUsd({ model: "claude-sonnet-5", inputTokens: 1_000_000, outputTokens: 0 });
     expect(h).toBeCloseTo(1, 6);
-    expect(s / h).toBeCloseTo(3, 6);
+    expect(s / h).toBeCloseTo(2, 6);
   });
 
   it("web_search は $10 / 1,000回 でトークンとは別建て", () => {
@@ -77,16 +77,14 @@ describe("costUsd", () => {
 });
 
 describe("costYen", () => {
-  it("プラン試算どおりの桁になる：レシピ探索1回 ≒ ¥18", () => {
-    // Decisionノート §1 の内訳（dynamic filtering 版）
+  it("合成使用量を現在の単価で計算する（実測の平均とは区別）", () => {
     const yen = costYen({
       model: "claude-sonnet-5",
       inputTokens: 11_000, // プロンプト3K + 絞り込み後の検索結果8K
       outputTokens: 3_600, // レシピ3件
       webSearches: 3,
     });
-    expect(yen).toBeGreaterThan(15);
-    expect(yen).toBeLessThan(21);
+    expect(yen).toBeCloseTo(13.64, 6);
   });
 
   it("写真で在庫登録は Haiku なら1円未満", () => {

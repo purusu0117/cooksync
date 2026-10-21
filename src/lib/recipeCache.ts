@@ -30,6 +30,7 @@ export interface PooledRecipe {
 }
 
 export interface PoolQuery {
+  privateScope?: string;
   wish?: string;
   fridge?: string[];
   expiring?: string[];
@@ -81,7 +82,7 @@ export function poolKeyParts(q: PoolQuery): string {
 
 /** プールのキー。**冷蔵庫の中身は入れない**（入れるとヒット率が0になる） */
 export function poolKey(q: PoolQuery): string {
-  return createHash("sha1").update(poolKeyParts(q)).digest("hex").slice(0, 20);
+  return createHash("sha1").update(q.privateScope ? `${q.privateScope}|${poolKeyParts(q)}` : poolKeyParts(q)).digest("hex").slice(0, 20);
 }
 
 // ---- 保存層（公開=Redis / ローカル=ファイル） ----

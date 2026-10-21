@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { GET } from "../route";
 import { quotaEnforced } from "@/lib/quotaServer";
+import { aiConfiguration } from "@/lib/kitchen/aiBudget";
 
 describe("/api/health", () => {
   it("枠を強制しているかを、サーバーの判定そのままで返す", async () => {
@@ -28,7 +29,10 @@ describe("/api/health", () => {
 
   it("クライアントが見る他のフラグも欠けていない", async () => {
     const h = (await GET().json()) as Record<string, unknown>;
-    expect(h.aiProvider === "local" || h.aiProvider === "api").toBe(true);
+    expect(h.aiProvider).toBe(aiConfiguration().enabled ? "api" : "disabled");
+    expect(h.aiEnabled).toBe(aiConfiguration().enabled);
+    expect(h.videoImport).toBe(h.aiEnabled);
+    expect(h.kitchenSchema).toBe(3);
     expect(typeof h.videoImport).toBe("boolean");
   });
 });

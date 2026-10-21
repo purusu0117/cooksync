@@ -54,7 +54,7 @@ import {
   type MealTiming,
 } from "@/lib/mealplan";
 import type { ShoppingItem } from "@/lib/shopping";
-import { enablePush, ensurePushIfGranted } from "@/lib/pushClient";
+import { enablePush, ensurePushIfGranted, notifyLocally, pushReadiness } from "@/lib/pushClient";
 import { getUid, useSyncState } from "@/lib/syncStore";
 import { useGuide, setGuide } from "@/lib/guide";
 import { readApiError, useUsage } from "@/lib/usage";
@@ -148,6 +148,8 @@ export default function MealWizard() {
   const [wish, setWish] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  // 完了通知が届かない状態なら、探索中にそう書く（黙って待たせない）
+  const [notifyNote, setNotifyNote] = useState("");
   const [aiResults, setAiResults] = useState<Recipe[]>([]);
   const [aiPreview, setAiPreview] = useState<Recipe | null>(null); // 候補の詳細プレビュー（未確定）
   const [aiSeen, setAiSeen] = useState<string[]>([]); // 既に提案済みの料理名（再探索で避ける）
@@ -336,6 +338,50 @@ export default function MealWizard() {
   //    3秒×120回＝約6分で打ち切る（再訪時は resume() が0から数え直す）。
   const MAX_POLLS = 120;
 
+  /**
+   * 探索が終わったことを、画面を見ていない大翔に伝える。
+   *
+   * サーバーからのWeb Pushは「アプリを閉じていても届く」担当だが、
+   * 購読やVAPID鍵が欠けると**黙って**届かない（2026-08-09 の実害）。
+   * 完了を最初に知るのはこのポーリングなので、ここからも必ず鳴らす。
+   * タブを見ているときは邪魔なので何もしない（結果はその場に出ている）。
+   */
+  function announceDone(body: string, failed = false) {
+    if (typeof document === "undefined" || !document.hidden) return;
+    const title = failed ? "🍳 レシピ探索が終わりました" : "🍳 レシピが見つかりました";
+    void notifyLocally(title, body, "/meal");
+    // タブのタイトルでも分かるようにする（通知が拒否されていても気づける）
+    const original = document.title;
+    document.title = `✅ ${failed ? "探索終了" : "レシピができました"}｜CookSync`;
+    const restore = () => {
+      if (document.hidden) return;
+      document.title = original;
+      document.removeEventListener("visibilitychange", restore);
+    };
+    document.addEventListener("visibilitychange", restore);
+    // 席を外していても気づけるように短く鳴らす
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.65);
+      osc.onended = () => void ctx.close();
+    } catch {
+      /* 音が出せない環境なら通知だけで良い */
+    }
+  }
+
   async function pollJob(jobId: string, tries = 0) {
     if (tries >= MAX_POLLS) {
       clearJob();
@@ -362,12 +408,20 @@ export default function MealWizard() {
             "見つかったのは既にレシピ一覧にある料理だけでした。もう一度「AIで探す」を押すと別の角度で探します。",
           );
         else setAiResults(fresh);
+        // ⚠️ サーバーのWeb Pushに頼り切らない。購読やVAPID鍵が欠けていても、
+        //    許可さえ出ていればページから直接通知できる（完了を掴んでいるのはここ）。
+        announceDone(
+          fresh.length > 0
+            ? `${fresh.map((r) => r.name).join(" / ")}`
+            : "候補ができました。タップして確認",
+        );
         return;
       }
       if (data.status === "error" || data.status === "missing") {
         clearJob();
         setAiLoading(false);
         setAiError(data.error || "レシピが取得できませんでした");
+        announceDone(data.error || "レシピが取得できませんでした", true);
         return;
       }
       pollRef.current = setTimeout(() => pollJob(jobId, tries + 1), 3000);
@@ -391,8 +445,13 @@ export default function MealWizard() {
     usage.recordUse("research");
     const round = searchRound + 1;
     setSearchRound(round);
-    // 完了通知の許可を確保（初回はダイアログ。アプリを離れても通知が届く）
-    void enablePush();
+    // 完了通知の許可を確保（初回はダイアログ。アプリを離れても通知が届く）。
+    // 許可が下りなかった／拒否されている場合は**その場で画面に書く**。
+    // 黙っていると「探索が終わっても通知が来ない」を延々繰り返すことになる。
+    void enablePush().then(async () => {
+      const r = await pushReadiness();
+      setNotifyNote(r.ok ? "" : r.reason);
+    });
     try {
       const res = await fetch("/api/research", {
         method: "POST",
@@ -985,6 +1044,9 @@ export default function MealWizard() {
               <p className="mt-2 animate-pulse text-xs text-brand-dark">
                 AIがレシピをWeb検索中…（最大1〜2分）。アプリを閉じても裏で続きます。戻ると結果が出ます。
               </p>
+            )}
+            {aiLoading && notifyNote && (
+              <p className="mt-1 text-xs leading-relaxed text-amber-700">🔕 {notifyNote}</p>
             )}
             {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
           </div>

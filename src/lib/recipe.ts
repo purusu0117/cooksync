@@ -12,12 +12,14 @@ export interface RecipeIngredient {
   group?: string; // 「主材料」「ソース」「仕上げ」等のグルーピング
   toBuy?: boolean; // ★買い足し
   basicSeasoning?: boolean; // 塩・こしょう等。Step 5.5 の網羅確認対象
+  inventoryKind?: "raw" | "prepared";
 }
 
 export interface RecipeStep {
   title: string; // 「1. 下準備」
   text: string; // その工程の手順（分量を再掲する）
   tip?: string; // 💡 一言コツ
+  fromPhoto?: number;
 }
 
 export interface LeftoverStorage {
@@ -39,6 +41,7 @@ export interface RecipeTags {
 }
 
 export interface Recipe {
+  draft?: boolean;
   id: string;
   name: string;
   emoji: string;
@@ -55,6 +58,8 @@ export interface Recipe {
   tags: RecipeTags;
   createdAt: number;
   madeCount?: number;
+  cookMinutes?: number;
+  importEvidence?: { source?: unknown; evidence?: Record<string, unknown>; missing: string[]; confidence?: string; importedAt: number; original: unknown; corrections: { at: number; note: string }[] };
 }
 
 /** 買い足し（★toBuy）材料だけを返す */

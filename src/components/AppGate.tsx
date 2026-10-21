@@ -1,4 +1,5 @@
 "use client";
+import KitchenGate from "./kitchen/KitchenGate";
 
 // アカウントを作らなくてもアプリを使える。ログインは「端末間で同期したい人だけ」の任意機能。
 //
@@ -31,5 +32,5 @@
 // このコンポーネントは layout.tsx が包んでいるので、消さずに素通しにしてある。
 // 将来「本当にアカウントが必要な画面」ができたら、ここに条件を足す。
 export default function AppGate({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <KitchenGate>{children}</KitchenGate>;
 }

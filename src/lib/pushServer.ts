@@ -175,16 +175,41 @@ export async function removeDevice(uid: string, token?: string): Promise<void> {
   }
 }
 
-/** Web Push（ブラウザ/PWA）へ送る。届いた件数を返す */
+/**
+ * その購読はもう二度と届かないか（＝保存しておく意味が無いか）。
+ *
+ * ⚠️ 以前は 404/410 だけを捨てていた。ところが実際に起きていたのはこれ:
+ *      400 {"reason":"VapidPkHashMismatch"}
+ *    VAPID鍵を作り直すと、**古い鍵で登録された購読は全部これになる**。
+ *    404でも410でもないので配列に残り続け、以後どれだけ通知を送っても
+ *    毎回400で捨てられる。呼び出し側は .catch(()=>{}) しているので画面にも出ない。
+ *    ＝「探索が終わっても通知が来ない」の正体（2026-08-09 実測で確認）。
+ *    捨てておけば、次にアプリを開いたときクライアントが購読し直す。
+ */
+function isDeadSubscription(code: number | undefined, body: string): boolean {
+  if (code === 404 || code === 410) return true; // 失効
+  if (code === 403) return true; // 鍵が合わない（VAPID不一致）
+  if (code === 400 && /vapid|pkhash|invalid.*key/i.test(body)) return true;
+  return false;
+}
+
+interface PushOutcome {
+  sent: number;
+  /** 届かなかった理由。握りつぶさず、呼び出し側とログに残す */
+  errors: string[];
+}
+
+/** Web Push（ブラウザ/PWA）へ送る */
 async function sendWebPush(
   uid: string,
   payload: { title: string; body: string; url?: string },
-): Promise<number> {
+): Promise<PushOutcome> {
   await ensureVapid();
   const subs = await readSubs(uid);
-  if (subs.length === 0) return 0;
+  if (subs.length === 0) return { sent: 0, errors: ["この宛先にはWebの購読がありません"] };
   const json = JSON.stringify(payload);
   const alive: PushSub[] = [];
+  const errors: string[] = [];
   let sent = 0;
   await Promise.all(
     subs.map(async (s) => {
@@ -194,13 +219,25 @@ async function sendWebPush(
         sent++;
       } catch (e) {
         const code = (e as { statusCode?: number }).statusCode;
-        // 404/410 = 失効した購読 → 破棄。それ以外は残す
-        if (code !== 404 && code !== 410) alive.push(s);
+        const body = String((e as { body?: unknown }).body ?? (e as Error).message ?? "");
+        const host = (() => {
+          try {
+            return new URL(s.endpoint).host;
+          } catch {
+            return "?";
+          }
+        })();
+        if (isDeadSubscription(code, body)) {
+          errors.push(`${host}: ${code} ${body.slice(0, 120)}（購読を破棄・次回開いたとき登録し直します）`);
+        } else {
+          alive.push(s);
+          errors.push(`${host}: ${code} ${body.slice(0, 120)}`);
+        }
       }
     }),
   );
   if (alive.length !== subs.length) await writeSubs(uid, alive);
-  return sent;
+  return { sent, errors };
 }
 
 /** ネイティブアプリ（iOS）へ APNs で送る。届いた件数を返す */
@@ -230,12 +267,32 @@ async function sendNativePush(
 export async function sendPush(
   uid: string,
   payload: { title: string; body: string; url?: string },
-): Promise<{ web: number; native: number }> {
+): Promise<{ web: number; native: number; errors: string[] }> {
   const [web, native] = await Promise.all([
-    sendWebPush(uid, payload).catch(() => 0),
+    sendWebPush(uid, payload).catch((e) => ({
+      sent: 0,
+      errors: [e instanceof Error ? e.message : "web push failed"],
+    })),
     sendNativePush(uid, payload).catch(() => 0),
   ]);
-  return { web, native };
+  const errors = web.errors;
+  // ⚠️ 1件も届いていないのに黙っているから、いつまでも原因が分からない。
+  //    呼び出し側は結果を捨てがちなので、ここで必ずサーバーログに残す。
+  if (web.sent + native === 0) {
+    console.warn(`[push] 未達 uid=${uid} title=${payload.title} :: ${errors.join(" / ") || "宛先なし"}`);
+  }
+  return { web: web.sent, native, errors };
+}
+
+/** 診断用：その宛先に登録されている購読・端末の数 */
+export async function pushTargetStatus(
+  uid: string,
+): Promise<{ web: number; native: number }> {
+  const [subs, tokens] = await Promise.all([
+    readSubs(uid).catch(() => [] as PushSub[]),
+    readDevices(uid).catch(() => [] as string[]),
+  ]);
+  return { web: subs.length, native: tokens.length };
 }
 
 /**

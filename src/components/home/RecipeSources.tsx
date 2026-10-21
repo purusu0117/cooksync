@@ -15,6 +15,7 @@ import ImportedRecipePreview, {
   type ImportResult,
 } from "@/components/recipes/ImportedRecipePreview";
 import { getUid } from "@/lib/syncStore";
+import { enablePush, notifyLocally } from "@/lib/pushClient";
 import { readApiError, useUsage } from "@/lib/usage";
 import { isNativeApp } from "@/lib/native";
 import { MAX_RECIPE_PHOTOS, pickPhotosFromLibrary, takePhoto } from "@/lib/nativeCamera";
@@ -76,11 +77,15 @@ export default function RecipeSources() {
     setMode(mode === next ? null : next);
   }
 
-  // ---- 動画（ジョブ方式：30〜120秒） ----
+  // ---- 動画（ジョブ方式）----
   // サーバーが黙ったまま（＝after()が殺された等）でも**永久には回さない**。
-  // 3秒間隔×120回＝約6分で打ち切る。サーバー側のTTLは30分あるので、
-  // 上限が無いと最悪30分スピナーを見せ続けることになる。
-  const MAX_POLLS = 120;
+  // サーバー側のTTLは30分あるので、上限が無いと最悪30分スピナーを見せ続けることになる。
+  //
+  // ⚠️ ローカル版は**動画の実体を落として映像のコマまでAIに見せる**ので、
+  //    実測で3〜6分かかる（2026-08-09〜）。以前の6分打ち切りだと、
+  //    正常に動いているジョブを画面側が勝手に「時間がかかりすぎ」にしていた。
+  //    サーバーの打ち切り（15分）より少しだけ長く待つ。
+  const MAX_POLLS = 320; // 3秒×320 ≒ 16分
 
   async function poll(jobId: string, tries = 0) {
     if (tries >= MAX_POLLS) {
@@ -98,6 +103,14 @@ export default function RecipeSources() {
         if (!data.recipe) {
           setError("この動画からはレシピを読み取れませんでした。");
           return;
+        }
+        // 数分かかる処理なので、画面を離れている前提で知らせる（サーバーのpushと二重）
+        if (typeof document !== "undefined" && document.hidden) {
+          void notifyLocally(
+            "🎬 動画からレシピができました",
+            `「${(data.recipe as { name?: string }).name ?? "レシピ"}」を取り込みました`,
+            "/",
+          );
         }
         setResult({
           recipe: data.recipe,
@@ -124,11 +137,14 @@ export default function RecipeSources() {
     reset();
     setLoading(true);
     setStep("動画の情報を取得中…");
+    // 取り込みは数分かかる＝画面を離れる前提。完了通知の購読をここで確保しておく。
+    void enablePush();
     try {
       const res = await fetch("/api/import-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
+        // `u` を送らないと通知の宛先が決まらず、完了しても何も鳴らなかった
+        body: JSON.stringify({ url: url.trim(), u: getUid() }),
       });
       const data = await res.json();
       if (!res.ok || !data.jobId) throw new Error(data.error || "開始できませんでした");
@@ -243,7 +259,7 @@ export default function RecipeSources() {
             active={mode === "video"}
             icon={<Video size={18} strokeWidth={2} />}
             title="動画から作る"
-            desc="YouTube・TikTok"
+            desc="YouTube・TikTok・Insta"
             onClick={() => choose("video")}
           />
         )}
@@ -286,7 +302,8 @@ export default function RecipeSources() {
                 </button>
               </div>
               <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-                料理動画のURLを貼るだけ。概要欄と字幕から材料・手順を書き起こします（30〜120秒）。
+                料理動画のURLを貼るだけ。<strong>映像（テロップ）</strong>
+                ・概要欄・字幕を突き合わせて材料と手順を書き起こします（2〜5分）。閉じても裏で続きます。
               </p>
             </>
           ) : (

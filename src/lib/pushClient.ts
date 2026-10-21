@@ -21,6 +21,14 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return arr;
 }
 
+/** ArrayBuffer(applicationServerKey) を base64url に戻して、サーバーの鍵と比べられる形にする */
+function toBase64Url(buf: ArrayBuffer): string {
+  let s = "";
+  const arr = new Uint8Array(buf);
+  for (let i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 /** 通知を有効化（許可要求→SW登録→購読→サーバー送信）。成功でtrue */
 export async function enablePush(): Promise<boolean> {
   try {
@@ -39,11 +47,24 @@ export async function enablePush(): Promise<boolean> {
     const reg = await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
 
+    // 鍵は**毎回**サーバーに聞く。以前は購読が既にあれば聞かずに済ませていたが、
+    // サーバーの VAPID 鍵が変わっていると古い購読は永久に届かない
+    // （送信側が 400 VapidPkHashMismatch になる。2026-08-09 に実測で確認）。
+    // 端末側からは成功しているように見えるので、ここで気づくしかない。
+    const res = await fetch("/api/push/key", { cache: "no-store" });
+    const { key } = (await res.json()) as { key?: string };
+    if (!key) return false;
+
     let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const cur = sub.options?.applicationServerKey;
+      if (!cur || toBase64Url(cur as ArrayBuffer) !== key) {
+        // 鍵が変わっている＝この購読はもう届かない。捨てて取り直す。
+        await sub.unsubscribe().catch(() => {});
+        sub = null;
+      }
+    }
     if (!sub) {
-      const res = await fetch("/api/push/key");
-      const { key } = await res.json();
-      if (!key) return false;
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
@@ -62,6 +83,62 @@ export async function enablePush(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * 「いま画面を見ていない大翔に、確実に気づいてもらう」ための最後の砦。
+ *
+ * Web Push は購読・VAPID鍵・OSの通知許可のどれか1つでも欠けると黙って届かない。
+ * ところが**許可さえ出ていれば、購読が無くてもページから直接通知は出せる**。
+ * ジョブの完了をポーリングで掴んでいるのはページ自身なので、こちらの方が確実。
+ * （Web Push は「アプリを閉じていても届く」担当。両方あって初めて漏れがなくなる）
+ */
+export async function notifyLocally(
+  title: string,
+  body: string,
+  url = "/",
+): Promise<boolean> {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return false;
+    if (Notification.permission !== "granted") return false;
+    // Service Worker 経由だと、通知をタップしたときに画面を開き直せる（sw.js が面倒を見る）
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        await reg.showNotification(title, {
+          body,
+          icon: "/icon-192.jpg",
+          badge: "/icon-192.jpg",
+          data: { url },
+          tag: "cooksync",
+        });
+        return true;
+      }
+    }
+    new Notification(title, { body, icon: "/icon-192.jpg" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 完了通知が**実際に届く状態か**。届かないなら理由を日本語で返す。
+ * 「探索したのに通知が来ない」を黙って起こさないため、画面に出すのに使う。
+ */
+export async function pushReadiness(): Promise<{ ok: boolean; reason: string }> {
+  const state = await pushPermissionState();
+  if (state === "granted") return { ok: true, reason: "" };
+  if (state === "denied") {
+    return {
+      ok: false,
+      reason: "完了通知はオフです（ブラウザで通知が拒否されています）。アドレスバーの🔒から許可すると届きます。",
+    };
+  }
+  if (state === "unsupported") {
+    return { ok: false, reason: "この環境では完了通知を出せません。" };
+  }
+  return { ok: false, reason: "完了通知はまだ許可されていません。" };
 }
 
 /**

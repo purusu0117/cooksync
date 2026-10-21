@@ -10,8 +10,10 @@ import { recipeStore } from "@/lib/storage";
 import { usePersistentList, useAllRecipes } from "@/lib/useStore";
 import { isSameDish, type Cuisine, type Recipe } from "@/lib/recipe";
 import DishIcon from "@/components/DishIcon";
+import { useOptionalKitchen } from "@/lib/kitchen/client";
 
 export interface RawRecipe {
+  draft?: boolean;
   name?: string;
   emoji?: string;
   catch?: string;
@@ -43,6 +45,7 @@ export interface ImportResult {
   photoOrder?: number[];
   /** 渡した写真の枚数 */
   photoCount?: number;
+  evidence?: Record<string, unknown>;
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -66,6 +69,7 @@ export default function ImportedRecipePreview({
   const [savedId, setSavedId] = useState<string | null>(null);
   const [, setStored] = usePersistentList(recipeStore);
   const recipes = useAllRecipes();
+  const kitchen = useOptionalKitchen();
   const r = result.recipe;
 
   // 保険：レシピが無いのに渡されたら**何も描かない**。
@@ -78,15 +82,16 @@ export default function ImportedRecipePreview({
 
   // ⚠️ アロー関数にしてある。`function save()` は巻き上げられる関係で、
   //    上の `if (!r) return null` による絞り込みが中まで効かない（TS18049）。
-  const save = () => {
-    const ct = typeof r.cookTime === "number" ? r.cookTime : 30;
+  const save = async () => {
+    const ct = typeof r.cookTime === "number" && r.cookTime > 0 ? r.cookTime : undefined;
     const id = `import-${crypto.randomUUID().slice(0, 8)}`;
     const recipe: Recipe = {
       id,
+      draft: r.draft === true || !r.ingredients?.length || !r.steps?.length,
       name: r.name || "取り込んだレシピ",
       emoji: r.emoji || "🍽",
       catch: r.catch || "",
-      servings: typeof r.servings === "number" ? r.servings : 2,
+      servings: typeof r.servings === "number" && r.servings > 0 ? r.servings : 0,
       kcal: typeof r.kcal === "number" ? r.kcal : undefined,
       ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
       steps: Array.isArray(r.steps) ? r.steps : [],
@@ -94,11 +99,15 @@ export default function ImportedRecipePreview({
       sources: Array.isArray(r.sources) ? r.sources : [],
       tags: {
         cuisine: (r.cuisine as Cuisine) || undefined,
-        cookTime: ct <= 15 ? 15 : ct <= 30 ? 30 : 60,
+        cookTime: ct === undefined ? undefined : ct <= 15 ? 15 : ct <= 30 ? 30 : 60,
       },
       createdAt: Date.now(),
+      cookMinutes: ct,
+      importEvidence: { source: result.source, evidence: result.evidence, missing: result.missing || [], confidence: result.confidence, importedAt: Date.now(), original: r, corrections: [] },
     };
-    setStored((prev) => [recipe, ...prev]);
+    if (kitchen?.snapshot?.state) {
+      if (!await kitchen.send("recipe.save", { recipe })) return;
+    } else setStored((prev) => [recipe, ...prev]);
     setSavedId(id);
   };
 
@@ -120,6 +129,7 @@ export default function ImportedRecipePreview({
 
   return (
     <div className="mt-3 rounded-2xl border border-line bg-paper p-3">
+      {r.draft && <p role="status" className="mb-3 text-sm text-amber-900">材料または手順が欠けています。下書きとして保存し、確認・補完してから献立に使えます。</p>}
       <div className="flex items-start gap-2.5">
         <DishIcon name={r.name || ""} size={26} />
         <div className="min-w-0 flex-1">

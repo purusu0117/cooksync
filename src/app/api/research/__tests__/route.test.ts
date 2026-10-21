@@ -13,6 +13,12 @@ const h = vi.hoisted(() => ({
   refund: vi.fn(async () => {}),
   consume: vi.fn(async () => ({ ok: true })),
 }));
+vi.mock("@/lib/kitchen/managedAi", () => ({
+  withAiRequest: (fn: unknown) => fn,
+  requireActiveAiJob: async () => {},
+  requireAiScope: () => ({ owner: "u-test", locationId: "default" }),
+  managedAfter: (fn: () => Promise<unknown>) => { h.afterTasks.push(fn()); },
+}));
 
 vi.mock("next/server", () => ({
   after: (fn: () => Promise<unknown>) => {
