@@ -28,7 +28,7 @@ export function validateImportedRecipe(input: unknown, allowDraft = false): { re
   const ingredients = value.ingredients.map(v => {
     if (!record(v) || typeof v.name !== "string" || !v.name.trim() || (v.amount !== undefined && typeof v.amount !== "string")) throw new KitchenError("材料の形式を読み取れませんでした", 422);
     if (!v.amount || /不明|明示なし|確認できず/.test(String(v.amount))) missing.push(String(v.name));
-    return { name: v.name, amount: typeof v.amount === "string" ? v.amount : "", ...(typeof v.group === "string" ? { group: v.group } : {}) };
+    return { name: v.name, amount: typeof v.amount === "string" ? v.amount : "", ...(typeof v.group === "string" ? { group: v.group } : {}), ...(v.inventoryKind === "prepared" ? { inventoryKind: "prepared" as const } : {}) };
   });
   const steps = value.steps.map((v, i) => { if (!record(v) || typeof v.text !== "string" || !v.text.trim()) throw new KitchenError("手順に欠損があります", 422); return { title: typeof v.title === "string" ? v.title : `作業${i + 1}`, text: v.text, ...(typeof v.tip === "string" ? { tip: v.tip } : {}), ...(Number.isInteger(v.fromPhoto) && Number(v.fromPhoto) > 0 ? { fromPhoto: Number(v.fromPhoto) } : {}) }; });
   const recipe: Record<string, unknown> = { name: value.name, ingredients, steps, draft: !ingredients.length || !steps.length };

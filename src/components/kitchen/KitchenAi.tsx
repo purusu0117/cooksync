@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useKitchen } from "@/lib/kitchen/client";
 import ImportedRecipePreview, { type ImportResult } from "@/components/recipes/ImportedRecipePreview";
 import { usable } from "@/lib/kitchen/planning";
-import { feedbackMatches } from "@/lib/kitchen/quality";
+import { feedbackMatches, rankRecipes, mealProfile } from "@/lib/kitchen/quality";
 import { showQuantity } from "@/lib/kitchen/quantity";
 import { photoUploadError } from "@/lib/kitchen/limits";
 import { readAiResponse } from "@/lib/kitchen/aiResponse";
@@ -35,7 +35,7 @@ export default function KitchenAi() {
         if (body.status === "error" || body.status === "missing") localStorage.removeItem(jobKey);
         if (!response.ok || body.status === "error" || body.status === "missing") throw new Error(body.error || "処理結果が見つかりません。再開前に履歴を確認してください");
         if (body.status === "done" && !cancelled.current) {
-          setResults(body.recipes ? body.recipes.map((r: ImportResult["recipe"]) => ({ recipe: r, evidence: { kind: "research", capturedAt: new Date().toISOString() } })) : [body]);
+          setResults(body.recipes ? body.recipes.map((r: ImportResult["recipe"]) => ({ recipe: r, missing: r?.readMissing || [], evidence: { kind: "research", capturedAt: new Date().toISOString() } })) : [body]);
           setMessage("読み取り結果です。出典・欠損・分量を確認して保存してください。"); setJob(null); setBusy(false); localStorage.removeItem(jobKey); return;
         }
         setMessage(body.step || "処理中です。完了しても在庫や献立には自動反映しません。");
@@ -71,7 +71,9 @@ export default function KitchenAi() {
   const research = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const wish = String(new FormData(e.currentTarget).get("wish") || "");
     const now = new Date().toISOString(), current = state.lots.filter(l => usable(l, locationId, now, state.locations.find(p => p.id === locationId)?.timeZone));
-    const context = { stock: current.map(l => ({ name: l.name, amount: showQuantity(l.quantity), kind: l.kind, condition: l.condition, compartment: l.compartment })), equipment: state.equipment.filter(e => e.locationId === locationId), preferences: state.preferences, feedback: state.feedback.filter(f => f.active && f.locationId === locationId && [...state.recipes, ...state.plans.filter(p => p.locationId === locationId).map(p => p.recipe)].some(r => feedbackMatches(f, r))), recentActualMeals: state.plans.filter(p => p.locationId === locationId && ["cooked", "partial"].includes(p.status)).slice(-10).map(p => p.name) };
+    const knownRecipes = [...new Map([...state.plans.filter(p => p.locationId === locationId).map(p => p.recipe), ...state.recipes].map(r => [r.id, r])).values()];
+    const savedRecipes = rankRecipes(knownRecipes, state, locationId).slice(0, 12).map(({ recipe: r, reasons }) => ({ id: r.id, name: r.name, servings: r.servings, ingredients: r.ingredients, sources: r.sources, reasons }));
+    const context = { stock: current.map(l => ({ name: l.name, amount: showQuantity(l.quantity), kind: l.kind, condition: l.condition, compartment: l.compartment, storedAt: l.storedAt, expiresOn: l.expiresOn, expiryBasis: l.expiryBasis, storageMethod: l.storageMethod })), savedRecipes, equipment: state.equipment.filter(e => e.locationId === locationId), preferences: state.preferences, feedback: state.feedback.filter(f => f.active && f.locationId === locationId && knownRecipes.some(r => feedbackMatches(f, r))).map(f => ({ ...f, recipeName: knownRecipes.find(r => feedbackMatches(f, r))?.name })), recentActualMeals: state.plans.filter(p => p.locationId === locationId && ["cooked", "partial"].includes(p.status)).slice(-10).map(p => ({ name: p.name, ...mealProfile(p.recipe) })) };
     void start("/api/research", JSON.stringify({ wish: `${wish}\n参考条件（不明は補完しない。retiredRulesは廃止済みで適用禁止。保存期限は出典と条件がなければ不明。主菜・副菜・汁物を合わせた量、味付け・主食・たんぱく源の偏り、道具の容量、調理と食事・片付けの時間を別々に考慮する）：${JSON.stringify(context)}`, fridge: current.filter(l => l.kind === "raw").map(l => l.name), expiring: current.filter(l => l.expiresOn).map(l => l.name), shopMode: "buy" }), true);
   };
   return <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-4"><h2 className="text-lg font-bold">新しい候補・写真・動画</h2>

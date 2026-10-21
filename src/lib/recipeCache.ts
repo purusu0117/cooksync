@@ -82,7 +82,10 @@ export function poolKeyParts(q: PoolQuery): string {
 
 /** プールのキー。**冷蔵庫の中身は入れない**（入れるとヒット率が0になる） */
 export function poolKey(q: PoolQuery): string {
-  return createHash("sha1").update(q.privateScope ? `${q.privateScope}|${poolKeyParts(q)}` : poolKeyParts(q)).digest("hex").slice(0, 20);
+  // Personal context includes stock amounts, equipment, feedback and retired rules in wish.
+  // Never truncate that context or reuse recommendations made before a correction.
+  const personal = q.privateScope ? JSON.stringify({ version: 2, scope: q.privateScope, wish: q.wish || "", fridge: q.fridge || [], expiring: q.expiring || [], servings: q.servings ?? null, filters: q.filters || {}, avoid: q.avoid || [], existing: q.existing || [], shopMode: q.shopMode || "stock" }) : poolKeyParts(q);
+  return createHash("sha1").update(personal).digest("hex").slice(0, 20);
 }
 
 // ---- 保存層（公開=Redis / ローカル=ファイル） ----
