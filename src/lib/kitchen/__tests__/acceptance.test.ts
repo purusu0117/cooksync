@@ -15,6 +15,20 @@ function fixture() {
   return { get s() { return s; }, run, stock, plan, cook };
 }
 describe("quantity and allocation acceptance", () => {
+  it("uses an exact prepared serving with a storage note without consuming its raw ingredients", () => {
+    const f = fixture(); f.stock("ミートソース", "2食", { kind: "prepared" }); f.stock("肉", "100g");
+    const amount = "1食分（冷蔵の作り置きを使用）";
+    const r: Recipe = { id: "prepared-reuse", name: "グラタン", emoji: "", catch: "", servings: 1, ingredients: [{ name: "ミートソース", amount, inventoryKind: "prepared" }], steps: [{ title: "準備", text: "確認する" }], leftoverStorage: [], sources: [], tags: {}, createdAt: 0 };
+    f.run("plan.add", { recipe: r, cookAt: now });
+    expect(showQuantity(requirements(f.s, "default", undefined, now)[0].shortage)).toBe("0食");
+    expect(f.s.plans[0].recipe.ingredients[0].amount).toBe(amount);
+    f.cook(f.s.plans[0].id);
+    expect(f.s.lots.slice(0, 2).map(l => showQuantity(l.quantity))).toEqual(["1食", "100g"]);
+  });
+  it("keeps approximate, conditional or quantity-changing serving notes unknown", () => {
+    expect(showQuantity(parseQuantity("1/2食分（冷凍）"))).toBe("1/2食");
+    for (const amount of ["約1食分", "1〜2食分", "1食分（半分だけ使用）", "1食分（量不明）", "1食分（約200g）", "1食分（あれば使用）"]) expect(parseQuantity(amount)).toBeNull();
+  });
   it("a location's expiry date uses that location's timezone", () => {
     const f = fixture(); f.run("location.rename", { name: "日本の台所", timeZone: "Asia/Tokyo" });
     f.stock("白菜", "1玉", { expiresOn: "2026-10-21" }); f.plan("白菜", "1/4玉", { cookAt: "2026-10-21T16:00:00.000Z" });
