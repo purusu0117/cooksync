@@ -1,0 +1,1 @@
+{"buildCommand":"node scripts/verified-key-fingerprint.mjs && npm run build"}
