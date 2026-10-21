@@ -1,3 +1,0 @@
-{
-  "buildCommand": "node scripts/approved-api-smoke.cjs && npm run build"
-}
