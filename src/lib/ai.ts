@@ -333,14 +333,18 @@ export async function askClaudeVisionItems(imagePath: string): Promise<string[]>
  * 複数枚を渡せる。**順番がバラバラでもよい**（調理の進行から並べ直させる）。
  * ⚠️ 写真に写っていない分量を推測で埋めさせない（[[mistakes]] 2026-05-22 の再発防止）。
  */
-export async function askClaudeVisionRecipe<T>(imagePaths: string[]): Promise<T> {
+export async function askClaudeVisionRecipe<T>(imagePaths: string[], video?: { timestamps: number[]; duration: number }): Promise<T> {
   const many = imagePaths.length > 1;
   const rules = [
     many
       ? `${imagePaths.length}枚の画像は**同じ1つの料理**のものです。全部を突き合わせて1つのレシピにまとめ、JSONにしてください。`
       : "この画像から料理のレシピを読み取り、JSONにしてください。",
     "",
-    ...(many
+    ...(video ? [
+      `【動画の一部のコマのみ】端末申告の動画長さ${video.duration}秒、抽出時刻は順に${video.timestamps.join("、")}秒です。渡された順が時刻順です。`,
+      "動画全編・音声・字幕は取得していません。コマに実際に写る文字・作業だけを記述し、間の作業や音声内容を補完しない。時間差を加熱時間や調理時間と解釈しない。各手順のfromPhotoに根拠のコマ番号を残す。",
+    ] : []),
+    ...(many && !video
       ? [
           "【並び順について】",
           "- 渡した画像の順番は**バラバラかもしれません**。調理が進む順に並べ直してから手順を書いてください。",

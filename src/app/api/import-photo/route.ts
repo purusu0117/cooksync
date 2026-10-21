@@ -14,6 +14,7 @@ import { consume, quotaResponse, refund } from "@/lib/quotaServer";
 import { normalizePhoto, validateImportedRecipe } from "@/lib/kitchen/importValidation";
 import { KitchenError } from "@/lib/kitchen/engine";
 import { photoUploadError } from "@/lib/kitchen/limits";
+import { validateVideoManifest, type VideoManifest } from "@/lib/kitchen/videoFrames";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -40,6 +41,14 @@ async function handlePost(request: Request) {
     }
     const uploadError = photoUploadError(files);
     if (uploadError) return Response.json({ error: uploadError }, { status: 413 });
+    let video: VideoManifest | undefined;
+    if (form.has("videoManifest")) {
+      try {
+        const raw = form.get("videoManifest");
+        if (typeof raw !== "string" || raw.length > 2048) throw new Error("動画情報が不正です");
+        video = validateVideoManifest(JSON.parse(raw), files.length);
+      } catch { return Response.json({ error: "動画の時刻・コマ数を確認できません。動画を選び直してください。" }, { status: 400 }); }
+    }
 
     const images = await Promise.all(files.map(normalizePhoto));
     // AIを呼ぶ前に枠を確認する（サーバー側が唯一の判定者）
@@ -62,7 +71,7 @@ async function handlePost(request: Request) {
       photoOrder?: unknown;
     };
     try {
-      out = await askClaudeVisionRecipe(tmps);
+      out = await askClaudeVisionRecipe(tmps, video);
     } catch (e) {
       await refund(uid, "import", request).catch(() => {}); // 失敗したら枠を戻す
       throw e;
@@ -82,14 +91,14 @@ async function handlePost(request: Request) {
     const checked = validateImportedRecipe(out.recipe, true);
     return Response.json({
       recipe: checked.recipe,
-      evidence: { kind: "photo", obtained: ["uploaded-images"], images: images.map(i => i.evidence), capturedAt: new Date().toISOString(), missing: checked.missing },
+      evidence: { kind: video ? "video" : "photo", obtained: [video ? "uploaded-video-frames" : "uploaded-images"], ...(video ? { video, metadataTrust: "client-reported", unavailable: ["audio", "subtitles", "unsampled-video"] } : {}), images: images.map(i => i.evidence), capturedAt: new Date().toISOString(), missing: checked.missing },
       missing: [...checked.missing, ...(Array.isArray(out.missing) ? out.missing.filter(v => typeof v === "string") : [])],
       confidence: typeof out.confidence === "string" ? out.confidence : undefined,
       // 並べ替えた結果（渡した画像の1始まりの番号）。UIで「この順と判断しました」と見せる。
       photoOrder: Array.isArray(out.photoOrder)
         ? [...new Set(out.photoOrder.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= files.length))]
         : [],
-      photoCount: files.length,
+      photoCount: video ? undefined : files.length,
     });
   } catch (e) {
     return Response.json(
