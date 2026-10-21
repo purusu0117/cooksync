@@ -188,7 +188,12 @@ async function handlePost(request: Request) {
       try {
         await requireActiveAiJob();
         const recipes = (await askClaudeRecipes(prompt)).flatMap(value => {
-          try { const checked = validateImportedRecipe(value, true); return [{ ...checked.recipe, readMissing: checked.missing }]; }
+          try {
+            const checked = validateImportedRecipe(value, true);
+            const notices = value && typeof value === "object" && "readMissing" in value && Array.isArray(value.readMissing)
+              ? value.readMissing.filter((v): v is string => typeof v === "string").slice(0, 20).map(v => v.slice(0, 300)) : [];
+            return [{ ...checked.recipe, readMissing: [...new Set([...notices, ...checked.missing])] }];
+          }
           catch { return []; }
         });
         // askClaudeRecipes は**例外を投げず空配列を返す**（max_tokens打ち切り・
