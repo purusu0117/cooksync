@@ -1,10 +1,12 @@
-import { after } from "next/server";
+import { withAiRequest, requireActiveAiJob } from "@/lib/kitchen/managedAi";
+import { managedAfter as after } from "@/lib/kitchen/managedAi";
 import { askClaudeRecipes } from "@/lib/ai";
 import { sendPush, resolvePushTarget } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
 import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
-import { identify } from "@/lib/session";
+
 import { addToPool, takeFromPool } from "@/lib/recipeCache";
+import { requireAiScope } from "@/lib/kitchen/managedAi";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -67,7 +69,7 @@ function buildPrompt(b: ResearchBody): string {
   const wish = (b.wish ?? "").trim();
   const fridge = b.fridge ?? [];
   const expiring = b.expiring ?? [];
-  const servings = b.servings && b.servings > 0 ? b.servings : 2;
+  const servings = b.servings && b.servings > 0 ? b.servings : undefined;
   const filters = b.filters ?? {};
   const avoid = b.avoid ?? [];
   const existing = b.existing ?? [];
@@ -77,7 +79,7 @@ function buildPrompt(b: ResearchBody): string {
   return [
     "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2〜3品調べ、結果をJSONだけで返してください。",
     wish ? `■ 作りたいもの: ${wish}` : "■ 作りたいもの: おまかせ（下の冷蔵庫の食材を活かせるもの）",
-    `■ 人数: ${servings}人分（材料の分量はこの人数に合わせる）`,
+    servings ? `■ 人数: ${servings}人分（材料の分量はこの人数に合わせる）` : "■ 人数未指定：参照レシピに明示された人数と分量を保持し、不明なら人数を補完しない。",
     fridge.length ? `■ 冷蔵庫にある食材: ${fridge.join("、")}` : "",
     expiring.length ? `■ 特に使い切りたい（期限間近）: ${expiring.join("、")}` : "",
     filters.cuisine ? `■ ジャンル: ${filters.cuisine}` : "",
@@ -135,12 +137,14 @@ function buildPrompt(b: ResearchBody): string {
 
 // POST: ジョブを開始して jobId を即返す。
 // 実処理は after() で応答後に継続（Vercelでもレスポンス後に生かされる）。
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     const body = (await request.json()) as ResearchBody;
+    const scope = requireAiScope();
+    const privateQuery = { ...body, privateScope: `${scope.owner}:${scope.locationId}` };
     // 枠を数える uid：セッションCookieがあればそれを正とする（クライアントの `u` は
     // 書き換え可能なので信用しない）。Cookieが無い既存ユーザーは `u` にフォールバック。
-    const uid = identify(request, body.u).uid;
+    const uid = requireAiScope().owner;
     // プッシュ通知の宛先。購読はクライアントのuid(getUid())で登録されているので枠のuidとは別だが、
     // ⚠️ **`body.u` をそのまま信じてはいけない**（2026-08-01 の監査 高-7）。
     //    他人の dataId を名乗れば、その人の端末に任意の文言（レシピ名はクエリで操作できる）を
@@ -151,7 +155,7 @@ export async function POST(request: Request) {
     // ── ① まず共有プールを引く（AI原価0）────────────────────────────
     // 同じ条件のレシピを誰かが既に生成していれば、APIを叩かずに返せる。
     // 原価が出ない以上、月間枠は消費させない（連打だけIP上限で止める）。
-    const hit = await takeFromPool(body);
+    const hit = await takeFromPool(privateQuery);
     if (hit) {
       if (!(await checkIpOnly(request))) {
         return Response.json(
@@ -178,6 +182,7 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
+        await requireActiveAiJob();
         const recipes = await askClaudeRecipes(prompt);
         // askClaudeRecipes は**例外を投げず空配列を返す**（max_tokens打ち切り・
         // refusal・pause_turn上限などで、救出できるレシピが1件も無かったとき）。
@@ -193,14 +198,16 @@ export async function POST(request: Request) {
           });
           return;
         }
+        await requireActiveAiJob();
         await setJob(jobId, { status: "done", recipes, createdAt: Date.now() });
         // 次に同じ条件で探す人のためにプールへ貯める（原価が下がっていく）
-        await addToPool(body, recipes).catch(() => {});
+        await addToPool(privateQuery, recipes).catch(() => {});
         const names = recipes
           .map((r) => (r as { name?: string }).name)
           .filter(Boolean)
           .join(" / ");
         // 通知は任意（VAPID未設定なら失敗しても結果には影響させない）
+        await requireActiveAiJob();
         if (pushUid) await sendPush(pushUid, {
           title: "🍳 レシピが見つかりました",
           body: names || "候補ができました。タップして確認",
@@ -232,7 +239,7 @@ export async function POST(request: Request) {
 const STUCK_MS = 6 * 60 * 1000;
 
 // GET ?jobId=... : ジョブの状態/結果を返す
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   const jobId = new URL(request.url).searchParams.get("jobId");
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
   const job = await getJob(jobId);
@@ -251,3 +258,6 @@ export async function GET(request: Request) {
   }
   return Response.json({ status: "running" });
 }
+
+export const POST = withAiRequest(handlePost);
+export const GET = withAiRequest(handleGet, true);

@@ -14,6 +14,13 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import { vi } from "vitest";
+
+// Unit tests never inherit live credentials or contact external services.
+for (const key of Object.keys(process.env)) {
+  if (/ANTHROPIC|UPSTASH|QSTASH|GOOGLE|SECRET|TOKEN|VERCEL|API_KEY|COOKSYNC_|^KV_REST_/i.test(key)) delete process.env[key];
+}
+globalThis.fetch = vi.fn(async () => { throw new Error("External network disabled in unit tests"); }) as typeof fetch;
 
 const worker = process.env.VITEST_WORKER_ID || "0";
 const dir = path.join(os.tmpdir(), "cooksync-test-data", `w${worker}-${process.pid}`);

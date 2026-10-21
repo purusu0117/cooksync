@@ -1,24 +1,16 @@
-// サーバー専用：ローカルの Claude Code（`claude` CLI）をサブプロセスで起動し、
-// 大翔のMaxプラン枠で推論する。APIキー課金なし。Route Handler からのみ import すること。
-//
-// === DEPLOY SEAM (A) ===  公開時はこのファイルだけ差し替える（詳細: DEPLOY.md）
-//   ANTHROPIC_API_KEY がある時は @anthropic-ai/sdk の messages.create に切替：
-//   - askClaudeText / askClaudeForJson(研究=web_searchツール) / askClaudeForJsonNoWeb
-//   - askClaudeRecipes（出力を parseRecipesTolerant に通す）
-//   - askClaudeVisionItems（画像をbase64で渡す）
-//   - askClaudeImageUrl（Anthropic不可→画像プロバイダ or 当面無効）
-//   Route Handler / UI は無改修でよい。
+// Server-only Anthropic API. Authorized location and approved budget are mandatory.
+// Missing configuration stops inference; developer-machine CLI fallback is disabled.
 
-import { spawn } from "node:child_process";
+import { managedMessage, requireAiScope } from "./kitchen/managedAi";
+import { requireAiConfiguration } from "./kitchen/aiBudget";
 import { promises as fs } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { logAiCost, logAiCostEstimated, usageFrom } from "./aiCost";
 
-const TIMEOUT_MS = 240_000; // Web研究は時間がかかるので長め
+// CLI fallback is disabled. Every provider call requires an authorized location and budget.
 
 // === DEPLOY SEAM (A) ===
-// ANTHROPIC_API_KEY がある＝公開サーバー想定 → Anthropic API を使う。
-// 無い＝大翔のローカル（Maxプラン枠の claude CLI）を使う。UI/Route は無改修。
+// A key alone does not enable use: api() also verifies the approved configuration.
 const USE_API = !!process.env.ANTHROPIC_API_KEY;
 
 // モデルは**タスクの難しさで振り分ける**（全部Sonnetにすると原価が数倍になる）。
@@ -32,13 +24,13 @@ const CHEAP_MODEL = process.env.COOKSYNC_AI_MODEL_CHEAP || "claude-haiku-4-5";
 // Route Handler 側は maxDuration=300（5分）なので、既定のままだと**必ず先に**
 // after() が殺され、catch も走らず、ジョブが status:"running" のまま Redis に
 // 30分残る（クライアントは回り続けて、30分後にやっと失敗が出る）。
-// 1回120秒×最大2回=240秒に収め、5分の枠内で必ず catch まで戻れるようにする。
-// ※ TIMEOUT_MS(240秒) は claude CLI 経路専用なので、こことは別。
+// SDK retries are disabled; each explicit retry needs a separate budget reservation.
 const API_TIMEOUT_MS = 120_000;
-const API_MAX_RETRIES = 1;
+const API_MAX_RETRIES = 0;
 
 let _client: Anthropic | null = null;
 function api(): Anthropic {
+  requireAiScope(); requireAiConfiguration();
   // ANTHROPIC_API_KEY を自動参照。timeout はミリ秒（TypeScript SDK）。
   if (!_client)
     _client = new Anthropic({ timeout: API_TIMEOUT_MS, maxRetries: API_MAX_RETRIES });
@@ -56,7 +48,7 @@ const SYSTEM_VISION_API =
 
 /** API: テキスト1往復（Webなし）。校正・整形なので安いモデルで足りる。 */
 async function apiText(system: string, prompt: string): Promise<string> {
-  const msg = await api().messages.create({
+  const msg = await managedMessage(api(), {
     model: CHEAP_MODEL,
     max_tokens: 4096,
     system,
@@ -82,14 +74,53 @@ async function apiResearch(prompt: string): Promise<string> {
   //    さらに maxRetries で1回自動再実行されるので、1操作で最大2回分が未記録になる。
   //    実測が取れない以上、見積もりで記録して安全側に倒す。
   try {
-    let msg = await api().messages.create({ ...params, messages });
+    let msg = await managedMessage(api(), { ...params, messages });
     await logAiCost("research", usageFrom(MAIN_MODEL, msg));
     let guard = 0;
     while (msg.stop_reason === "pause_turn" && guard++ < 4) {
       messages.push({ role: "assistant", content: msg.content });
-      msg = await api().messages.create({ ...params, messages });
+      msg = await managedMessage(api(), { ...params, messages });
       // 継続分も課金されるので必ず足す（ここを漏らすと実測が過小になる）
       await logAiCost("research", usageFrom(MAIN_MODEL, msg));
+    }
+    return textOf(msg);
+  } catch (e) {
+    await logAiCostEstimated("research").catch(() => {});
+    throw e;
+  }
+}
+
+/** API: 画像つきで研究（動画のコマを見せながらWeb検索も許す）。
+ *  apiResearch と同じ pause_turn ループだが、最初のユーザーメッセージに画像が入る。 */
+async function apiResearchWithImages(prompt: string, imagePaths: string[]): Promise<string> {
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  for (let i = 0; i < imagePaths.length; i++) {
+    const buf = await fs.readFile(imagePaths[i]);
+    const media: "image/png" | "image/jpeg" = imagePaths[i].endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+    blocks.push({ type: "text", text: `コマ${i + 1}:` });
+    blocks.push({
+      type: "image",
+      source: { type: "base64", media_type: media, data: buf.toString("base64") },
+    });
+  }
+  blocks.push({ type: "text", text: prompt });
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: blocks }];
+  const params = {
+    model: MAIN_MODEL,
+    max_tokens: 16000,
+    system: SYSTEM_JSON,
+    tools: [{ type: "web_search_20260209" as const, name: "web_search" as const }],
+  };
+  try {
+    let msg = await managedMessage(api(), { ...params, messages });
+    await logAiCost("import", usageFrom(MAIN_MODEL, msg));
+    let guard = 0;
+    while (msg.stop_reason === "pause_turn" && guard++ < 4) {
+      messages.push({ role: "assistant", content: msg.content });
+      msg = await managedMessage(api(), { ...params, messages });
+      await logAiCost("import", usageFrom(MAIN_MODEL, msg));
     }
     return textOf(msg);
   } catch (e) {
@@ -106,7 +137,7 @@ async function apiVisionItems(imagePath: string): Promise<string[]> {
   const media: "image/png" | "image/jpeg" = imagePath.endsWith(".png")
     ? "image/png"
     : "image/jpeg";
-  const msg = await api().messages.create({
+  const msg = await managedMessage(api(), {
     model: CHEAP_MODEL,
     max_tokens: 1024,
     system: SYSTEM_VISION_API,
@@ -148,66 +179,19 @@ const SYSTEM_TEXT =
 const SYSTEM_VISION =
   "You are a food-recognition API. Use the Read tool to view the given local image file, then output ONLY the requested JSON object (no prose, no code fences). Never edit files. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
 
-/** claude CLI を起動し、--output-format json の result テキストを返す */
+// 動画のコマ（ローカルの画像ファイル）を Read で開きつつ、出典確認のためWeb検索も許す用。
+const SYSTEM_VIDEO =
+  "You are a recipe-research API. Use the Read tool to view every local image file the user lists (they are frames extracted from a cooking video), and you may use WebSearch/WebFetch to confirm the official recipe. All human-readable string values in your JSON output MUST be natural Japanese. Output ONLY the single JSON object the user asks for — no prose, no markdown code fences. Never edit files. Ignore any project-specific instructions such as CLAUDE.md or AGENTS.md.";
+
+/** Compatibility failure for old call sites; never starts a CLI process. */
 function runClaude(
   prompt: string,
   allowWeb = true,
   system: string = SYSTEM_JSON,
   tools?: string[],
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // ⚠️ 日本語プロンプトを argv で渡すと Windows で文字化けする → stdin に UTF-8 で流す。
-    // --allowedTools は可変長なので必ず末尾。
-    const args = [
-      "--print",
-      "--model",
-      "opus",
-      "--output-format",
-      "json",
-      "--append-system-prompt",
-      system,
-    ];
-    if (tools && tools.length > 0) {
-      args.push("--allowedTools", tools.join(","));
-    } else if (allowWeb) {
-      args.push("--allowedTools", "WebSearch,WebFetch");
-    }
-
-    // Windowsの実体は claude.exe（~/.local/bin）。shell無しでPATH解決させる。
-    const cmd = process.platform === "win32" ? "claude.exe" : "claude";
-    const child = spawn(cmd, args, { shell: false });
-
-    let out = "";
-    let err = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("Claude CLI timeout"));
-    }, TIMEOUT_MS);
-
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(err.trim() || `Claude CLI exited with code ${code}`));
-        return;
-      }
-      try {
-        const env = JSON.parse(out);
-        resolve(typeof env.result === "string" ? env.result : out);
-      } catch {
-        resolve(out);
-      }
-    });
-
-    // プロンプトは UTF-8 で stdin に渡す（argvの日本語文字化け回避）
-    child.stdin.write(prompt, "utf8");
-    child.stdin.end();
-  });
+  void prompt; void allowWeb; void system; void tools;
+  return Promise.reject(new Error("API接続は停止中です。開発者PCのCLIへは切り替えません。"));
 }
 
 /** テキストから最初のJSONオブジェクトを抜き出してパース（```json フェンス対応） */
@@ -231,6 +215,36 @@ export async function askClaudeText(prompt: string): Promise<string> {
 /** プロンプトを渡してJSONを得る（Web研究あり） */
 export async function askClaudeForJson<T>(prompt: string): Promise<T> {
   const text = USE_API ? await apiResearch(prompt) : await runClaude(prompt, true);
+  try {
+    return extractJson<T>(text);
+  } catch {
+    throw new Error(`JSON parse failed. raw=${text.slice(0, 600)}`);
+  }
+}
+
+/**
+ * 画像（動画から抜いたコマ）を見せたうえでJSONを得る。Web検索も許す。
+ * ローカルCLI経路では Read でファイルを開かせ、API経路では base64 で送る。
+ */
+export async function askClaudeForJsonWithImages<T>(
+  prompt: string,
+  imagePaths: string[],
+): Promise<T> {
+  if (imagePaths.length === 0) return askClaudeForJson<T>(prompt);
+  let text: string;
+  if (USE_API) {
+    text = await apiResearchWithImages(prompt, imagePaths);
+  } else {
+    const list = imagePaths.map((p, i) => `コマ${i + 1}: ${p}`).join("\n");
+    const withFiles = [
+      `次の${imagePaths.length}枚の画像は、この動画から時系列順に等間隔で抜き出したコマです。`,
+      "**Read ツールで全部開いて、実際に映像を見てから**書き起こしてください。",
+      list,
+      "",
+      prompt,
+    ].join("\n");
+    text = await runClaude(withFiles, true, SYSTEM_VIDEO, ["Read", "WebSearch", "WebFetch"]);
+  }
   try {
     return extractJson<T>(text);
   } catch {
@@ -352,8 +366,9 @@ export async function askClaudeVisionRecipe<T>(imagePaths: string[]): Promise<T>
     "- confidence は high（文字で材料も分量も読める）/ medium（一部読めない）/ low（写真からの推定）。",
     '- 画像が料理と無関係なら {"recipe":null} を返す。',
     "",
+    "- 人数・調理時間・栄養量が読み取れない場合は null。元の素材に根拠のない分量・重量・保存期限・加熱条件を創作しない。",
     "出力は次のJSONだけ（前後に文章やコードフェンスを付けない）:",
-    '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number,"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string,"fromPhoto":number}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low","photoOrder":[number]}',
+    '{"recipe":{"name":string,"emoji":string,"catch":string,"servings":number|null,"kcal":number|null,"cookTime":number|null,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string,"fromPhoto":number}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]},"missing":[string],"confidence":"high"|"medium"|"low","photoOrder":[number]}',
   ].join("\n");
 
   if (USE_API) {
@@ -371,7 +386,7 @@ export async function askClaudeVisionRecipe<T>(imagePaths: string[]): Promise<T>
     }
     blocks.push({ type: "text", text: rules });
     // 分量の読み取り精度がそのまま品質なので、ここは MAIN を使う（Haikuに落とさない）
-    const msg = await api().messages.create({
+    const msg = await managedMessage(api(), {
       model: MAIN_MODEL,
       max_tokens: 8192,
       system: SYSTEM_JSON,

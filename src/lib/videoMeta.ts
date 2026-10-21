@@ -20,27 +20,59 @@ export interface VideoMeta {
   description: string;
   webpageUrl: string;
   /** どこから取れたか。UIとログで「何を根拠にしたか」を出すために持つ */
-  via: ("oembed" | "watch-page" | "yt-dlp" | "captions")[];
+  via: ("oembed" | "watch-page" | "yt-dlp" | "captions" | "frames")[];
 }
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+// 対応ホスト。**共有ボタンで出てくる短縮URLまで全部**入れる。
+// ここに漏れがあると、貼った瞬間に400（「URLを貼ってください」）で弾かれる＝
+// 大翔から見れば「動画からレシピがエラーになる」に見える。
+const SUPPORTED_HOSTS = new Set([
+  "youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtube-nocookie.com",
+  "youtu.be",
+  "tiktok.com",
+  "m.tiktok.com",
+  "vm.tiktok.com", // iOSの共有
+  "vt.tiktok.com", // Androidの共有
+  "instagram.com",
+  "m.instagram.com",
+]);
+
 /** 対応している動画URLか（UIの入力チェックと共用） */
 export function isSupportedVideoUrl(url: string): boolean {
   try {
-    const h = new URL(url).hostname.replace(/^www\./, "");
-    return (
-      h === "youtube.com" ||
-      h === "m.youtube.com" ||
-      h === "youtu.be" ||
-      h === "tiktok.com" ||
-      h === "vm.tiktok.com" ||
-      h === "instagram.com"
-    );
+    // 共有時に前後の空白や「〜 https://... 」のような文が付くことがある
+    const u = new URL(url.trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (u.username || u.password || u.port) return false;
+    return SUPPORTED_HOSTS.has(u.hostname.replace(/^www\./, "").toLowerCase());
   } catch {
     return false;
   }
+}
+
+/**
+ * 貼り付けた文字列から動画URLだけを取り出す。
+ * 共有シートは「タイトル 改行 URL」の形で渡してくることが多く、そのまま送ると弾かれる。
+ * 見つからなければ入力をそのまま返す（呼び出し側が対応外として扱う）。
+ */
+export function extractVideoUrl(input: string): string {
+  const text = (input || "").trim();
+  if (isSupportedVideoUrl(text)) return text;
+  const m = text.match(/https?:\/\/[^\s<>"'）)】」]+/g);
+  if (m) {
+    for (const cand of m) {
+      // 末尾の句読点だけ落とす
+      const cleaned = cand.replace(/[.,、。]+$/, "");
+      if (isSupportedVideoUrl(cleaned)) return cleaned;
+    }
+  }
+  return text;
 }
 
 /** JSON文字列リテラルを、エスケープを守って読み取る（HTMLに埋まった値を取り出す用） */
@@ -68,10 +100,26 @@ function readJsonString(src: string, openQuoteIndex: number): string | null {
 
 async function get(url: string, timeoutMs = 15000): Promise<Response | null> {
   try {
-    return await fetch(url, {
-      headers: { "user-agent": UA, "accept-language": "ja,en;q=0.8" },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    const signal = AbortSignal.timeout(timeoutMs);
+    let target = url;
+    for (let redirects = 0; redirects <= 3; redirects++) {
+      // Validate every destination. Do not follow a supported site's redirect to an internal host.
+      if (!isSupportedVideoUrl(target)) return null;
+      const response = await fetch(target, { redirect: "manual", headers: { "user-agent": UA, "accept-language": "ja,en;q=0.8" }, signal });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location"); await response.body?.cancel();
+        if (!location) return null;
+        target = new URL(location, target).toString(); continue;
+      }
+      if (!response.ok) { await response.body?.cancel(); return null; }
+      const limit = 4 * 1024 * 1024;
+      if (Number(response.headers.get("content-length")) > limit) { await response.body?.cancel(); return null; }
+      const reader = response.body?.getReader(), chunks: Uint8Array[] = []; let size = 0;
+      if (reader) while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > limit) { await reader.cancel(); return null; } chunks.push(value); }
+      const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return new Response(bytes, { status: response.status, headers: { "content-type": response.headers.get("content-type") || "text/plain" } });
+    }
+    return null;
   } catch {
     return null;
   }
@@ -127,6 +175,7 @@ async function fetchDescription(pageUrl: string): Promise<string> {
  * どれか取れなくても throw しない ―― 取れた分だけ返し、AI側でWeb検索に頼らせる。
  */
 export async function fetchVideoMeta(pageUrl: string): Promise<VideoMeta> {
+  if (!isSupportedVideoUrl(pageUrl)) throw new Error("対応する公開動画のURLを確認してください");
   const [oembed, description] = await Promise.all([
     fetchOEmbed(pageUrl),
     fetchDescription(pageUrl),

@@ -15,6 +15,14 @@ const h = vi.hoisted(() => ({
   askClaudeForJson: vi.fn(),
   refund: vi.fn(async () => {}),
   consume: vi.fn(async () => ({ ok: true })),
+  description: "材料と手順が記載された説明欄",
+}));
+// Routing/authentication is tested separately with real signed sessions.
+vi.mock("@/lib/kitchen/managedAi", () => ({
+  withAiRequest: (fn: unknown) => fn,
+  requireActiveAiJob: async () => {},
+  requireAiScope: () => ({ owner: "u-test", locationId: "default" }),
+  managedAfter: (fn: () => Promise<unknown>) => { h.afterTasks.push(fn()); },
 }));
 
 vi.mock("next/server", () => ({
@@ -22,21 +30,34 @@ vi.mock("next/server", () => ({
     h.afterTasks.push(fn());
   },
 }));
-vi.mock("@/lib/ai", () => ({ askClaudeForJson: h.askClaudeForJson }));
+// 映像のコマがある回は askClaudeForJsonWithImages を通るが、この一連のテストは
+// 「コマが1枚も取れなかった回」を見ているので、どちらも同じモックに寄せる。
+vi.mock("@/lib/ai", () => ({
+  askClaudeForJson: h.askClaudeForJson,
+  askClaudeForJsonWithImages: (p: string) => h.askClaudeForJson(p),
+}));
 vi.mock("@/lib/kv", () => ({ redis: null })); // ジョブはメモリに置く
 vi.mock("@/lib/session", () => ({ identify: () => ({ uid: "u-test" }) }));
+vi.mock("@/lib/pushServer", () => ({
+  sendPush: async () => ({ web: 0, native: 0, errors: [] }),
+  resolvePushTarget: async () => null,
+}));
 vi.mock("@/lib/quotaServer", () => ({
   consume: h.consume,
   refund: h.refund,
   quotaResponse: () => Response.json({ error: "quota" }, { status: 429 }),
 }));
-vi.mock("@/lib/videoLocal", () => ({ tryLocalRich: async () => null }));
+vi.mock("@/lib/videoLocal", () => ({
+  tryLocalRich: async () => null,
+  localAvailable: () => false,
+}));
 vi.mock("@/lib/videoMeta", () => ({
   isSupportedVideoUrl: (u: string) => u.includes("youtube.com"),
+  extractVideoUrl: (u: string) => u.trim(),
   fetchVideoMeta: async () => ({
     title: "猫がかわいい",
     channel: "cats",
-    description: "",
+    description: h.description,
     webpageUrl: "https://www.youtube.com/watch?v=x",
   }),
 }));
@@ -64,9 +85,16 @@ beforeEach(() => {
   h.afterTasks.length = 0;
   h.refund.mockClear();
   h.askClaudeForJson.mockReset();
+  h.description = "材料と手順が記載された説明欄";
 });
 
 describe("POST /api/import-video", () => {
+  it("取得素材が空ならAIへ渡さず失敗にする", async () => {
+    h.description = "";
+    const job = await runImport();
+    expect(job.status).toBe("error");
+    expect(h.askClaudeForJson).not.toHaveBeenCalled();
+  });
   it("recipe:null（料理と無関係な動画）は error にして枠も戻す＝ホーム画面が落ちない", async () => {
     h.askClaudeForJson.mockResolvedValue({ recipe: null, confidence: "low" });
 
@@ -82,7 +110,11 @@ describe("POST /api/import-video", () => {
 
   it("レシピが取れた回はこれまで通り done で返る（ガードで壊していない）", async () => {
     h.askClaudeForJson.mockResolvedValue({
-      recipe: { name: "肉じゃが" },
+      recipe: {
+        name: "肉じゃが",
+        ingredients: [{ name: "じゃがいも", amount: "3個" }],
+        steps: [{ title: "下準備", text: "じゃがいもを切る" }],
+      },
       missing: ["みりん"],
       confidence: "medium",
     });
@@ -93,6 +125,22 @@ describe("POST /api/import-video", () => {
     expect((job.recipe as { name: string }).name).toBe("肉じゃが");
     expect(job.missing).toEqual(["みりん"]);
     expect(h.refund).not.toHaveBeenCalled();
+  });
+
+  // 動画を1つも開けなかったとき、AIは指示どおり「材料も手順も空のレシピ」を返す
+  // （根拠が無いのに“それらしいレシピ”を作らせないため）。これを done にすると
+  // 名前だけの空のカードが画面に出てしまう。成功ではないので error 扱いにする。
+  it("材料も手順も空のレシピは成功にしない＝空のカードを出さず枠も戻す", async () => {
+    h.askClaudeForJson.mockResolvedValue({
+      recipe: { name: "（動画情報が取得できませんでした）", ingredients: [], steps: [] },
+      confidence: "low",
+    });
+
+    const job = await runImport();
+
+    expect(job.status).toBe("error");
+    expect(job.recipe).toBeUndefined();
+    expect(h.refund).toHaveBeenCalled();
   });
 
   it("AIが失敗した回は error＋枠を戻す（既存の挙動を保つ）", async () => {

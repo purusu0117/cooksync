@@ -10,6 +10,7 @@ import { SEED_RECIPES } from "./seedRecipes";
 import { recipeStore } from "./storage";
 import { useServerList } from "./syncStore";
 import type { Recipe } from "./recipe";
+import { useOptionalKitchen } from "./kitchen/client";
 
 // 保存先はサーバー(/api/store)＝端末間同期。store.key だけ使い、実体は syncStore に委譲。
 export function usePersistentList<T>(
@@ -30,9 +31,12 @@ export function usePersistentList<T>(
  */
 export function useAllRecipes(): Recipe[] {
   const [stored] = usePersistentList(recipeStore);
+  const kitchen = useOptionalKitchen();
+  const activeRecipes = kitchen?.snapshot?.state?.recipes;
   return useMemo(() => {
-    const storedIds = new Set(stored.map((r) => r.id));
+    const saved = activeRecipes || stored;
+    const storedIds = new Set(saved.map((r) => r.id));
     // 初期デフォルトはサンプル6件のみ。移植22件は「取り込み」でユーザーデータ(recipeStore)に入る。
-    return [...stored, ...SEED_RECIPES.filter((r) => !storedIds.has(r.id))];
-  }, [stored]);
+    return [...saved, ...SEED_RECIPES.filter((r) => !storedIds.has(r.id))];
+  }, [stored, activeRecipes]);
 }

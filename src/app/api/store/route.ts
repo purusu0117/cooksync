@@ -7,6 +7,7 @@ import { assertKvConfigured, redis } from "@/lib/kv";
 import { identify } from "@/lib/session";
 import { localReadAllWithRev, localSetKey } from "@/lib/storeLocal";
 import { isAccountDataId } from "@/lib/userStore";
+import { KITCHEN_KEY, LEGACY_MUTABLE } from "@/lib/kitchen/model";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,12 @@ async function readAllFor(
 // 版番号の突き合わせと書き込みを**不可分**に行う。
 // 途中で別端末が割り込んでも、どちらか一方だけが成功する。
 const CAS_SCRIPT = `
+if redis.call('HEXISTS', KEYS[1], 'cooksync:kitchen:v3') == 1 then
+  local protected = cjson.decode(ARGV[5])
+  for _, field in ipairs(protected) do
+    if ARGV[1] == field then return {-1, 0} end
+  end
+end
 local cur = redis.call('HGET', KEYS[1], ARGV[3])
 if cur == false then cur = 0 else cur = tonumber(cur) or 0 end
 if ARGV[4] ~= '' and tonumber(ARGV[4]) ~= cur then
@@ -170,22 +177,11 @@ async function setKeyFor(
       JSON.stringify(value),
       REV_FIELD,
       expectRev === null ? "" : String(expectRev),
+      JSON.stringify(LEGACY_MUTABLE),
     ];
-    try {
       const r = (await redis.eval(CAS_SCRIPT, [userKey(target.uid)], args)) as unknown;
       const arr = Array.isArray(r) ? r : [];
       return { ok: toRev(arr[0]) === 1, rev: toRev(arr[1]) };
-    } catch {
-      // EVAL が使えない環境でも**書けないよりは書く**。
-      // 不可分ではなくなるが、この経路は今までと同じ（＝退化しない）。
-      const cur = toRev(await redis.hget(userKey(target.uid), REV_FIELD));
-      if (expectRev !== null && expectRev !== cur) return { ok: false, rev: cur };
-      await redis.hset(userKey(target.uid), {
-        [key]: JSON.stringify(value),
-        [REV_FIELD]: cur + 1,
-      });
-      return { ok: true, rev: cur + 1 };
-    }
   }
   return localSetKey(target.uid, key, value, {
     isAccount: target.isAccount,
@@ -199,7 +195,9 @@ export async function GET(request: Request) {
   if (!target) return forbidden();
   recordActive(target.uid);
   const { data, rev } = await readAllFor(target);
-  return Response.json(data, { headers: revHeaders(rev) });
+  const legacy = { ...data };
+  delete legacy[KITCHEN_KEY];
+  return Response.json(legacy, { headers: { ...revHeaders(rev), "Cache-Control": "no-store, private" } });
 }
 
 export async function PUT(request: Request) {
@@ -211,7 +209,7 @@ export async function PUT(request: Request) {
       u?: string;
       rev?: unknown;
     };
-    if (typeof body.key !== "string") {
+    if (typeof body.key !== "string" || body.key === KITCHEN_KEY || body.key.startsWith("__")) {
       return Response.json({ error: "key required" }, { status: 400 });
     }
     // 書き込みも読み取りと**同じ認可**を通す。body.u をそのまま信用すると上書きできてしまう。
