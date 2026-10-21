@@ -72,11 +72,12 @@ beforeEach(() => {
 
 describe("POST /api/research", () => {
   it("allows stock and saved recipes without forcing purchases; preserves prepared ingredients and missing data", async () => {
-    h.askClaudeRecipes.mockResolvedValue([{ name: "ミートソースグラタン", ingredients: [{ name: "ミートソース", amount: "1食", inventoryKind: "prepared" }], steps: [{ text: "ソースを器に入れる" }] }, { name: "空の結果" }]);
+    h.askClaudeRecipes.mockResolvedValue([{ name: "ミートソースグラタン", ingredients: [{ name: "ミートソース", amount: "1食", inventoryKind: "prepared" }], steps: [{ text: "ソースを器に入れる" }], readMissing: ["AI出力が途中で終了したため、一部の候補です"] }, { name: "空の結果" }]);
     const result = await runResearch({ wish: "作り置きを使う。廃止ルールは適用しない", shopMode: "buy" });
     expect(result.status).toBe("done");
     const recipes = result.recipes as { ingredients: { inventoryKind: string }[]; readMissing: string[] }[];
     expect(recipes).toHaveLength(1); expect(recipes[0].ingredients[0].inventoryKind).toBe("prepared"); expect(recipes[0].readMissing).toContain("調理時間");
+    expect(recipes[0].readMissing).toContain("AI出力が途中で終了したため、一部の候補です");
     const prompt = h.askClaudeRecipes.mock.calls[0][0];
     expect(prompt).not.toContain("undefined"); expect(prompt).not.toContain("買い物前提・必須"); expect(prompt).not.toContain("在庫だけで作れる料理は出さない");
     expect(prompt).toContain("毎回の新作や買い足しを強制しない"); expect(prompt).toContain("廃止・訂正済みルールを復活させない");

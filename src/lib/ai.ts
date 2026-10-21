@@ -59,7 +59,13 @@ async function apiText(system: string, prompt: string): Promise<string> {
 }
 
 /** Direct search only: dynamic filtering introduced nested execution and timed out in a live test. */
-async function apiResearch(prompt: string): Promise<string> {
+interface ResearchText { text: string; incomplete: boolean }
+const PARTIAL_RESEARCH = "AI出力が途中で終了したため、取得できた一部の候補だけを表示しています";
+function completeResearchText(result: ResearchText): string {
+  if (result.incomplete) throw new Error("AI出力が途中で終了しました。結果は保存していません");
+  return result.text;
+}
+async function apiResearch(prompt: string): Promise<ResearchText> {
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
   const params = {
     model: MAIN_MODEL,
@@ -81,7 +87,7 @@ async function apiResearch(prompt: string): Promise<string> {
       // 継続分も課金されるので必ず足す（ここを漏らすと実測が過小になる）
       await logAiCost("research", usageFrom(MAIN_MODEL, msg));
     }
-    return textOf(msg);
+      return { text: textOf(msg), incomplete: msg.stop_reason !== "end_turn" };
   } catch (e) {
     await logAiCostEstimated("research").catch(() => {});
     throw e;
@@ -90,7 +96,7 @@ async function apiResearch(prompt: string): Promise<string> {
 
 /** API: 画像つきで研究（動画のコマを見せながらWeb検索も許す）。
  *  apiResearch と同じ pause_turn ループだが、最初のユーザーメッセージに画像が入る。 */
-async function apiResearchWithImages(prompt: string, imagePaths: string[]): Promise<string> {
+async function apiResearchWithImages(prompt: string, imagePaths: string[]): Promise<ResearchText> {
   const blocks: Anthropic.ContentBlockParam[] = [];
   for (let i = 0; i < imagePaths.length; i++) {
     const buf = await fs.readFile(imagePaths[i]);
@@ -120,7 +126,7 @@ async function apiResearchWithImages(prompt: string, imagePaths: string[]): Prom
       msg = await managedMessage(api(), { ...params, messages });
       await logAiCost("import", usageFrom(MAIN_MODEL, msg));
     }
-    return textOf(msg);
+    return { text: textOf(msg), incomplete: msg.stop_reason !== "end_turn" };
   } catch (e) {
     await logAiCostEstimated("research").catch(() => {});
     throw e;
@@ -212,7 +218,7 @@ export async function askClaudeText(prompt: string): Promise<string> {
 
 /** プロンプトを渡してJSONを得る（Web研究あり） */
 export async function askClaudeForJson<T>(prompt: string): Promise<T> {
-  const text = USE_API ? await apiResearch(prompt) : await runClaude(prompt, true);
+  const text = USE_API ? completeResearchText(await apiResearch(prompt)) : await runClaude(prompt, true);
   try {
     return extractJson<T>(text);
   } catch {
@@ -231,7 +237,7 @@ export async function askClaudeForJsonWithImages<T>(
   if (imagePaths.length === 0) return askClaudeForJson<T>(prompt);
   let text: string;
   if (USE_API) {
-    text = await apiResearchWithImages(prompt, imagePaths);
+    text = completeResearchText(await apiResearchWithImages(prompt, imagePaths));
   } else {
     const list = imagePaths.map((p, i) => `コマ${i + 1}: ${p}`).join("\n");
     const withFiles = [
@@ -254,10 +260,12 @@ export async function askClaudeForJsonWithImages<T>(
  * recipes 配列を「途中で切れていても」救出する寛容パーサ。
  * モデル出力が長く末尾が欠けても、完成しているレシピだけ拾う（errorで全滅させない）。
  */
-export function parseRecipesTolerant(text: string): unknown[] {
+export function parseRecipesTolerant(text: string, incomplete = false): unknown[] {
+  const partial = (value: unknown): unknown => value && typeof value === "object" && !Array.isArray(value)
+    ? { ...value, readMissing: [PARTIAL_RESEARCH] } : value;
   try {
     const obj = extractJson<{ recipes?: unknown[] }>(text);
-    if (Array.isArray(obj.recipes) && obj.recipes.length) return obj.recipes;
+    if (Array.isArray(obj.recipes) && obj.recipes.length) return incomplete ? obj.recipes.map(partial) : obj.recipes;
   } catch {
     /* 続けてサルベージ */
   }
@@ -288,7 +296,7 @@ export function parseRecipesTolerant(text: string): unknown[] {
       depth--;
       if (depth === 0 && objStart >= 0) {
         try {
-          out.push(JSON.parse(t.slice(objStart, p + 1)));
+          out.push(partial(JSON.parse(t.slice(objStart, p + 1))));
         } catch {
           /* 不完全な末尾オブジェクトは捨てる */
         }
@@ -303,8 +311,8 @@ export function parseRecipesTolerant(text: string): unknown[] {
 
 /** レシピ研究：途中欠けに強い形でレシピ配列を返す */
 export async function askClaudeRecipes(prompt: string): Promise<unknown[]> {
-  const text = USE_API ? await apiResearch(prompt) : await runClaude(prompt, true);
-  return parseRecipesTolerant(text);
+  const result = USE_API ? await apiResearch(prompt) : { text: await runClaude(prompt, true), incomplete: false };
+  return parseRecipesTolerant(result.text, result.incomplete);
 }
 
 /** 画像ファイルを見て、写っている食材名（日本語）の配列を返す（冷蔵庫の写真入力用） */
