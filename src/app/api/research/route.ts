@@ -8,6 +8,7 @@ import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
 import { addToPool, takeFromPool } from "@/lib/recipeCache";
 import { requireAiScope } from "@/lib/kitchen/managedAi";
 import { validateImportedRecipe } from "@/lib/kitchen/importValidation";
+import { aiFailureMessage } from "@/lib/kitchen/aiFailure";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -224,7 +225,7 @@ async function handlePost(request: Request) {
         await refund(uid, "research", request).catch(() => {});
         await setJob(jobId, {
           status: "error",
-          error: e instanceof Error ? e.message : "AI research failed",
+          error: aiFailureMessage(e),
           createdAt: Date.now(),
         });
       }

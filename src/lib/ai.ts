@@ -58,16 +58,14 @@ async function apiText(system: string, prompt: string): Promise<string> {
   return textOf(msg).trim();
 }
 
-/** API: Web検索ツール付きで研究（pause_turn は数回まで継続）。
- *  web_search_20260209 ＝ dynamic filtering 版。検索結果をコード実行で絞ってから
- *  コンテキストに入れるので、基本版より入力トークンが大幅に減る（原価の主因がここ）。 */
+/** Direct search only: dynamic filtering introduced nested execution and timed out in a live test. */
 async function apiResearch(prompt: string): Promise<string> {
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
   const params = {
     model: MAIN_MODEL,
-    max_tokens: 16000,
+    max_tokens: 8192,
     system: SYSTEM_JSON,
-    tools: [{ type: "web_search_20260209" as const, name: "web_search" as const }],
+    tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, allowed_callers: ["direct" as const] }],
   };
   // ⚠️ タイムアウトで例外が飛ぶと usage が取れないが、**Anthropic側の生成は完走していて
   //    課金は発生している**。記録が残らないと月間予算の上限が静かに破られる（監査 高-8）。
@@ -109,9 +107,9 @@ async function apiResearchWithImages(prompt: string, imagePaths: string[]): Prom
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: blocks }];
   const params = {
     model: MAIN_MODEL,
-    max_tokens: 16000,
+    max_tokens: 8192,
     system: SYSTEM_JSON,
-    tools: [{ type: "web_search_20260209" as const, name: "web_search" as const }],
+    tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, allowed_callers: ["direct" as const] }],
   };
   try {
     let msg = await managedMessage(api(), { ...params, messages });
