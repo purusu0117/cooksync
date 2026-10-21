@@ -176,9 +176,9 @@ export default function ImportedRecipePreview({
 
       {result.missing && result.missing.length > 0 && (
         <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
-          ⚠ 分量が読み取れなかった材料：{result.missing.join("、")}
+          ⚠ 確認できなかった情報：{result.missing.join("、")}
           <br />
-          保存後にレシピを開いて、元の動画・写真を見ながら直してください。
+          保存後にレシピを開いて、出典や元の素材を確認しながら直してください。
         </p>
       )}
 

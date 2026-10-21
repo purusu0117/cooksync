@@ -25,7 +25,13 @@ const unitPattern = "kg|mg|g|ml|mL|cc|L|l|個|本|枚|片|玉|束|房|株|袋|�
 /** Unknown/ranges/approximation stay unknown; original text is retained by the caller. */
 export function parseQuantity(input: string): Quantity | null {
   if (typeof input !== "string" || input.length > 100) return null;
-  const text = input.normalize("NFKC").trim().replace(/\s+/g, "").replace(new RegExp(`^(大さじ|小さじ)(.+)$`), "$2$1");
+  // Only non-quantitative storage/state notes may be separated from the exact amount.
+  // Never discard arbitrary parentheses: they can change the quantity (e.g. 半分だけ).
+  const state = "(?:冷蔵|冷凍|常温|解凍済み|調理済み|作り置き|開封済み|未開封)";
+  const text = input.normalize("NFKC").trim().replace(/\s+/g, "")
+    .replace(new RegExp(`\\(${state}(?:の${state})*(?:を使用)?\\)$`), "")
+    .replace(/食分$/, "食")
+    .replace(new RegExp(`^(大さじ|小さじ)(.+)$`), "$2$1");
   const match = text.match(new RegExp(`^(\\d+(?:\\.\\d{1,9})?(?:/\\d+)?)(?:(${unitPattern}))$`));
   if (!match || match[1].length > 30) return null;
   let value: Fraction;
