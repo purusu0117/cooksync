@@ -7,6 +7,7 @@ import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
 
 import { addToPool, takeFromPool } from "@/lib/recipeCache";
 import { requireAiScope } from "@/lib/kitchen/managedAi";
+import { validateImportedRecipe } from "@/lib/kitchen/importValidation";
 
 // ローカルClaude Codeを起動するので動的・長め
 export const dynamic = "force-dynamic";
@@ -88,7 +89,7 @@ function buildPrompt(b: ResearchBody): string {
     filters.cookTime ? `■ 調理時間: ${filters.cookTime}分以内` : "",
     shopMode === "stock"
       ? "■ 買い物方針: 【在庫だけで作る】上の冷蔵庫の食材だけで完結する献立にする。買い足しは基本調味料（塩・醤油・油等）のみ許可。それ以外の新規食材は使わない（toBuyは原則false）。"
-      : "■ 買い物方針: 【買い物前提・必須】ユーザーは買い物に行く。各候補は“新しく食材を買って作る料理”にすること。冷蔵庫の在庫だけで作れてしまう料理は禁止（在庫で完結する案は出さない）。在庫の食材は過去に買った物で似た料理になりがちなので、在庫に寄せず、普段作らない新しい料理・新しいジャンルを積極的に出す。任意で“使い切りたい食材”を1品だけ1つ脇役で使ってよいが、その料理も主要な材料は必ず買い足し前提にする。各候補は必ず複数の toBuy:true 食材を含む。",
+      : "■ 買い物方針: 不足分の購入は可能だが必須ではない。現在の在庫・作り置きを優先し、在庫だけで作れる候補も認める。購入できる時刻が調理より後なら今使える材料として扱わない。必要量と不足量の確定はアプリの計算に任せる。",
     avoid.length ? `■ 避ける（直近2日に作った・既に提案済み）: ${avoid.join("、")}` : "",
     existing.length
       ? `■ 【重複禁止】ユーザーは既に次のレシピを持っている。同じ料理・言い換え（「風」「簡単」等を足しただけ・主材料と味付けが同じ）は絶対に提案しない: ${existing.join("、")}`
@@ -99,13 +100,14 @@ function buildPrompt(b: ResearchBody): string {
       : "",
     "",
     "要件:",
+    "- 作り置き（stockのkind:prepared）を使う材料にはinventoryKind:preparedを付け、生の材料はinventoryKind:rawとする。完成品を消費し元材料を二重計上しない。出典の人気数は実際に確認できた場合だけ記載し、不明なら数字を作らない。",
     // systemプロンプト側でも強制しているが、こちらにも明記する（二重の保険。
     // Web検索で英語ソースを参照すると、出力まで英語に引きずられた実害がある）
     "- 【言語】出力JSONの文字列値（name/catch/steps/tip/label/leftoverStorage等）はすべて自然な日本語で書く。英語のサイトを参照した場合も必ず日本語に直す。",
     "- 2〜3品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
     shopMode === "stock"
-      ? "- 【最重要：食材の分散】候補ごとに“主役にする食材”を必ず変える。冷蔵庫の食材リストの順に割り当てる：1品目は1つ目の食材を主役、2品目は2つ目の食材を主役、3品目は組み合わせ or それ以外。3案が全部同じ食材になるのは禁止。すべて冷蔵庫内の食材で完結させる。"
-      : "- 【新規性・必須】3案とも“買い物して作る新しい料理”にする。在庫の食材に寄せない（在庫だけで作れる料理は出さない）。3案は味・ジャンル・調理法を大きく変え、普段の在庫から離れた目新しいメニューにする。各候補で主役級の食材を新たに買う前提にする。",
+      ? "- 利用可能な在庫で作れる候補を比較する。使い切りたい食材を優先しつつ、味付け・主食・たんぱく源の偏りを考慮する。"
+      : "- 保存済みの好評レシピと新候補を比較し、毎回の新作や買い足しを強制しない。作り置きの再利用は完成品を材料として記載し、元の原材料をもう一度必要材料へ展開しない。",
     // sources は「あれば入れる」ではなく必須。ここが空だと詳細画面の参考リンク欄ごと消えてしまい、
     // 何を参考にしたのか分からないレシピになる（大翔の指摘・2026-07-31）。
     // 動画の「字幕」は取れなくなったが、**Web検索でSNSのレシピを見つけて出典にすること自体は
@@ -113,8 +115,9 @@ function buildPrompt(b: ResearchBody): string {
     "- 【sourcesは必須】実在のレシピを必ずWeb検索で参照し、sources に **最低1件、できれば2件** 入れる。label（サイト名＋レシピ名）・url（実在するURL）・popularity（つくれぽ数/再生数などの人気の根拠）をセットで書く。出典のない創作は禁止。sourcesが空の候補は出力しないこと。",
     "- sources は **レシピサイトとSNSの両方**から探す。クックパッド/白ごはん.com/つくおき/Nadia/デリッシュキッチン等に加えて、**YouTube（リュウジのバズレシピ、きょうの料理、料理系チャンネル）・TikTok・Instagram** の人気レシピも積極的に候補にする。再生数・いいね数が多いものは popularity にその数字を書く。",
     shopMode === "stock"
-      ? `- 材料は ${servings}人分。冷蔵庫にある食材は toBuy:false、基本調味料は basicSeasoning:true。冷蔵庫に無い新規食材は使わない（買い足し前提にしない）。`
-      : `- 材料は ${servings}人分。各レシピは買い物が必要な食材(toBuy:true)を必ず複数含める（在庫＋基本調味料だけで完結する料理は不可）。塩こしょう等の基本調味料は basicSeasoning:true。`,
+      ? `- ${servings ? `材料は${servings}人分。` : "人数未指定。出典で人数を確認できなければnull。"}在庫のない材料を使わない。調味料も在庫不明なら十分とは断定しない。`
+      : `- ${servings ? `材料は${servings}人分。` : "人数未指定。出典で人数を確認できなければnull。"}toBuyは参考情報であり在庫充足の確定ではない。買い足し不要の候補も出せる。`,
+    "- 廃止・訂正済みルールを復活させない。好みの個人設定を一般的な基準としない。保存期限・加熱条件は出典と食品・保存条件がなければ不明とする。元資料にない人数・分量・調理時間・栄養量はnullまたは確認できずとし、創作しない。",
     "",
     "【手順(steps)の構成ルール＝最重要】",
     "- stepsの最初は必ず『下準備』ステップにする。材料の切り方・下処理（例：にんにく2かけは薄切り、玉ねぎは1/2個を薄切り、鶏肉は厚みを開く）を“すべてここで”済ませる。",
@@ -129,7 +132,7 @@ function buildPrompt(b: ResearchBody): string {
     "- 余った材料の保存(leftoverStorage)も書く。日本語で。emojiは料理に合う絵文字を1つ。",
     "",
     "次のJSON『だけ』を出力（前後に文章やコードフェンスを付けない）:",
-    `{"recipes":[{"name":string,"emoji":string,"catch":string,"servings":${servings},"kcal":number,"cookTime":number,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]}]}`,
+    '{"recipes":[{"name":string,"emoji":string,"catch":string,"servings":number|null,"kcal":number|null,"cookTime":number|null,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]}]}',
   ]
     .filter(Boolean)
     .join("\n");
@@ -183,7 +186,10 @@ async function handlePost(request: Request) {
     after(async () => {
       try {
         await requireActiveAiJob();
-        const recipes = await askClaudeRecipes(prompt);
+        const recipes = (await askClaudeRecipes(prompt)).flatMap(value => {
+          try { const checked = validateImportedRecipe(value, true); return [{ ...checked.recipe, readMissing: checked.missing }]; }
+          catch { return []; }
+        });
         // askClaudeRecipes は**例外を投げず空配列を返す**（max_tokens打ち切り・
         // refusal・pause_turn上限などで、救出できるレシピが1件も無かったとき）。
         // これを done にすると catch が走らず refund もされないので、

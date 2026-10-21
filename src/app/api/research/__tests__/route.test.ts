@@ -50,12 +50,12 @@ vi.mock("@/lib/quotaServer", () => ({
 
 import { GET, POST } from "../route";
 
-async function runResearch(): Promise<Record<string, unknown>> {
+async function runResearch(body: Record<string, unknown> = { wish: "さっぱりしたもの", servings: 2 }): Promise<Record<string, unknown>> {
   const res = await POST(
     new Request("http://localhost/api/research", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wish: "さっぱりしたもの", servings: 2 }),
+      body: JSON.stringify(body),
     }),
   );
   const { jobId } = (await res.json()) as { jobId: string };
@@ -71,6 +71,16 @@ beforeEach(() => {
 });
 
 describe("POST /api/research", () => {
+  it("allows stock and saved recipes without forcing purchases; preserves prepared ingredients and missing data", async () => {
+    h.askClaudeRecipes.mockResolvedValue([{ name: "ミートソースグラタン", ingredients: [{ name: "ミートソース", amount: "1食", inventoryKind: "prepared" }], steps: [{ text: "ソースを器に入れる" }] }, { name: "空の結果" }]);
+    const result = await runResearch({ wish: "作り置きを使う。廃止ルールは適用しない", shopMode: "buy" });
+    expect(result.status).toBe("done");
+    const recipes = result.recipes as { ingredients: { inventoryKind: string }[]; readMissing: string[] }[];
+    expect(recipes).toHaveLength(1); expect(recipes[0].ingredients[0].inventoryKind).toBe("prepared"); expect(recipes[0].readMissing).toContain("調理時間");
+    const prompt = h.askClaudeRecipes.mock.calls[0][0];
+    expect(prompt).not.toContain("undefined"); expect(prompt).not.toContain("買い物前提・必須"); expect(prompt).not.toContain("在庫だけで作れる料理は出さない");
+    expect(prompt).toContain("毎回の新作や買い足しを強制しない"); expect(prompt).toContain("廃止・訂正済みルールを復活させない");
+  });
   it("0件は成功ではない＝error にして枠を戻す（枠だけ減る空振りを防ぐ）", async () => {
     h.askClaudeRecipes.mockResolvedValue([]);
 
@@ -81,7 +91,7 @@ describe("POST /api/research", () => {
   });
 
   it("1件でも取れたら done（0件判定で正常系を巻き込んでいない）", async () => {
-    h.askClaudeRecipes.mockResolvedValue([{ name: "冷やし中華" }]);
+    h.askClaudeRecipes.mockResolvedValue([{ name: "冷やし中華", ingredients: [{ name: "麺", amount: "1食" }], steps: [{ text: "茹でる" }] }]);
 
     const job = await runResearch();
 

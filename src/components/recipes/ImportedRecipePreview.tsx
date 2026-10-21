@@ -14,6 +14,7 @@ import { useOptionalKitchen } from "@/lib/kitchen/client";
 import { videoEvidenceLabel } from "@/lib/kitchen/videoFrames";
 
 export interface RawRecipe {
+  readMissing?: string[];
   draft?: boolean;
   name?: string;
   emoji?: string;
@@ -28,6 +29,7 @@ export interface RawRecipe {
     group?: string;
     toBuy?: boolean;
     basicSeasoning?: boolean;
+    inventoryKind?: "raw" | "prepared";
   }[];
   steps?: { title: string; text: string; tip?: string }[];
   leftoverStorage?: { ingredient: string; method: string }[];
