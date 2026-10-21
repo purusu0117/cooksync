@@ -20,7 +20,7 @@ export default function KitchenAi() {
   useEffect(() => {
     let stored: Job | null = null; try { stored = JSON.parse(localStorage.getItem(jobKey) || "null"); } catch { /* malformed cache */ }
     let preview: ImportResult[] = []; try { const value = JSON.parse(localStorage.getItem(`${jobKey}:preview`) || "[]"); if (Array.isArray(value)) preview = value; } catch { /* malformed cache */ }
-    const timer = setTimeout(() => { if (stored && stored.owner === state.owner && stored.locationId === locationId) setJob(stored); if (preview.length) { setResults(preview); localStorage.removeItem(`${jobKey}:preview`); } }, 0);
+    const timer = setTimeout(() => { if (stored && stored.owner === state.owner && stored.locationId === locationId) setJob(stored); if (preview.length) { setResults(preview); setMessage("読み取り結果です。出典・欠損・分量を確認して保存してください。"); localStorage.removeItem(`${jobKey}:preview`); } }, 0);
     return () => clearTimeout(timer);
   }, [jobKey, state.owner, locationId]);
   useEffect(() => {
@@ -31,6 +31,7 @@ export default function KitchenAi() {
         const response = await fetch(`${job.endpoint}?jobId=${encodeURIComponent(job.id)}&locationId=${encodeURIComponent(job.locationId)}`, { signal: controller.signal, cache: "no-store", headers: { "x-cooksync-owner": job.owner } });
         const body = await readAiResponse(response);
         if (body.status === "cancelled") { setJob(null); setBusy(false); setMessage(body.error); localStorage.removeItem(jobKey); return; }
+        if (body.status === "error" || body.status === "missing") localStorage.removeItem(jobKey);
         if (!response.ok || body.status === "error" || body.status === "missing") throw new Error(body.error || "処理結果が見つかりません。再開前に履歴を確認してください");
         if (body.status === "done" && !cancelled.current) {
           setResults(body.recipes ? body.recipes.map((r: ImportResult["recipe"]) => ({ recipe: r, evidence: { kind: "research", capturedAt: new Date().toISOString() } })) : [body]);
@@ -44,6 +45,7 @@ export default function KitchenAi() {
   }, [job, jobKey]);
   const start = async (endpoint: string, body: BodyInit, json: boolean) => {
     if (!enabled || busy || job) return;
+    localStorage.removeItem(jobKey);
     setBusy(true); setResults([]); setMessage("処理を開始しています…"); const captured = currentScope;
     const operation = crypto.randomUUID(); setOperationId(operation); cancelled.current = false;
     try {
