@@ -4,12 +4,14 @@
 // 逆算している。そこが見積もりのままだと、プラン全体が机上の空論で終わる。
 // 1リクエストごとに Anthropic が返す usage を記録して、実測で語れるようにする。
 //
-// 料金は 2026-07-31 時点の Anthropic 公式値。改定されたら PRICE を直す。
+// 稼働対象の料金は kitchen/aiPricing.ts（2026-10-21確認）と共通化。
+// それ以外の旧モデルは履歴互換用。改定時は公式料金と照合する。
 // 参照: .secretary/Decisions/2026-07-31-cooksync-profitable-monetization.md §1
 
 import { promises as fs } from "fs";
 import path from "path";
 import { redis } from "./kv";
+import { APPROVED_AI_RATES } from "./kitchen/aiPricing";
 
 /** 100万トークンあたりのUSD単価 */
 interface ModelPrice {
@@ -20,9 +22,8 @@ interface ModelPrice {
 const PRICE: Record<string, ModelPrice> = {
   "claude-opus-5": { input: 5, output: 25 },
   "claude-opus-4-8": { input: 5, output: 25 },
-  "claude-sonnet-5": { input: 3, output: 15 },
   "claude-sonnet-4-6": { input: 3, output: 15 },
-  "claude-haiku-4-5": { input: 1, output: 5 },
+  ...Object.fromEntries(Object.entries(APPROVED_AI_RATES).map(([model, [input, output]]) => [model, { input, output }])),
 };
 
 /** 未知のモデルIDが来たときの安全側（高い方）の単価。0円扱いにして油断しない。 */
@@ -96,7 +97,9 @@ export function usageFrom(model: string, msg: unknown): AiUsage {
 function dataDir(): string {
   return process.env.COOKSYNC_DATA_DIR || path.join(process.cwd(), ".data");
 }
-const FILE = path.join(dataDir(), "ai-cost.json");
+function costEnvironment() { return ["test", "development"].includes(process.env.COOKSYNC_AI_ENVIRONMENT || "") ? process.env.COOKSYNC_AI_ENVIRONMENT : ""; }
+function costFile() { const env = costEnvironment(); return path.join(dataDir(), env ? `ai-cost-${env}.json` : "ai-cost.json"); }
+function costKey(m: string) { const env = costEnvironment(); return env ? `cooksync:cost:${env}:${m}` : `cooksync:cost:${m}`; }
 const RECENT_MAX = 50;
 
 export interface FeatureStat {
@@ -135,7 +138,7 @@ function month(): string {
 
 async function readFile(): Promise<Record<string, CostSummary>> {
   try {
-    return JSON.parse(await fs.readFile(FILE, "utf8"));
+    return JSON.parse(await fs.readFile(costFile(), "utf8"));
   } catch {
     return {};
   }
@@ -171,7 +174,7 @@ export async function logAiCost(feature: AiFeature, u: AiUsage): Promise<number>
   const m = month();
   try {
     if (redis) {
-      const k = `cooksync:cost:${m}`;
+      const k = costKey(m);
       await Promise.all([
         redis.hincrby(k, "calls", 1),
         redis.hincrbyfloat(k, "yen", delta),
@@ -202,7 +205,7 @@ export async function logAiCost(feature: AiFeature, u: AiUsage): Promise<number>
     ].slice(0, RECENT_MAX);
     db[m] = cur;
     await fs.mkdir(dataDir(), { recursive: true });
-    await fs.writeFile(FILE, JSON.stringify(db), "utf8");
+    await fs.writeFile(costFile(), JSON.stringify(db), "utf8");
   } catch (e) {
     // 書けなかった分をインスタンス内で覚えておき、monthYenSpent に足す。
     // 以前はここで握り潰していたため、書き込み失敗が続くと天井が消えていた（監査 2）。
@@ -217,7 +220,7 @@ export async function readCostSummary(m: string = month()): Promise<CostSummary>
   const empty: CostSummary = { month: m, total: emptyStat(), byFeature: {}, recent: [] };
   try {
     if (redis) {
-      const h = await redis.hgetall<Record<string, string | number>>(`cooksync:cost:${m}`);
+      const h = await redis.hgetall<Record<string, string | number>>(costKey(m));
       if (!h) return empty;
       const num = (k: string) => Number(h[k] ?? 0);
       const out: CostSummary = {
@@ -306,7 +309,7 @@ export async function preChargeYen(
   const m = month();
   try {
     if (redis) {
-      const k = `cooksync:cost:${m}`;
+      const k = costKey(m);
       await redis.hincrbyfloat(k, "yen", estYen);
       await redis.hincrbyfloat(k, `${feature}:yen`, estYen);
       await redis.expire(k, 400 * 24 * 3600);
@@ -323,7 +326,7 @@ export async function preChargeYen(
       f.yen += estYen;
       db[m] = cur;
       await fs.mkdir(dataDir(), { recursive: true });
-      await fs.writeFile(FILE, JSON.stringify(db), "utf8");
+      await fs.writeFile(costFile(), JSON.stringify(db), "utf8");
     }
     prepaid[feature].push(estYen);
     return true;
@@ -343,7 +346,7 @@ export async function releasePreChargeYen(feature: AiFeature): Promise<void> {
   const m = month();
   try {
     if (redis) {
-      const k = `cooksync:cost:${m}`;
+      const k = costKey(m);
       await redis.hincrbyfloat(k, "yen", -est);
       await redis.hincrbyfloat(k, `${feature}:yen`, -est);
       return;
@@ -354,7 +357,7 @@ export async function releasePreChargeYen(feature: AiFeature): Promise<void> {
     cur.total.yen = Math.max(0, cur.total.yen - est);
     const f = cur.byFeature[feature];
     if (f) f.yen = Math.max(0, f.yen - est);
-    await fs.writeFile(FILE, JSON.stringify(db), "utf8");
+    await fs.writeFile(costFile(), JSON.stringify(db), "utf8");
   } catch {
     // 取り消せなかった＝多めに数えたまま。安全側なので放置してよい
   }
@@ -378,7 +381,7 @@ export function resetPreCharge(): void {
 export async function monthYenSpent(m: string = month()): Promise<number | null> {
   try {
     if (redis) {
-      const v = await redis.hget<unknown>(`cooksync:cost:${m}`, "yen");
+      const v = await redis.hget<unknown>(costKey(m), "yen");
       return (Number(v ?? 0) || 0) + unloggedYen;
     }
     const db = await readFile();

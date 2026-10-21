@@ -8,6 +8,7 @@ import { readKitchenData } from "./server";
 import { KitchenError } from "./engine";
 import { atomicDocument } from "./atomicDocument";
 import { MAX_AI_REQUEST_BYTES } from "./limits";
+import { APPROVED_AI_RATES } from "./aiPricing";
 const context = new AsyncLocalStorage<AiScope>();
 export function managedAfter(task: () => Promise<void>) { const scope = context.getStore(); nextAfter(() => scope ? context.run(scope, task) : task()); }
 export function requireAiScope(): AiScope { const scope = context.getStore(); if (!scope) throw new KitchenError("認可済みのAIジョブから実行してください", 403); return scope; }
@@ -80,8 +81,7 @@ export async function managedMessage(client: Anthropic, params: Anthropic.Messag
   const scope = requireAiScope(), config = requireAiConfiguration();
   await requireActiveAiJob();
   // Conservative full-context upper bound; unsupported model pricing fails closed.
-  const rates: Record<string, [number, number]> = { "claude-sonnet-5": [2, 10], "claude-haiku-4-5": [1, 5] };
-  const rate = rates[params.model]; if (!rate) throw new KitchenError("このモデルの料金と利用可否を確認してください", 503);
+  const rate = APPROVED_AI_RATES[params.model]; if (!rate) throw new KitchenError("このモデルの料金と利用可否を確認してください", 503);
   if (JSON.stringify(params).length > 24 * 1024 * 1024 || params.max_tokens > 16000) throw new KitchenError("AI入力が上限を超えています", 413);
   // No prompt caching or unbounded tool loops. Search limit is explicit for each request.
   const tools = params.tools?.map(tool => tool.type?.startsWith("web_search") ? { ...tool, max_uses: 2 } : tool);

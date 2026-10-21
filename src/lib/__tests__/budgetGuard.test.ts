@@ -69,7 +69,7 @@ describe("見積もりの事前計上（監査6・バースト対策）", () => 
 
   it("実測が出たら見積もりは差し替えられる（二重計上しない）", async () => {
     expect((await consume("swap-a", "research", req("10.9.1.1"))).ok).toBe(true);
-    // 実測 ¥19.6 相当の usage を記録 → 事前計上の¥22が実測に置き換わる
+    // 合成usageの現行料金 ¥13.64 → 事前計上の¥22が置き換わる
     await logAiCost("research", {
       model: "claude-sonnet-5",
       inputTokens: 11_000,
@@ -78,8 +78,8 @@ describe("見積もりの事前計上（監査6・バースト対策）", () => 
     });
     const spent = await monthYenSpent();
     expect(spent).not.toBeNull();
-    // ¥22（見積）+¥19.6（実測）の二重計上なら41.6になる。置き換えなら実測の19.6前後
-    expect(spent!).toBeGreaterThan(15);
+    // 見積もりと使用量の二重計上を検出する。
+    expect(spent!).toBeCloseTo(13.64, 6);
     expect(spent!).toBeLessThan(EST_YEN.research);
   });
 
