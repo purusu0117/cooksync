@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { KitchenCommand, KitchenState } from "./model";
 import { loadQueue, projectQueue, removePending, storePending, type PendingOperation } from "./outbox";
 import { showQuantity } from "./quantity";
-interface Snapshot { state: KitchenState | null; owner?: string; isGuest?: boolean; needsSession?: boolean; legacyRevision?: number; legacyCounts?: Record<string, number>; ai?: { enabled: boolean; environment: string; model: string } }
+interface Snapshot { state: KitchenState | null; owner?: string; isGuest?: boolean; needsSession?: boolean; legacyRevision?: number; legacyCounts?: Record<string, number>; ai?: { enabled: boolean; environment: string; model: string; expiresAt?: string; searchWithinBudget?: boolean } }
 interface Review { owner: string; revision: number; queue: PendingOperation[]; changes: string[] }
 interface Context {
   snapshot: Snapshot | null; locationId: string; chooseLocation: (id: string) => void; busy: boolean;
