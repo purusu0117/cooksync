@@ -12,6 +12,7 @@ const field = "w-full min-h-11 rounded-lg border border-stone-300 bg-white p-3 t
 interface Job { endpoint: string; id: string; owner: string; locationId: string }
 export default function KitchenAi() {
   const { snapshot, locationId } = useKitchen(), state = snapshot!.state!, enabled = snapshot?.ai?.enabled;
+  const searchWithinBudget = snapshot?.ai?.searchWithinBudget !== false;
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [results, setResults] = useState<ImportResult[]>([]), [job, setJob] = useState<Job | null>(null);
   const [operationId, setOperationId] = useState("");
   const cancelled = useRef(false);
@@ -69,7 +70,9 @@ export default function KitchenAi() {
     } catch (e) { setMessage((e as Error).message); }
   };
   const research = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); const wish = String(new FormData(e.currentTarget).get("wish") || "");
+    e.preventDefault();
+    if (!searchWithinBudget) { setMessage("Web検索は設定された利用枠が足りないため開始できません。"); return; }
+    const wish = String(new FormData(e.currentTarget).get("wish") || "");
     const now = new Date().toISOString(), current = state.lots.filter(l => usable(l, locationId, now, state.locations.find(p => p.id === locationId)?.timeZone));
     const knownRecipes = [...new Map([...state.plans.filter(p => p.locationId === locationId).map(p => p.recipe), ...state.recipes].map(r => [r.id, r])).values()];
     const savedRecipes = rankRecipes(knownRecipes, state, locationId).slice(0, 12).map(({ recipe: r, reasons }) => ({ id: r.id, name: r.name, servings: r.servings, ingredients: r.ingredients, sources: r.sources, reasons }));
@@ -78,8 +81,10 @@ export default function KitchenAi() {
   };
   return <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-4"><h2 className="text-lg font-bold">新しい候補・写真・動画</h2>
     <p className="text-sm text-stone-600">{enabled ? `${snapshot.ai!.model} / ${snapshot.ai!.environment}。選択した場所の条件で処理します。` : "AI接続は停止中です。対象組織・残高・キーの所属・費用上限を確認してから利用できます。"}</p>
+    {snapshot?.ai?.expiresAt && Number.isFinite(Date.parse(snapshot.ai.expiresAt)) && <p className="text-sm text-stone-600">AIの利用期限：{new Date(snapshot.ai.expiresAt).toLocaleString("ja-JP")}。期限後も在庫・買い物・調理記録は利用できます。</p>}
+    {enabled && !searchWithinBudget && <p className="text-sm text-amber-800">Web検索は設定された利用枠が足りないため開始できません。保存済みレシピは引き続き選べます。</p>}
     <fieldset disabled={!enabled || busy || !!job} className="space-y-4 disabled:opacity-60">
-      <form className="space-y-2" onSubmit={research}><label className="block text-sm">作りたい料理・今の予定<input name="wish" className={field} placeholder="作り置きを使って、20分で作りたい" /></label><button className={`${field} font-bold text-emerald-900`} type="submit">在庫・道具・感想を使って候補を探す</button></form>
+      <form className="space-y-2" onSubmit={research}><label className="block text-sm">作りたい料理・今の予定<input name="wish" className={field} placeholder="作り置きを使って、20分で作りたい" /></label><button className={`${field} font-bold text-emerald-900`} type="submit" disabled={!searchWithinBudget}>在庫・道具・感想を使って候補を探す</button></form>
       <form className="space-y-2" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget), files = form.getAll("image").filter((v): v is File => v instanceof File), error = photoUploadError(files); if (error) { setMessage(error); return; } void start("/api/import-photo", form, false); }}><label className="block text-sm">レシピの写真（4枚まで、合計3MB以内）<input type="file" name="image" multiple accept="image/jpeg,image/png,image/webp,image/gif" className={field} required /></label><button className={`${field} font-bold text-emerald-900`} type="submit">写真を読み取る</button></form>
       <form className="space-y-2" onSubmit={e => { e.preventDefault(); const url = new FormData(e.currentTarget).get("url"); void start("/api/import-video", JSON.stringify({ url }), true); }}><label className="block text-sm">公開されている料理動画のURL<input type="url" name="url" className={field} required /></label><button className={`${field} font-bold text-emerald-900`} type="submit">取得できた素材から読み取る</button></form>
       <VideoFrameInput key={currentScope} onSubmit={form => void start("/api/import-photo", form, false)} />

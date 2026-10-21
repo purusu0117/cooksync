@@ -4,6 +4,7 @@ import { activateKitchen, cancelKitchenOperation, commitKitchen, copyVerifiedDev
 import { decodeCommand, KitchenError, object } from "@/lib/kitchen/engine";
 import { LEGACY_MUTABLE } from "@/lib/kitchen/model";
 import { aiConfiguration } from "@/lib/kitchen/aiBudget";
+import { searchReservationMicroUsd } from "@/lib/kitchen/aiPricing";
 import { requireSameOrigin } from "@/lib/kitchen/identity";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
     }
     if (url.searchParams.has("export") && result.state) return Response.json({ state: result.state, sha256: exportDigest(result.state), exportedAt: new Date().toISOString() }, { headers: { ...headers, "Content-Disposition": "attachment; filename=cooksync-kitchen-backup.json" } });
     const config = aiConfiguration();
-    return Response.json({ state: result.state, isGuest: user.uid.startsWith("guest:"), legacyRevision: result.revision, legacyCounts: Object.fromEntries(LEGACY_MUTABLE.map(k => [k, Array.isArray(result.legacy[k]) ? result.legacy[k].length : 0])), owner: user.dataId, ai: { enabled: config.enabled, environment: config.environment, model: config.model } }, { headers });
+    const searchReservation = searchReservationMicroUsd(config.model);
+    return Response.json({ state: result.state, isGuest: user.uid.startsWith("guest:"), legacyRevision: result.revision, legacyCounts: Object.fromEntries(LEGACY_MUTABLE.map(k => [k, Array.isArray(result.legacy[k]) ? result.legacy[k].length : 0])), owner: user.dataId, ai: { enabled: config.enabled, environment: config.environment, model: config.model, expiresAt: config.expires, searchWithinBudget: searchReservation !== null && config.limit >= searchReservation } }, { headers });
   } catch (e) { return errorResponse(e); }
 }
 export async function POST(request: Request) {

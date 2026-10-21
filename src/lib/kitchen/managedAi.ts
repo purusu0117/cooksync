@@ -8,7 +8,7 @@ import { readKitchenData } from "./server";
 import { KitchenError } from "./engine";
 import { atomicDocument } from "./atomicDocument";
 import { MAX_AI_REQUEST_BYTES } from "./limits";
-import { APPROVED_AI_RATES } from "./aiPricing";
+import { APPROVED_AI_RATES, searchReservationMicroUsd } from "./aiPricing";
 const context = new AsyncLocalStorage<AiScope>();
 export function managedAfter(task: () => Promise<void>) { const scope = context.getStore(); nextAfter(() => scope ? context.run(scope, task) : task()); }
 export function requireAiScope(): AiScope { const scope = context.getStore(); if (!scope) throw new KitchenError("認可済みのAIジョブから実行してください", 403); return scope; }
@@ -95,7 +95,7 @@ export async function managedMessage(client: Anthropic, params: Anthropic.Messag
   }
   inputBound = tools?.length ? 1000000 : inputBound;
   if (inputBound > 1000000) throw new KitchenError("AI入力が上限を超えています", 413);
-  const ceiling = inputBound * rate[0] * 2 + params.max_tokens * rate[1] + (tools?.length ? 20000 : 0);
+  const ceiling = tools?.length ? searchReservationMicroUsd(params.model, params.max_tokens)! : inputBound * rate[0] * 2 + params.max_tokens * rate[1];
   const key = budgetKey(scope.environment, config.org), attemptId = randomUUID();
   await reserveAttempt(key, attemptId, scope, ceiling, config.limit);
   const controller = new AbortController();
