@@ -6,6 +6,7 @@ import { usable } from "@/lib/kitchen/planning";
 import { feedbackMatches } from "@/lib/kitchen/quality";
 import { showQuantity } from "@/lib/kitchen/quantity";
 import { photoUploadError } from "@/lib/kitchen/limits";
+import { readAiResponse } from "@/lib/kitchen/aiResponse";
 const field = "w-full min-h-11 rounded-lg border border-stone-300 bg-white p-3 text-sm";
 interface Job { endpoint: string; id: string; owner: string; locationId: string }
 export default function KitchenAi() {
@@ -28,7 +29,7 @@ export default function KitchenAi() {
     const poll = async () => {
       try {
         const response = await fetch(`${job.endpoint}?jobId=${encodeURIComponent(job.id)}&locationId=${encodeURIComponent(job.locationId)}`, { signal: controller.signal, cache: "no-store", headers: { "x-cooksync-owner": job.owner } });
-        const body = await response.json();
+        const body = await readAiResponse(response);
         if (body.status === "cancelled") { setJob(null); setBusy(false); setMessage(body.error); localStorage.removeItem(jobKey); return; }
         if (!response.ok || body.status === "error" || body.status === "missing") throw new Error(body.error || "処理結果が見つかりません。再開前に履歴を確認してください");
         if (body.status === "done" && !cancelled.current) {
@@ -48,7 +49,7 @@ export default function KitchenAi() {
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "x-cooksync-owner": state.owner, "x-cooksync-location-id": locationId, "x-cooksync-operation-id": operation, ...(json ? { "content-type": "application/json" } : {}) }, body });
       if (response.status === 413) throw new Error("送信容量が大きすぎます。写真は合計3MB以内にしてください");
-      const value = await response.json(); if (!response.ok) throw new Error(value.error || "処理を開始できませんでした");
+      const value = await readAiResponse(response); if (!response.ok) throw new Error(value.error || "処理を開始できませんでした");
       if (cancelled.current) return;
       if (value.jobId) { const pending = { endpoint, id: value.jobId, owner: state.owner, locationId }; localStorage.setItem(jobKey, JSON.stringify(pending)); if (scope.current === captured) setJob(pending); }
       else if (scope.current !== captured) { localStorage.setItem(`${jobKey}:preview`, JSON.stringify([value])); return; }
@@ -59,7 +60,7 @@ export default function KitchenAi() {
     const id = job?.id || operationId; if (!id) return;
     try {
       const response = await fetch(`/api/kitchen/ai-job?jobId=${encodeURIComponent(id)}&locationId=${encodeURIComponent(locationId)}`, { method: "DELETE", headers: { "x-cooksync-owner": state.owner } });
-      const value = await response.json(); if (!response.ok) throw new Error(value.error);
+      const value = await readAiResponse(response); if (!response.ok) throw new Error(value.error);
       cancelled.current = true; setJob(null); setBusy(false); setResults([]); localStorage.removeItem(jobKey);
       setMessage("取消を記録しました。結果は保存しません。実行済みの費用は照合まで保持します。");
     } catch (e) { setMessage((e as Error).message); }
