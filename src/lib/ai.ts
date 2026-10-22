@@ -60,6 +60,9 @@ async function apiText(system: string, prompt: string): Promise<string> {
 
 /** Direct search only: dynamic filtering introduced nested execution and timed out in a live test. */
 interface ResearchText { text: string; incomplete: boolean }
+// 2026-10-21/22 の実測：8,192トークンでは候補が1件以下しか残らなかった。
+// ストリーミング化で生成時間は接続タイムアウトの対象外になったので、上限を上げる（約84 tok/s → 最大約145秒）。
+const RESEARCH_MAX_TOKENS = 12000;
 const PARTIAL_RESEARCH = "AI出力が途中で終了したため、取得できた一部の候補だけを表示しています";
 function completeResearchText(result: ResearchText): string {
   if (result.incomplete) throw new Error("AI出力が途中で終了しました。結果は保存していません");
@@ -69,7 +72,7 @@ async function apiResearch(prompt: string): Promise<ResearchText> {
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
   const params = {
     model: MAIN_MODEL,
-    max_tokens: 8192,
+    max_tokens: RESEARCH_MAX_TOKENS,
     system: SYSTEM_JSON,
     tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, allowed_callers: ["direct" as const] }],
   };
@@ -113,7 +116,7 @@ async function apiResearchWithImages(prompt: string, imagePaths: string[]): Prom
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: blocks }];
   const params = {
     model: MAIN_MODEL,
-    max_tokens: 8192,
+    max_tokens: RESEARCH_MAX_TOKENS,
     system: SYSTEM_JSON,
     tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, allowed_callers: ["direct" as const] }],
   };
@@ -309,10 +312,16 @@ export function parseRecipesTolerant(text: string, incomplete = false): unknown[
   return out;
 }
 
+/** 0件のときに原因を追えるよう、生出力の要約を添えて返す（本文は保存先のジョブにだけ残る） */
+export interface ResearchDiagnostics { incomplete: boolean; chars: number; head: string; tail: string }
+export async function askClaudeRecipesDetailed(prompt: string): Promise<{ recipes: unknown[]; diagnostics: ResearchDiagnostics }> {
+  const result = USE_API ? await apiResearch(prompt) : { text: await runClaude(prompt, true), incomplete: false };
+  const text = result.text;
+  return { recipes: parseRecipesTolerant(text, result.incomplete), diagnostics: { incomplete: result.incomplete, chars: text.length, head: text.slice(0, 400), tail: text.slice(-200) } };
+}
 /** レシピ研究：途中欠けに強い形でレシピ配列を返す */
 export async function askClaudeRecipes(prompt: string): Promise<unknown[]> {
-  const result = USE_API ? await apiResearch(prompt) : { text: await runClaude(prompt, true), incomplete: false };
-  return parseRecipesTolerant(result.text, result.incomplete);
+  return (await askClaudeRecipesDetailed(prompt)).recipes;
 }
 
 /** 画像ファイルを見て、写っている食材名（日本語）の配列を返す（冷蔵庫の写真入力用） */

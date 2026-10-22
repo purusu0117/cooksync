@@ -20,7 +20,9 @@ export const NOMINAL_SEARCH_INPUT_TOKENS = 40000;
  * Observed on 2026-10-21: 27,579 input / 8,433 output / 2 searches = $0.159488 for a 5,377-token prompt.
  * This bound is roughly 4x that; actual usage above the bound is still recorded in full (see settleAttempt).
  */
-export function searchReservationMicroUsd(model: string, maxTokens = 8192, inputTokens = NOMINAL_SEARCH_INPUT_TOKENS): number | null {
+/** Default output cap of a search request (src/lib/ai.ts RESEARCH_MAX_TOKENS). */
+export const DEFAULT_SEARCH_MAX_TOKENS = 12000;
+export function searchReservationMicroUsd(model: string, maxTokens = DEFAULT_SEARCH_MAX_TOKENS, inputTokens = NOMINAL_SEARCH_INPUT_TOKENS): number | null {
   const rate = APPROVED_AI_RATES[model];
   if (!rate || !Number.isFinite(inputTokens) || inputTokens < 0 || !Number.isFinite(maxTokens) || maxTokens <= 0) return null;
   const iterations = MAX_SEARCH_USES + 1;
