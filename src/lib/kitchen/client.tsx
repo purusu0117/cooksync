@@ -10,6 +10,7 @@ interface Context {
   error: string; notice: string; pending: PendingOperation | null; pendingCount: number; review: Review | null; refresh: () => Promise<void>;
   send: (type: string, payload: Record<string, unknown>, locationId?: string) => Promise<boolean>;
   activate: (deviceData?: Record<string, unknown>) => Promise<void>; guest: () => Promise<void>; retry: () => Promise<void>; dismissPending: () => Promise<void>; reviewPending: () => Promise<void>; confirmPending: () => Promise<void>;
+  deactivate: () => Promise<void>;
 }
 const KitchenContext = createContext<Context | null>(null);
 async function request(body?: unknown): Promise<Snapshot> {
@@ -94,7 +95,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setReview(null); await refresh(); setNotice("送信済み操作の結果を照合しました。未送信の保留を解除しました。保存済みの取消は履歴から行えます。");
   }); };
   const initialize = async (action: "guest" | "activate", deviceData?: Record<string, unknown>) => { await locked(async () => { await request({ action, owner: snapshot?.owner, legacyRevision: snapshot?.legacyRevision ?? 0, deviceData, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }); await refresh(); }); };
-  return <KitchenContext.Provider value={{ snapshot, locationId, chooseLocation, busy, error, notice, pending: queue[0] || null, pendingCount: queue.length, review, refresh, send, activate: data => initialize("activate", data), guest: () => initialize("guest"), retry, dismissPending, reviewPending, confirmPending }}>{children}</KitchenContext.Provider>;
+  const deactivate = async () => { await locked(async () => { await request({ action: "deactivate", owner: snapshot?.owner }); await refresh(); setNotice("新しい在庫管理を開始前の状態に戻しました。元のデータは変更していません。"); }); };
+  return <KitchenContext.Provider value={{ snapshot, locationId, chooseLocation, busy, error, notice, pending: queue[0] || null, pendingCount: queue.length, review, refresh, send, activate: data => initialize("activate", data), guest: () => initialize("guest"), retry, dismissPending, reviewPending, confirmPending, deactivate }}>{children}</KitchenContext.Provider>;
 }
 export function useKitchen() { const value = useContext(KitchenContext); if (!value) throw new Error("KitchenProvider missing"); return value; }
 export function useOptionalKitchen() { return useContext(KitchenContext); }
