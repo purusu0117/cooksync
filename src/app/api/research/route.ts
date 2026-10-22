@@ -106,6 +106,9 @@ function buildPrompt(b: ResearchBody): string {
     // Web検索で英語ソースを参照すると、出力まで英語に引きずられた実害がある）
     "- 【言語】出力JSONの文字列値（name/catch/steps/tip/label/leftoverStorage等）はすべて自然な日本語で書く。英語のサイトを参照した場合も必ず日本語に直す。",
     "- 2〜3品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
+    // 出力上限（8,192トークン）に当たると候補が1品しか残らない（2026-10-21 実測）。
+    // 候補の比較ができるよう、1品あたりの文章量をここで固定する。
+    "- 【出力量の上限＝厳守】全体を短く保つ。1品あたり steps は8工程以内、各 text は70字以内、tip は30字以内（不要なら空文字）。catch は30字以内。sources は1品あたり2件以内。長い前置き・補足説明・余った材料の保存方法は書かない。",
     shopMode === "stock"
       ? "- 利用可能な在庫で作れる候補を比較する。使い切りたい食材を優先しつつ、味付け・主食・たんぱく源の偏りを考慮する。"
       : "- 保存済みの好評レシピと新候補を比較し、毎回の新作や買い足しを強制しない。作り置きの再利用は完成品を材料として記載し、元の原材料をもう一度必要材料へ展開しない。",
@@ -129,11 +132,10 @@ function buildPrompt(b: ResearchBody): string {
     // ここを守らせないと、クライアント側の分割に頼ることになり精度が落ちる。
     "- 【1文＝1作業】textの中で作業を詰め込まない。動作が変わったら必ず文を切る。とくに『〜たら』（煮立ったら/色が変わったら等の“待ち”）は必ず独立した文にする。",
     "  悪い例:『調味料を入れて煮立ったら弱火で10分煮る。』／良い例:『調味料を入れる。煮立ったら弱火で10分煮る。』",
-    "- 各stepにtip（コツ・火加減・見極め）を付ける。",
-    "- 余った材料の保存(leftoverStorage)も書く。日本語で。emojiは料理に合う絵文字を1つ。",
+    "- 火加減・見極めが要る工程だけ tip（30字以内）を付ける。emojiは料理に合う絵文字を1つ。",
     "",
     "次のJSON『だけ』を出力（前後に文章やコードフェンスを付けない）:",
-    '{"recipes":[{"name":string,"emoji":string,"catch":string,"servings":number|null,"kcal":number|null,"cookTime":number|null,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean}],"steps":[{"title":string,"text":string,"tip":string}],"leftoverStorage":[{"ingredient":string,"method":string}],"sources":[{"label":string,"url":string,"popularity":string}]}]}',
+    '{"recipes":[{"name":string,"emoji":string,"catch":string,"servings":number|null,"kcal":number|null,"cookTime":number|null,"cuisine":"和"|"洋"|"中"|"アジアン","ingredients":[{"name":string,"amount":string,"group":string,"toBuy":boolean,"basicSeasoning":boolean,"inventoryKind":"raw"|"prepared"}],"steps":[{"title":string,"text":string,"tip":string}],"sources":[{"label":string,"url":string,"popularity":string}]}]}',
   ]
     .filter(Boolean)
     .join("\n");

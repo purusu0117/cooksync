@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { createSession, identify, sessionCookie, readCookie, verifySession, SESSION_COOKIE } from "@/lib/session";
-import { activateKitchen, cancelKitchenOperation, commitKitchen, copyVerifiedDeviceKitchen, exportDigest, readKitchenData } from "@/lib/kitchen/server";
+import { activateKitchen, cancelKitchenOperation, commitKitchen, copyVerifiedDeviceKitchen, deactivateKitchen, exportDigest, readKitchenData } from "@/lib/kitchen/server";
 import { decodeCommand, KitchenError, object } from "@/lib/kitchen/engine";
 import { LEGACY_MUTABLE } from "@/lib/kitchen/model";
 import { aiConfiguration } from "@/lib/kitchen/aiBudget";
@@ -34,6 +34,7 @@ export async function GET(request: Request) {
     }
     if (url.searchParams.has("export") && result.state) return Response.json({ state: result.state, sha256: exportDigest(result.state), exportedAt: new Date().toISOString() }, { headers: { ...headers, "Content-Disposition": "attachment; filename=cooksync-kitchen-backup.json" } });
     const config = aiConfiguration();
+    // Nominal request size; the real reservation is computed per request and checked against the ledger.
     const searchReservation = searchReservationMicroUsd(config.model);
     return Response.json({ state: result.state, isGuest: user.uid.startsWith("guest:"), legacyRevision: result.revision, legacyCounts: Object.fromEntries(LEGACY_MUTABLE.map(k => [k, Array.isArray(result.legacy[k]) ? result.legacy[k].length : 0])), owner: user.dataId, ai: { enabled: config.enabled, environment: config.environment, model: config.model, expiresAt: config.expires, searchWithinBudget: searchReservation !== null && config.limit >= searchReservation } }, { headers });
   } catch (e) { return errorResponse(e); }
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
       return Response.json({ state: await activateKitchen(user.dataId, Number(body.legacyRevision), body.deviceData ? object(body.deviceData) : undefined, body.timeZone) }, { headers });
     }
     if (body.action === "cancel-operation") return Response.json({ state: await cancelKitchenOperation(user.dataId, decodeCommand(body.command)) }, { headers });
+    if (body.action === "deactivate") return Response.json({ state: null, ...(await deactivateKitchen(user.dataId)) }, { headers });
     return Response.json({ state: await commitKitchen(user.dataId, decodeCommand(body.command)) }, { headers });
   } catch (e) { return errorResponse(e); }
 }

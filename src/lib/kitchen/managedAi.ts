@@ -8,7 +8,11 @@ import { readKitchenData } from "./server";
 import { KitchenError } from "./engine";
 import { atomicDocument } from "./atomicDocument";
 import { MAX_AI_REQUEST_BYTES } from "./limits";
-import { APPROVED_AI_RATES, searchReservationMicroUsd } from "./aiPricing";
+import { APPROVED_AI_RATES, MAX_SEARCH_USES, WEB_SEARCH_MICRO_USD, searchReservationMicroUsd } from "./aiPricing";
+/** Whole request budget (handler + after()) must end inside the route's maxDuration (300s). */
+const REQUEST_DEADLINE_MS = 280_000;
+/** One provider call never runs longer than this, even while streaming. */
+const CALL_DEADLINE_MS = 170_000;
 const context = new AsyncLocalStorage<AiScope>();
 export function managedAfter(task: () => Promise<void>) { const scope = context.getStore(); nextAfter(() => scope ? context.run(scope, task) : task()); }
 export function requireAiScope(): AiScope { const scope = context.getStore(); if (!scope) throw new KitchenError("認可済みのAIジョブから実行してください", 403); return scope; }
@@ -20,7 +24,7 @@ export async function requestScope(request: Request): Promise<AiScope> {
   const locationId = request.headers.get("x-cooksync-location-id") || new URL(request.url).searchParams.get("locationId") || "";
   const { state } = await readKitchenData(user.dataId);
   if (!state?.locations.some(l => l.id === locationId)) throw new KitchenError("この場所は利用できません", 403);
-  return { owner: user.dataId, locationId, jobId: randomUUID(), environment: aiConfiguration().environment };
+  return { owner: user.dataId, locationId, jobId: randomUUID(), environment: aiConfiguration().environment, deadlineAt: Date.now() + REQUEST_DEADLINE_MS };
 }
 export function withAiRequest(handler: (request: Request) => Promise<Response>, polling = false) {
   return async (request: Request): Promise<Response> => {
@@ -84,33 +88,37 @@ export async function managedMessage(client: Anthropic, params: Anthropic.Messag
   const rate = APPROVED_AI_RATES[params.model]; if (!rate) throw new KitchenError("このモデルの料金と利用可否を確認してください", 503);
   if (JSON.stringify(params).length > 24 * 1024 * 1024 || params.max_tokens > 16000) throw new KitchenError("AI入力が上限を超えています", 413);
   // No prompt caching or unbounded tool loops. Search limit is explicit for each request.
-  const tools = params.tools?.map(tool => tool.type === "web_search_20250305" ? { ...tool, max_uses: 2, allowed_callers: ["direct" as const] } : tool);
+  const tools = params.tools?.map(tool => tool.type === "web_search_20250305" ? { ...tool, max_uses: MAX_SEARCH_USES, allowed_callers: ["direct" as const] } : tool);
   if (tools?.some(t => t.type !== "web_search_20250305")) throw new KitchenError("未確認のAIツールです", 503);
-  // Text bytes conservatively bound tokens; each validated image reserves 32k tokens.
-  // Search may fill context, so reserve the entire 1M-token ceiling for those requests.
+  // Text bytes conservatively bound tokens (UTF-8 bytes >= tokens); each validated image reserves 32k tokens.
   let inputBound = Buffer.byteLength(JSON.stringify(params.system || "")) + 4096;
   for (const message of params.messages) {
     if (typeof message.content === "string") inputBound += Buffer.byteLength(message.content);
     else for (const block of message.content) inputBound += block.type === "image" ? 32000 : Buffer.byteLength(JSON.stringify(block));
   }
-  inputBound = tools?.length ? 1000000 : inputBound;
   if (inputBound > 1000000) throw new KitchenError("AI入力が上限を超えています", 413);
-  const ceiling = tools?.length ? searchReservationMicroUsd(params.model, params.max_tokens)! : inputBound * rate[0] * 2 + params.max_tokens * rate[1];
+  // Search requests re-read the prompt plus results on every tool iteration; see aiPricing for the derivation.
+  const ceiling = tools?.length ? searchReservationMicroUsd(params.model, params.max_tokens, inputBound)! : inputBound * rate[0] * 2 + params.max_tokens * rate[1];
   const key = budgetKey(scope.environment, config.org), attemptId = randomUUID();
   await reserveAttempt(key, attemptId, scope, ceiling, config.limit);
   const controller = new AbortController();
+  // Streaming keeps the SDK timeout on the connection only; generation time is bounded here instead.
+  const deadline = Math.min(Date.now() + CALL_DEADLINE_MS, scope.deadlineAt ?? Infinity);
+  const deadlineTimer = setTimeout(() => controller.abort(new Error("AI call deadline exceeded")), Math.max(0, deadline - Date.now()));
   let checking = false;
   const timer = setInterval(() => { if (checking) return; checking = true; void aiJobCancelled(scope).then(cancelled => { if (cancelled) controller.abort(); }).catch(() => controller.abort()).finally(() => { checking = false; }); }, 1000);
   try {
     await requireActiveAiJob();
-    const result = await client.messages.create({ ...params, tools, stream: false }, { maxRetries: 0, timeout: 120000, signal: controller.signal });
+    if (controller.signal.aborted) throw new KitchenError("AI処理の時間切れです", 504);
+    const stream = client.messages.stream({ ...params, tools }, { maxRetries: 0, timeout: 120000, signal: controller.signal });
+    const result = await stream.finalMessage();
     const usage = result.usage;
     const search = usage.server_tool_use?.web_search_requests || 0;
     const cache = (usage.cache_creation_input_tokens || 0) * rate[0] * 2 + Math.ceil((usage.cache_read_input_tokens || 0) * rate[0] / 10);
-    const actual = usage.input_tokens * rate[0] + usage.output_tokens * rate[1] + search * 10000 + cache;
-    await settleAttempt(key, attemptId, actual, (result as Anthropic.Message & { _request_id?: string })._request_id);
+    const actual = usage.input_tokens * rate[0] + usage.output_tokens * rate[1] + search * WEB_SEARCH_MICRO_USD + cache;
+    await settleAttempt(key, attemptId, actual, stream.request_id || (result as Anthropic.Message & { _request_id?: string })._request_id || undefined);
     await requireActiveAiJob();
     return result;
   } catch (e) { await settleAttempt(key, attemptId, null).catch(() => {}); throw e; }
-  finally { clearInterval(timer); }
+  finally { clearInterval(timer); clearTimeout(deadlineTimer); }
 }
