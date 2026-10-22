@@ -12,7 +12,7 @@ import { APPROVED_AI_RATES, MAX_SEARCH_USES, WEB_SEARCH_MICRO_USD, searchReserva
 /** Whole request budget (handler + after()) must end inside the route's maxDuration (300s). */
 const REQUEST_DEADLINE_MS = 280_000;
 /** One provider call never runs longer than this, even while streaming. */
-const CALL_DEADLINE_MS = 170_000;
+const CALL_DEADLINE_MS = 200_000;
 const context = new AsyncLocalStorage<AiScope>();
 export function managedAfter(task: () => Promise<void>) { const scope = context.getStore(); nextAfter(() => scope ? context.run(scope, task) : task()); }
 export function requireAiScope(): AiScope { const scope = context.getStore(); if (!scope) throw new KitchenError("認可済みのAIジョブから実行してください", 403); return scope; }

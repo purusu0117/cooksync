@@ -1,6 +1,6 @@
 import { withAiRequest, requireActiveAiJob } from "@/lib/kitchen/managedAi";
 import { managedAfter as after } from "@/lib/kitchen/managedAi";
-import { askClaudeRecipes } from "@/lib/ai";
+import { askClaudeRecipesDetailed } from "@/lib/ai";
 import { sendPush, resolvePushTarget } from "@/lib/pushServer";
 import { redis } from "@/lib/kv";
 import { checkIpOnly, consume, quotaResponse, refund } from "@/lib/quotaServer";
@@ -46,6 +46,8 @@ interface Job {
   status: "running" | "done" | "error";
   recipes?: unknown[];
   error?: string;
+  /** 0件・失敗の原因を追うための要約（出力の冒頭・末尾のみ。所有者だけが読める） */
+  detail?: string;
   createdAt: number;
 }
 
@@ -79,7 +81,7 @@ function buildPrompt(b: ResearchBody): string {
   const angle = ANGLES[(round - 1) % ANGLES.length];
   const shopMode = b.shopMode === "buy" ? "buy" : "stock";
   return [
-    "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2〜3品調べ、結果をJSONだけで返してください。",
+    "あなたはプロの料理リサーチャーです。WebSearchツールで『実在し評価の高い人気レシピ』を2品調べ、結果をJSONだけで返してください。",
     wish ? `■ 作りたいもの: ${wish}` : "■ 作りたいもの: おまかせ（下の冷蔵庫の食材を活かせるもの）",
     servings ? `■ 人数: ${servings}人分（材料の分量はこの人数に合わせる）` : "■ 人数未指定：参照レシピに明示された人数と分量を保持し、不明なら人数を補完しない。",
     fridge.length ? `■ 冷蔵庫にある食材: ${fridge.join("、")}` : "",
@@ -105,10 +107,10 @@ function buildPrompt(b: ResearchBody): string {
     // systemプロンプト側でも強制しているが、こちらにも明記する（二重の保険。
     // Web検索で英語ソースを参照すると、出力まで英語に引きずられた実害がある）
     "- 【言語】出力JSONの文字列値（name/catch/steps/tip/label/leftoverStorage等）はすべて自然な日本語で書く。英語のサイトを参照した場合も必ず日本語に直す。",
-    "- 2〜3品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
+    "- 2品、方向性の違う候補を出す（例：王道/時短/さっぱり等）。",
     // 出力上限（8,192トークン）に当たると候補が1品しか残らない（2026-10-21 実測）。
     // 候補の比較ができるよう、1品あたりの文章量をここで固定する。
-    "- 【出力量の上限＝厳守】全体を短く保つ。1品あたり steps は8工程以内、各 text は70字以内、tip は30字以内（不要なら空文字）。catch は30字以内。sources は1品あたり2件以内。長い前置き・補足説明・余った材料の保存方法は書かない。",
+    "- 【出力量の上限＝最重要・厳守】出力は最初の文字から JSON のみ。検索結果の要約・前置き・考察・引用文は一切書かない。候補は2品まで。1品あたり ingredients は12件以内、steps は7工程以内、各 text は60字以内、tip は20字以内（不要なら空文字）、catch は25字以内、sources は2件以内、popularity は15字以内。全体で日本語2,500字以内に収める。これを超えると出力が途中で切れて候補が失われる。",
     shopMode === "stock"
       ? "- 利用可能な在庫で作れる候補を比較する。使い切りたい食材を優先しつつ、味付け・主食・たんぱく源の偏りを考慮する。"
       : "- 保存済みの好評レシピと新候補を比較し、毎回の新作や買い足しを強制しない。作り置きの再利用は完成品を材料として記載し、元の原材料をもう一度必要材料へ展開しない。",
@@ -189,7 +191,8 @@ async function handlePost(request: Request) {
     after(async () => {
       try {
         await requireActiveAiJob();
-        const recipes = (await askClaudeRecipes(prompt)).flatMap(value => {
+        const detailed = await askClaudeRecipesDetailed(prompt);
+        const recipes = detailed.recipes.flatMap(value => {
           try {
             const checked = validateImportedRecipe(value, true);
             const notices = value && typeof value === "object" && "readMissing" in value && Array.isArray(value.readMissing)
@@ -205,9 +208,11 @@ async function handlePost(request: Request) {
         // 0件は成功ではないので、error 扱いにして枠を戻す。
         if (recipes.length === 0) {
           await refund(uid, "research", request).catch(() => {});
+          const d = detailed.diagnostics;
           await setJob(jobId, {
             status: "error",
-            error: "レシピが取得できませんでした。もう一度お試しください。",
+            error: d.incomplete ? "AIの出力が上限に達し、完成した候補を1つも取り出せませんでした。利用枠は戻しました。もう一度お試しください。" : "レシピが取得できませんでした。利用枠は戻しました。もう一度お試しください。",
+            detail: `stop=${d.incomplete ? "max_tokens" : "end_turn"} chars=${d.chars} head=${JSON.stringify(d.head)} tail=${JSON.stringify(d.tail)}`,
             createdAt: Date.now(),
           });
           return;
@@ -268,7 +273,7 @@ async function handleGet(request: Request) {
     return Response.json({ status: "done", recipes: job.recipes ?? [] });
   }
   if (job.status === "error") {
-    return Response.json({ status: "error", error: job.error });
+    return Response.json({ status: "error", error: job.error, ...(job.detail ? { detail: job.detail } : {}) });
   }
   return Response.json({ status: "running" });
 }

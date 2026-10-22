@@ -25,7 +25,10 @@ vi.mock("next/server", () => ({
     h.afterTasks.push(fn());
   },
 }));
-vi.mock("@/lib/ai", () => ({ askClaudeRecipes: h.askClaudeRecipes }));
+vi.mock("@/lib/ai", () => ({
+  askClaudeRecipes: h.askClaudeRecipes,
+  askClaudeRecipesDetailed: async (prompt: string) => { const recipes = await h.askClaudeRecipes(prompt); return { recipes, diagnostics: { incomplete: false, chars: 0, head: "", tail: "" } }; },
+}));
 vi.mock("@/lib/kv", () => ({ redis: null }));
 vi.mock("@/lib/session", () => ({ identify: () => ({ uid: "u-test" }) }));
 // 通知の宛先は resolvePushTarget を通す（他人に鳴らせないようにした・監査 高-7）。

@@ -54,7 +54,7 @@ describe("ai ledger", () => {
   });
   it("search reservation grows with the request and stays far below the old whole-context hold", () => {
     expect(searchReservationMicroUsd("claude-sonnet-5", 8192, 5377)).toBe(3 * (5377 + 80000) * 2 + 81920 + 20000);
-    expect(searchReservationMicroUsd("claude-sonnet-5")).toBe(3 * 120000 * 2 + 81920 + 20000);
+    expect(searchReservationMicroUsd("claude-sonnet-5")).toBe(3 * 120000 * 2 + 120000 + 20000);
     expect(searchReservationMicroUsd("claude-sonnet-5")!).toBeLessThan(1000000);
     expect(searchReservationMicroUsd("unknown-model")).toBeNull();
     // Observed 2026-10-21 usage ($0.159488) fits under the bound computed from its own 5,377-token prompt.
