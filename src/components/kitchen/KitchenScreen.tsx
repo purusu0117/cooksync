@@ -37,7 +37,7 @@ export default function KitchenScreen({ initialTab = "plans", recipeId }: { init
   const state = api.snapshot?.state;
   if (!api.snapshot) return <div className="p-6" role="status">在庫を確認しています…{api.error && <p>{api.error}</p>}</div>;
   return <div className="mx-auto max-w-2xl space-y-5 px-4 py-5 pb-12 text-stone-800">
-    <header className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">{({ plans: "今日の献立", shopping: "買い物", inventory: "在庫", settings: "台所の設定", history: "購入・調理の履歴" })[tab]}</h1>{state && <div className="flex gap-1"><Link href="/kitchen/history" aria-label="購入・調理の履歴" className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white"><HistoryIcon size={21} /></Link><Link href="/kitchen/settings" aria-label="場所・道具の設定" className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white"><Settings2 size={21} /></Link></div>}</header>
+    <header className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">{({ plans: "今日の献立", shopping: "買い物", inventory: "在庫", settings: "台所の設定", history: "履歴・取り消し" })[tab]}</h1>{state && <div className="flex gap-1"><Link href="/kitchen/history" aria-label="履歴・取り消し" className="flex min-h-11 min-w-12 flex-col items-center justify-center rounded-xl bg-white px-2 text-[11px] font-semibold text-stone-700"><HistoryIcon size={20} />履歴</Link><Link href="/kitchen/settings" aria-label="道具・好み・控えの設定" className="flex min-h-11 min-w-12 flex-col items-center justify-center rounded-xl bg-white px-2 text-[11px] font-semibold text-stone-700"><Settings2 size={20} />設定</Link></div>}</header>
     {api.error && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">{api.error}</p>}
     {api.notice && <p role="status" className="text-sm text-emerald-800">{api.notice}</p>}
     {api.busy && <p role="status" className="text-sm">保存中です…</p>}
@@ -48,7 +48,7 @@ export default function KitchenScreen({ initialTab = "plans", recipeId }: { init
       {api.snapshot.isGuest && <DeviceImport />}
       {api.snapshot.needsSession ? <><Button onClick={() => void api.guest()}>この端末で始める</Button><p className="text-sm">すでにアカウントを使っている方は、ログインして在庫を引き継げます。</p><Link className="inline-flex min-h-11 items-center text-emerald-900 underline" href="/mypage">ログインして引き継ぐ</Link></> : <><p className="text-sm">次のデータを「いつもの場所」に引き継ぎます。元のデータと履歴も残ります。</p><ul className="text-sm">{Object.entries(api.snapshot.legacyCounts || {}).filter(([, n]) => n).map(([key, n]) => <li key={key}>{key.includes("shopping") ? "買い物" : key.includes("meals") ? "過去の献立（履歴保管）" : "在庫"}：{n}件</li>)}</ul><Button onClick={() => void api.activate()}>この内容で始める</Button></>}
     </Sheet> : <>
-      <div className="flex items-end gap-2 rounded-xl bg-emerald-50 p-3 text-emerald-950"><label className="min-w-0 flex-1 text-xs font-semibold">使う場所<select aria-label="今使っている場所" className={`${inputClass} mt-1 border-emerald-700/30`} value={api.locationId} onChange={e => api.chooseLocation(e.target.value)}>{state.locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><Link href="/kitchen/settings" aria-label="場所を追加・名前を変更" className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-emerald-700/30 bg-white"><Plus size={20} /></Link></div>
+      <LocationBar state={state} />
       {(tab === "settings" || tab === "history") && <Link href="/kitchen" className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-emerald-900"><ChevronLeft size={18} />献立に戻る</Link>}
       <div key={`${state.owner}:${api.locationId}:${tab}`}>
         {tab === "plans" && <Plans state={state} recipeId={recipeId} />}
@@ -61,33 +61,58 @@ export default function KitchenScreen({ initialTab = "plans", recipeId }: { init
   </div>;
 }
 
+/** 冷蔵庫（場所）の切り替え・追加・名前変更・削除を、この場で行う。設定画面へ飛ばさない。 */
+function LocationBar({ state }: { state: KitchenState }) {
+  const api = useKitchen();
+  const [mode, setMode] = useState<"" | "add" | "edit">("");
+  const place = state.locations.find(l => l.id === api.locationId) || state.locations[0];
+  return <section className="space-y-2 rounded-xl bg-emerald-50 p-3 text-emerald-950">
+    <div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold">いま使う冷蔵庫・場所</p><button type="button" className="min-h-9 text-xs font-semibold text-emerald-900 underline" aria-expanded={mode === "edit"} onClick={() => setMode(mode === "edit" ? "" : "edit")}>名前を変える・削除</button></div>
+    <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="場所を選ぶ">
+      {state.locations.map(l => <button key={l.id} type="button" aria-pressed={l.id === api.locationId} onClick={() => api.chooseLocation(l.id)} className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-bold ${l.id === api.locationId ? "bg-emerald-800 text-white" : "border border-emerald-700/30 bg-white text-emerald-900"}`}>{l.name}</button>)}
+      <button type="button" aria-expanded={mode === "add"} onClick={() => setMode(mode === "add" ? "" : "add")} className="min-h-11 shrink-0 rounded-full border border-dashed border-emerald-700/50 bg-white px-4 text-sm font-bold text-emerald-900"><Plus size={16} className="mr-1 inline" aria-hidden="true" />場所を追加</button>
+    </div>
+    {mode === "add" && <form className="flex gap-2" onSubmit={async e => { const form = e.currentTarget; if (await api.send("location.add", { ...Values(e), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })) { form.reset(); setMode(""); } }}><input name="name" required placeholder="実家・旅行先など" aria-label="新しい場所の名前" className={inputClass} /><Button type="submit">追加</Button></form>}
+    {mode === "edit" && <div className="space-y-2 rounded-lg bg-white p-3">
+      <form className="flex gap-2" onSubmit={async e => { if (await api.send("location.rename", Values(e))) setMode(""); }}><input name="name" defaultValue={place.name} required aria-label="場所の名前" className={inputClass} /><Button type="submit">名前を保存</Button></form>
+      <div className="flex flex-wrap items-center gap-2"><Button secondary disabled={state.locations.length <= 1} onClick={async () => { if (await api.send("location.remove", {})) setMode(""); }}>「{place.name}」を削除</Button><span className="text-xs text-stone-600">{state.locations.length <= 1 ? "場所が1つだけのときは削除できません" : "在庫・献立・買い物が空の場所だけ削除できます"}</span></div>
+    </div>}
+  </section>;
+}
 function Inventory({ state }: { state: KitchenState }) {
   const { locationId, send } = useKitchen();
   const [kind, setKind] = useState<"all" | "raw" | "prepared">("all");
   const lots = state.lots.filter(l => l.locationId === locationId && (!l.quantity || positive(l.quantity.value)));
   return <div className="space-y-5"><div aria-label="在庫の種類" className="grid grid-cols-3 rounded-xl bg-white p-1">{([["all", "すべて"], ["raw", "食材"], ["prepared", "作り置き"]] as const).map(([key, label]) => <button key={key} type="button" onClick={() => setKind(key)} aria-pressed={kind === key} className={`min-h-11 rounded-lg text-sm font-semibold ${kind === key ? "bg-emerald-800 text-white" : "text-stone-700"}`}>{label}</button>)}</div><Sheet title="残っているもの">
-    {!lots.length && <p className="text-sm">食材を追加すると、この場所の残量から献立を考えられます。</p>}
+    {!lots.length && <p className="text-sm">まだ何も入っていません。下の「食材を追加」から、冷蔵庫にあるものを名前と量で入れてください。</p>}
     {!!lots.length && !lots.some(l => kind === "all" || l.kind === kind) && <p className="text-sm text-stone-600">この種類の在庫はありません。</p>}
     {lots.filter(l => kind === "all" || l.kind === kind).map(l => <LotRow key={l.id} lot={l} state={state} />)}
-    <Details title="＋ 食材・作り置きを追加"><form className="space-y-3" onSubmit={async e => { const form = e.currentTarget, p = Values(e); if (await send("lot.add", p)) { form.reset(); form.closest("details")?.removeAttribute("open"); } }}>
-      <Field label="名前" name="name" required placeholder="白菜" /><Field label="今ある量（不明なら空欄）" name="amount" placeholder="1/4玉" />
-      <label className="block text-sm">種類<select name="kind" className={inputClass}><option value="raw">未調理の食材</option><option value="prepared">作り置き</option></select></label>
-      <Zone /><Field label="状態" name="condition" placeholder="切りかけ・開封済みなど" />
-      <Field label="期限（確認できた場合）" name="expiresOn" type="date" /><Field label="期限の根拠" name="expiryBasis" placeholder="包装の表示、確認した保存条件など" />
-      <Button type="submit">今ある量を登録</Button>
-    </form></Details>
-  </Sheet></div>;
+  </Sheet>
+  <details className="rounded-2xl bg-white p-4 ring-1 ring-stone-200" open={!lots.length}><summary className="min-h-11 cursor-pointer text-lg font-bold text-emerald-900">＋ 食材・作り置きを追加</summary><form className="space-y-3 pt-3" onSubmit={async e => { const form = e.currentTarget, p = Values(e); if (await send("lot.add", p)) { form.reset(); if (lots.length) form.closest("details")?.removeAttribute("open"); } }}>
+      <Field label="名前" name="name" required placeholder="白菜" /><Field label="今ある量（不明なら空欄）" name="amount" placeholder="1/4玉・3本・200g" />
+      <div className="grid grid-cols-2 gap-2"><Zone /><label className="block space-y-1 text-sm"><span>種類</span><select name="kind" className={inputClass}><option value="raw">食材</option><option value="prepared">作り置き</option></select></label></div>
+      <Details title="状態・期限も入れる（任意）"><Field label="状態" name="condition" placeholder="切りかけ・開封済みなど" />
+      <Field label="期限（確認できた場合）" name="expiresOn" type="date" /><Field label="期限の根拠" name="expiryBasis" placeholder="包装の表示、確認した保存条件など" /></Details>
+      <Button type="submit">在庫に入れる</Button>
+    </form></details></div>;
 }
 function LotRow({ lot: l, state }: { lot: Lot; state: KitchenState }) {
   const { send } = useKitchen();
+  const [quick, setQuick] = useState<"" | "amount" | "eat">("");
   return <article className="border-t border-stone-200 pt-3 first:border-0 first:pt-0">
-    <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{l.name}</h3><p className="text-xs text-stone-600">{l.kind === "prepared" ? "作り置き" : "食材"} / {l.compartment} / {l.condition}</p></div><strong className="shrink-0 text-lg">{showQuantity(l.quantity)}</strong></div>
+    <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{l.name}</h3><p className="text-xs text-stone-600">{l.kind === "prepared" ? "作り置き" : "食材"} / {l.compartment}{l.condition && l.condition !== "未確認" ? ` / ${l.condition}` : ""}{l.expiresOn ? ` / 期限 ${l.expiresOn}` : ""}</p></div><strong className="shrink-0 text-lg">{showQuantity(l.quantity)}</strong></div>
     {l.presence !== "ある" && <p className="text-sm text-amber-900">{l.presence}（使用可能な在庫には含めません）</p>}
-    <p className="mt-1 text-xs text-stone-500" title={l.id}>ロット {state.lots.findIndex(v => v.id === l.id) + 1}{l.cookedAt ? ` / 作成 ${new Date(l.cookedAt).toLocaleString("ja-JP")}` : ""}</p>
-    {l.storageMethod && <p className="mt-2 text-sm">保存記録：{l.storageMethod}</p>}
-    <p className="mt-1 text-xs text-stone-600">{l.expiresOn ? `期限 ${l.expiresOn} / ${l.expiryBasis || "根拠未確認"}` : "期限は未確認"}。日数だけで安全とは判断しません。</p>
+    {l.storageMethod && <p className="mt-1 text-xs text-stone-600">保存：{l.storageMethod}</p>}
+    <div className="mt-2 flex flex-wrap gap-2">
+      <Button secondary onClick={() => setQuick(quick === "amount" ? "" : "amount")}>残量を直す</Button>
+      {l.kind === "prepared" && <Button secondary onClick={() => setQuick(quick === "eat" ? "" : "eat")}>食べた</Button>}
+      <Button secondary onClick={() => void send("lot.remove", { lotId: l.id })}>使い切った・削除</Button>
+    </div>
+    {quick === "amount" && <form className="mt-2 flex items-end gap-2" onSubmit={async e => { const p = Values(e); if (await send("lot.update", { amount: p.amount, lotId: l.id, lotRevision: l.revision })) setQuick(""); }}><label className="min-w-0 flex-1 text-sm">今の残量<input name="amount" defaultValue={l.quantity ? showQuantity(l.quantity) : ""} required className={inputClass} placeholder="1/8玉" /></label><Button type="submit">保存</Button></form>}
+    {quick === "eat" && <form className="mt-2 flex items-end gap-2" onSubmit={async e => { if (await send("lot.eat", { ...Values(e), lotId: l.id })) setQuick(""); }}><label className="min-w-0 flex-1 text-sm">食べた量<input name="amount" required className={inputClass} placeholder="1食" /></label><Button type="submit">記録</Button></form>}
+    <Details title="保存先・期限・そのほか"><p className="text-xs text-stone-500" title={l.id}>ロット {state.lots.findIndex(v => v.id === l.id) + 1}{l.cookedAt ? ` / 作成 ${new Date(l.cookedAt).toLocaleString("ja-JP")}` : ""} / {l.expiresOn ? `期限 ${l.expiresOn}（${l.expiryBasis || "根拠未確認"}）` : "期限は未確認"}。日数だけで安全とは判断しません。</p>
     <StorageGuidance conditions={l} />
-    <Details title="残りの量・保存先を変更"><form className="space-y-3" onSubmit={async e => { const p = Values(e); if (!p.amount) delete p.amount; if (!p.weightGrams) delete p.weightGrams; await send("lot.update", { ...p, lotId: l.id, lotRevision: l.revision }); }}>
+    <form className="space-y-3" onSubmit={async e => { const p = Values(e); if (!p.amount) delete p.amount; if (!p.weightGrams) delete p.weightGrams; await send("lot.update", { ...p, lotId: l.id, lotRevision: l.revision }); }}>
       <Field label="今の残量" name="amount" value={l.quantity ? showQuantity(l.quantity) : ""} />
       <label className="block text-sm">確認状態<select name="presence" defaultValue={l.presence} className={inputClass}>{["ある", "ない", "見当たらない", "未確認"].map(v => <option key={v}>{v}</option>)}</select></label>
       <label className="block text-sm">場所<select name="targetLocationId" defaultValue={l.locationId} className={inputClass}>{state.locations.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
@@ -95,10 +120,10 @@ function LotRow({ lot: l, state }: { lot: Lot; state: KitchenState }) {
       <Field label="期限" name="expiresOn" type="date" value={l.expiresOn} /><Field label="期限の根拠" name="expiryBasis" value={l.expiryBasis} />
       <Details title="この残量の重量を登録"><p className="text-xs">量と重さの対応が確認できる場合だけ登録します。空欄のままなら重量の併記はしません。</p><Field label="今の残量全体の重さ" name="weightGrams" placeholder="300g" /><Field label="重さの根拠" name="weightBasis" placeholder="はかりで計量" /><label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" name="weightEstimated" />実測ではなく根拠のある推定</label></Details>
       <Button type="submit">残量・保存先を更新</Button>
-    </form></Details>
+    </form>
     {l.kind === "prepared" && <Details title="食べる予定を登録"><form className="space-y-3" onSubmit={async e => { const v = Values(e); await send("eating.plan", { lotId: l.id, amount: v.amount, eatAt: new Date(v.eatAt).toISOString() }); }}><Field label="食べる予定量" name="amount" required /><Field label="食べる予定日時" name="eatAt" type="datetime-local" value={localTime()} required /><Button type="submit">食べる予定を保存</Button></form></Details>}
-    {l.kind === "prepared" && <Details title="食べた量を記録"><form className="space-y-3" onSubmit={async e => { await send("lot.eat", { ...Values(e), lotId: l.id }); }}><Field label="食べた量" name="amount" required /><Button type="submit">食べた量を確定</Button></form></Details>}
-    <Details title="捨てた量を記録"><form className="space-y-3" onSubmit={async e => { await send("lot.discard", { ...Values(e), lotId: l.id }); }}><Field label="捨てた量" name="amount" required /><Field label="理由" name="reason" /><Button type="submit" secondary>廃棄を記録</Button></form></Details>
+    <Details title="一部を捨てた量を記録"><form className="space-y-3" onSubmit={async e => { await send("lot.discard", { ...Values(e), lotId: l.id }); }}><Field label="捨てた量" name="amount" required /><Field label="理由" name="reason" /><Button type="submit" secondary>廃棄を記録</Button></form></Details>
+    </Details>
   </article>;
 }
 
@@ -114,10 +139,10 @@ function Shortages({ state }: { state: KitchenState }) {
 }
 function Shopping({ state }: { state: KitchenState }) {
   const { locationId, send } = useKitchen();
-  const rows = state.shopping.filter(r => r.locationId === locationId && !r.purchasedBy && !r.archived);
-  return <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">{rows.length ? `あと${rows.length}品。量を直して「買った」で記録。` : "買うものはまだありません。"}</p><Button onClick={() => void send("shopping.recalculate", {})}>献立の不足分を追加</Button></div>
+  const rows = state.shopping.filter(r => r.locationId === locationId && !r.purchasedBy && !r.archived && !r.removedBy);
+  return <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">{rows.length ? `あと${rows.length}品。買ったら量を確かめて「買った」。` : "買うものはまだありません。"}</p><Button onClick={() => void send("shopping.recalculate", {})}>献立の不足分を入れる</Button></div>
     <Sheet title="買うもの">
-      {!rows.length && <p className="text-sm text-stone-600">献立の不足分を追加するか、下から食材を登録できます。</p>}
+      {!rows.length && <p className="text-sm text-stone-600">献立を追加して「献立の不足分を入れる」を押すか、下の「買うものを追加」で入れます。</p>}
       {rows.map(r => <PurchaseRow key={r.id} row={r} state={state} />)}
       <Details title="＋ 買うものを追加"><form className="space-y-3" onSubmit={async e => { const form = e.currentTarget; if (await send("shopping.add", Values(e))) { form.reset(); form.closest("details")?.removeAttribute("open"); } }}><Field label="食材名" name="name" required /><Field label="購入予定量（不明なら空欄）" name="amount" /><Button type="submit">買い物に追加</Button></form></Details>
     </Sheet>
@@ -142,7 +167,7 @@ function PurchaseRow({ row: r, state }: { row: ShoppingRow; state: KitchenState 
     <Details title="商品・店・保存先"><label className="block text-sm">商品（任意）<input className={inputClass} value={product} onChange={e => setProduct(e.target.value)} /></label><label className="block text-sm">店（任意）<input className={inputClass} value={store} onChange={e => setStore(e.target.value)} /></label><label className="block text-sm">入庫先の区画<select className={inputClass} value={zone} onChange={e => setZone(e.target.value)}>{["冷蔵", "冷凍", "常温", "未確認"].map(z => <option key={z}>{z}</option>)}</select></label></Details>
     <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />この商品の入数を覚える</label>
     </Details>
-    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-stone-500">保存先：{zone}</span><Button secondary onClick={() => void send("shopping.edit", payload())}>予定だけ変更</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-stone-500">保存先：{zone}</span><div className="flex gap-2"><Button secondary onClick={() => void send("shopping.edit", payload())}>予定だけ変更</Button><Button secondary onClick={() => void send("shopping.remove", { shoppingId: r.id })}>リストから外す</Button></div></div>
   </article>;
 }
 
@@ -156,13 +181,29 @@ function Plans({ state, recipeId }: { state: KitchenState; recipeId?: string }) 
   const plans = state.plans.filter(p => p.locationId === locationId && ["planned", "partial"].includes(p.status));
   const prepared = state.lots.filter(l => l.kind === "prepared" && usable(l, locationId, new Date().toISOString(), state.locations.find(p => p.id === locationId)?.timeZone)).sort((a, b) => (a.expiresOn || "9999").localeCompare(b.expiresOn || "9999"));
   const ranked = rankRecipes(recipes, state, locationId);
+  const nowIso = new Date().toISOString(), zone = state.locations.find(p => p.id === locationId)?.timeZone;
+  const stockCount = state.lots.filter(l => usable(l, locationId, nowIso, zone)).length;
+  const [expanded, setExpanded] = useState("");
   return <div className="space-y-5">
-    {!plans.length && <p className="text-sm text-stone-600">今日は何を作りますか？ 保存したレシピや、今ある食材から選べます。</p>}
+    {!plans.length && <Sheet title="今日の献立を決める">
+      <ol className="space-y-3 text-sm">
+        <li className="flex items-center justify-between gap-3"><span><strong>1.</strong> 冷蔵庫にあるものを入れる{stockCount ? `（いま${stockCount}件）` : "（まだ0件）"}</span><Link href="/fridge" className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-emerald-800 px-4 text-sm font-bold text-white">在庫を入れる</Link></li>
+        <li><strong>2.</strong> 下の「保存したレシピ」から「献立に追加」を押すか、「レシピを探す」でAIに候補を出してもらう</li>
+        <li><strong>3.</strong> 足りないものは「買い物」に出る。作るときは献立の「この料理を作る」</li>
+      </ol>
+    </Sheet>}
     {plans.map(p => { const c = state.cooking.find(c => c.planId === p.id && !c.completedBy); return c ? <CookingPanel key={c.id} cooking={c} plan={p} state={state} /> : <PlanPanel key={p.id} plan={p} state={state} />; })}
     {!!plans.length && <Link href="/shopping" className="flex min-h-12 items-center justify-between rounded-xl border border-emerald-800 px-4 py-3 font-bold text-emerald-900"><span>足りない食材を確認</span><span aria-hidden="true">›</span></Link>}
     <EatingPlans state={state} />
     {!!prepared.length && <Sheet title="作り置きを次の一皿へ">{prepared.map(l => <PreparedPlan key={l.id} lot={l} cookAt={cookAt} />)}</Sheet>}
-    <details open={!plans.length || !!recipeId} className="rounded-2xl bg-white p-4 ring-1 ring-stone-200"><summary className="min-h-11 cursor-pointer text-lg font-bold text-emerald-900">レシピから献立を追加</summary><div className="space-y-4 pt-3">
+    <Sheet title="保存したレシピから選ぶ">
+      {!ranked.length && <p className="text-sm text-stone-600">保存したレシピはまだありません。下の「レシピを探す・取り込む」で候補を出すか、「新しい料理を自分で追加」で入れられます。</p>}
+      {ranked.slice(0, 6).map(({ recipe: r, reasons }) => <div key={r.id} className="border-t border-stone-100 pt-3 first:border-0 first:pt-0">
+        <div className="flex items-center justify-between gap-3"><button type="button" className="min-h-11 min-w-0 flex-1 text-left" aria-expanded={expanded === r.id} onClick={() => setExpanded(expanded === r.id ? "" : r.id)}><span className="block font-bold">{r.name}</span><span className="block text-xs text-stone-600">{reasons.length ? reasons.join("、") : `${r.servings > 0 ? `${r.servings}人分` : "人数未確認"}${r.cookMinutes ? ` / ${r.cookMinutes}分` : ""}`}</span></button><Button onClick={() => void send("plan.add", { recipe: r, mealId, cookAt: new Date(cookAt).toISOString() })}>献立に追加</Button></div>
+        {expanded === r.id && <div className="mt-2 rounded-lg bg-stone-50 p-3"><ul className="space-y-1 text-sm">{r.ingredients.map((i, n) => <li key={n}>{i.name}：{i.amount || "量不明"}</li>)}</ul><ol className="mt-2 space-y-1 text-sm">{r.steps.map((s, i) => <li key={i}>{i + 1}. {s.text}</li>)}</ol><RecipeEvidence recipe={r} /></div>}
+      </div>)}
+    </Sheet>
+    <details open={!!recipeId} className="rounded-2xl bg-white p-4 ring-1 ring-stone-200"><summary className="min-h-11 cursor-pointer text-lg font-bold text-emerald-900">ほかのレシピ・日時を決めて追加</summary><div className="space-y-4 pt-3">
       <label className="block text-sm">料理<select className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>{ranked.map(({recipe: r}) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
       {!!ranked.find(r => r.recipe.id === selected)?.reasons.length && <p className="text-xs text-stone-600">{ranked.find(r => r.recipe.id === selected)!.reasons.join("、")}</p>}
       {selectedRecipe && <p className="text-sm">{selectedRecipe.servings > 0 ? `${selectedRecipe.servings}人分` : "人数未確認"} / 調理時間 {selectedRecipe.cookMinutes !== undefined ? `${selectedRecipe.cookMinutes}分` : selectedRecipe.tags.cookTime ? `${selectedRecipe.tags.cookTime}分程度（分類の目安）` : "未確認"}{selectedRecipe.sideDishes?.length ? ` / 副菜候補：${selectedRecipe.sideDishes.join("、")}` : ""}</p>}
@@ -198,7 +239,7 @@ function PlanPanel({ plan: p, state }: { plan: Plan; state: KitchenState }) {
   const recipes = useAllRecipes().filter(r => !r.draft);
   return <Sheet title={p.name}>{p.mealId && <p className="text-sm font-bold text-emerald-900">{state.meals?.find(m => m.id === p.mealId)?.name}</p>}<p className="text-sm">{new Date(p.cookAt).toLocaleString("ja-JP")} / {p.status === "partial" ? "一部調理済み" : "まだ作っていません"}</p>
     {!!p.recipe.importEvidence?.missing?.length && <p className="text-sm text-amber-900">確認が必要：{p.recipe.importEvidence.missing.join("、")}</p>}
-    <div className="flex flex-wrap gap-2"><Button onClick={() => void send("cook.start", { planId: p.id })}>この料理を作る</Button><Button secondary onClick={() => void send("plan.skip", { planId: p.id })}>今日は作らない</Button></div>
+    <div className="flex flex-wrap gap-2"><Button onClick={() => void send("cook.start", { planId: p.id })}>この料理を作る</Button><Button secondary onClick={() => void send("plan.skip", { planId: p.id })}>献立から外す</Button></div>
     <Details title={`材料 ${p.demands.length}品・出典を確認`}><ul className="space-y-1 text-sm">{p.demands.map((d, i) => <li key={i}>{d.name}：{showQuantity(d.quantity)}</li>)}</ul><RecipeEvidence recipe={p.recipe} /></Details>
     {p.reviewNeeded && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm">{p.reviewNeeded}</p>}
     {p.status === "planned" && <Details title="料理を差し替える"><form className="space-y-3" onSubmit={async e => { const v = Values(e), recipe = recipes.find(r => r.id === v.recipeId); if (recipe) await send("plan.replace", { planId: p.id, recipe }); }}><label className="block text-sm">新しい料理<select name="recipeId" defaultValue={p.recipe.id} className={inputClass}>{recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label><p className="text-xs">選択した食事の主菜・副菜・汁物をまとめて再確認します。未分類の旧献立は同じ調理日時を基準にします。必要量は直ちに再計算し、手動の買い物は残します。</p><Button type="submit">料理を差し替えて全量を見直す</Button></form></Details>}
@@ -255,7 +296,7 @@ function CookingPanel({ cooking: c, plan: p, state }: { cooking: Cooking; plan: 
 
 function Settings({ state }: { state: KitchenState }) {
   const { locationId, send, deactivate } = useKitchen(), place = state.locations.find(l => l.id === locationId)!;
-  return <div className="space-y-5"><Sheet title="冷蔵庫・保管場所"><p className="text-sm">自宅・実家・旅行先など、在庫を分ける場所です。冷蔵・冷凍・常温は、食材ごとに設定します。</p><form className="space-y-3" onSubmit={async e => { await send("location.rename", Values(e)); }}><Field label="今の場所の名前" name="name" value={place.name} required /><Details title="現地の時刻を設定"><Field label="この場所のタイムゾーン" name="timeZone" value={place.timeZone || "UTC"} /></Details><Button type="submit">名前を保存</Button></form><Details title="＋ 別の場所を追加"><form className="space-y-3" onSubmit={async e => { await send("location.add", Values(e)); }}><Field label="好きな名前" name="name" placeholder="旅行先のキッチン" required /><Details title="現地の時刻を設定"><Field label="タイムゾーン" name="timeZone" value={Intl.DateTimeFormat().resolvedOptions().timeZone} /></Details><Button type="submit">場所を追加</Button></form></Details></Sheet>
+  return <div className="space-y-5"><Sheet title="冷蔵庫・保管場所"><p className="text-sm">場所の切り替え・追加・名前変更・削除は、各画面の上にある「いま使う冷蔵庫・場所」で行えます。ここでは現地の時刻だけ設定します。</p><form className="space-y-3" onSubmit={async e => { await send("location.rename", Values(e)); }}><Field label="今の場所の名前" name="name" value={place.name} required /><Field label="この場所のタイムゾーン" name="timeZone" value={place.timeZone || "UTC"} /><Button type="submit">保存</Button></form></Sheet>
     <Sheet title="この場所の調理道具">{state.equipment.filter(e => e.locationId === locationId).map(e => <div className="flex items-center justify-between gap-2 text-sm" key={e.id}><span>{e.name} / {e.capacity || "容量未確認"}</span><Button secondary onClick={() => void send("equipment.remove", { equipmentId: e.id })}>削除</Button></div>)}<form className="space-y-3" onSubmit={async e => { await send("equipment.add", Values(e)); }}><Field label="道具の名前" name="name" required placeholder="フライパン" /><Field label="容量・サイズ" name="capacity" placeholder="2L・26cm" /><Field label="同時に使える数（口数・個数）" name="slots" type="number" value="1" /><Button type="submit">道具を追加</Button></form></Sheet>
     <Sheet title="献立の好み"><form className="space-y-3" onSubmit={async e => { const v = Values(e); await send("preferences.save", { variety: v.variety === "on", servingNote: v.servingNote, retiredRules: v.retiredRules.split("\n").filter(Boolean) }); }}><label className="flex min-h-11 items-center gap-2 text-sm"><input name="variety" type="checkbox" defaultChecked={state.preferences.variety} />最近の献立と味付け・主食を変える</label><Field label="食べ切れる量・好みのメモ" name="servingNote" value={state.preferences.servingNote} /><label className="block text-sm">今後使わない古い方針（1行ずつ）<textarea name="retiredRules" className={inputClass} defaultValue={state.preferences.retiredRules.join("\n")} /></label><Button type="submit">好みを保存</Button></form><p className="text-xs">個人の量や食習慣は、ほかの利用者の初期設定には反映しません。予定表の外部連携はまだ行いません。</p></Sheet>
     <Sheet title="覚えている包装">{state.packages.filter(p => p.active).map(p => <div key={p.id} className="space-y-2 border-b border-stone-100 pb-3"><p className="text-sm">{p.ingredient}：{showQuantity(p.contents)} / {p.product || "商品未指定"} / {p.store || "店未指定"}</p><Button secondary onClick={() => void send("package.forget", { profileId: p.id })}>この入数を忘れる</Button></div>)}<p className="text-xs">修正は買い物の入数欄で行えます。別の商品・店舗は別々に記憶します。</p></Sheet>
@@ -266,9 +307,9 @@ function Settings({ state }: { state: KitchenState }) {
 function History({ state }: { state: KitchenState }) {
   const { locationId, send } = useKitchen();
   const transactions = state.transactions.filter(t => t.locationId === locationId).slice().reverse();
-  const labels: Record<string, string> = { "shopping.purchase": "購入", "cook.complete": "調理・保存", "lot.discard": "廃棄", "lot.eat": "作り置きを食べた", "eating.complete": "予定から実食を記録", "transaction.undo": "取消", "plan.skip": "外食・作らなかった", "purchase.correct": "購入量の訂正", "lot.add": "在庫登録", "lot.update": "残量・保存先の更新" };
+  const labels: Record<string, string> = { "shopping.purchase": "購入", "cook.complete": "調理・保存", "lot.discard": "廃棄", "lot.eat": "作り置きを食べた", "lot.remove": "在庫から外した（使い切った・無い）", "eating.complete": "予定から実食を記録", "transaction.undo": "取消", "plan.skip": "献立から外した・作らなかった", "purchase.correct": "購入量の訂正", "lot.add": "在庫登録", "lot.update": "残量・保存先の更新", "shopping.remove": "買い物から外した", "location.add": "場所を追加", "location.remove": "場所を削除" };
   return <div className="space-y-5"><Sheet title="実際に行ったこと">{transactions.filter(t => labels[t.type]).map(t => <article key={t.id} className="space-y-2 border-b border-stone-200 pb-3"><h3 className="font-bold">{labels[t.type]}{t.reversedBy ? "（取消済み）" : ""}</h3><p className="text-xs">{new Date(t.at).toLocaleString("ja-JP")}{t.note ? ` / ${t.note}` : ""}</p><p className="text-sm">{t.changes.map(c => `${state.lots.find(l => l.id === c.lotId)?.name} ${showQuantity(c.delta)}`).join("、")}{t.createdLots.map(id => state.lots.find(l => l.id === id)?.name).filter(Boolean).join("、")}</p>
-      {!t.reversedBy && ["shopping.purchase", "cook.complete", "lot.discard", "lot.eat", "eating.complete", "plan.skip"].includes(t.type) && <Button secondary onClick={() => void send("transaction.undo", { transactionId: t.id })}>この操作を取り消す</Button>}
+      {!t.reversedBy && ["shopping.purchase", "cook.complete", "lot.discard", "lot.eat", "lot.remove", "eating.complete", "plan.skip"].includes(t.type) && <Button secondary onClick={() => void send("transaction.undo", { transactionId: t.id })}>この操作を取り消す</Button>}
       {t.type === "shopping.purchase" && !t.reversedBy && <Details title="実購入量を訂正"><form className="space-y-3" onSubmit={async e => { await send("purchase.correct", { ...Values(e), transactionId: t.id }); }}><Field label="実際に買った合計量" name="amount" value={showQuantity(state.shopping.find(r => r.id === t.shoppingId)?.quantity || null)} required /><Button type="submit">購入量を訂正</Button></form></Details>}
       {t.type === "cook.complete" && t.planId && <Details title="次回のために感想を残す"><form className="space-y-3" onSubmit={async e => { await send("feedback.save", { ...Values(e), planId: t.planId, recipeId: state.plans.find(p => p.id === t.planId)!.recipe.id }); }}><Field label="塩気" name="salt" placeholder="少し塩辛かった" /><Field label="量" name="amount" placeholder="副菜を含めると多かった" /><Field label="完食度" name="eaten" placeholder="完食" /><Field label="作り方の感想" name="notes" /><Button type="submit">感想を保存</Button></form></Details>}
     </article>)}</Sheet><Sheet title="次回に使う感想">{state.feedback.filter(f => f.locationId === locationId && f.active).map(f => <div key={f.id} className="space-y-2 text-sm"><p>{[f.salt, f.amount, f.eaten, f.notes].filter(Boolean).join("、")}</p><Button secondary onClick={() => void send("feedback.retire", { feedbackId: f.id })}>今後は使わない</Button></div>)}</Sheet></div>;

@@ -83,7 +83,7 @@ export function requirements(state: KitchenState, locationId: string, planIds?: 
     const shortage = demand.quantity ? { ...demand.quantity, value: rows.reduce((sum, d) => add(sum, d.shortage?.value || zero()), zero()) } : null;
     let ordered: Quantity | null = shortage ? { ...shortage, value: zero() } : null;
     for (const row of state.shopping) {
-      if (row.locationId !== locationId || row.purchasedBy || row.archived || row.ingredient !== demand.ingredient || !row.quantity || !ordered || demand.kind === "prepared") continue;
+      if (row.locationId !== locationId || row.purchasedBy || row.archived || row.removedBy || row.ingredient !== demand.ingredient || !row.quantity || !ordered || demand.kind === "prepared") continue;
       const earliest = active.filter(p => !planIds || planIds.includes(p.id)).map(p => p.cookAt < asOf ? asOf : p.cookAt).sort()[0];
       if (row.availableAt && earliest && row.availableAt > earliest) continue;
       const q = convert(row.quantity, ordered.unit);

@@ -128,6 +128,20 @@ export function execute(state: KitchenState, owner: string, command: KitchenComm
     }
     case "location.add": s.locations.push({ id: id("location"), name: text(p.name, 80), createdAt: now, timeZone: timeZone(p.timeZone) }); break;
     case "location.rename": { const place = s.locations.find(l => l.id === locationId)!; place.name = text(p.name, 80); if (p.timeZone) place.timeZone = timeZone(p.timeZone); break; }
+    case "location.remove": {
+      // Only an empty place can go: stock, plans, shopping and cooking that still live there must be moved or closed first.
+      if (s.locations.length <= 1) throw new KitchenError("最後の場所は削除できません", 409);
+      const blockers = [
+        s.lots.some(l => l.locationId === locationId && l.presence === "ある" && !!l.quantity && positive(l.quantity.value)) ? "在庫" : "",
+        s.plans.some(a => a.locationId === locationId && ["planned", "partial"].includes(a.status)) ? "献立" : "",
+        s.shopping.some(r => r.locationId === locationId && !r.purchasedBy && !r.archived && !r.removedBy) ? "買い物" : "",
+        s.cooking.some(c => c.locationId === locationId && !c.completedBy) ? "調理中の料理" : "",
+      ].filter(Boolean);
+      if (blockers.length) throw new KitchenError(`この場所にはまだ${blockers.join("・")}があります。別の場所へ移すか、削除してから場所を消してください`, 409);
+      const place = s.locations.find(l => l.id === locationId)!;
+      s.locations = s.locations.filter(l => l.id !== locationId); s.equipment = s.equipment.filter(e => e.locationId !== locationId);
+      tx.note = `場所「${place.name}」を削除`; break;
+    }
     case "lot.add": {
       const name = text(p.name), amount = text(p.amount, 100, true), q = amount ? quantity(amount, true) : null;
       const l: Lot = { id: id("lot"), locationId, name, ingredient: ingredientId(name), kind: p.kind === "prepared" ? "prepared" : "raw", quantity: q, originalQuantity: amount, presence: "ある", compartment: compartment(p.compartment), condition: text(p.condition, 100, true) || "未確認", revision: 0, createdAt: now, availableAt: p.availableAt ? instant(p.availableAt) : now, expiresOn: expiry(p.expiresOn), expiryBasis: text(p.expiryBasis, 1000, true) || undefined };
@@ -152,6 +166,12 @@ export function execute(state: KitchenState, owner: string, command: KitchenComm
       if (p.targetLocationId !== undefined) { const target = text(p.targetLocationId); if (!s.locations.some(a => a.id === target)) throw new KitchenError("保存先が利用できません", 403); l.locationId = target; }
       l.revision++; break;
     }
+    case "lot.remove": {
+      // "Used up / not here": the row leaves the usable stock in one tap. Reversible from the history.
+      const l = lot(p.lotId); tx.metadataBefore = [structuredClone(l)];
+      if (l.quantity && positive(l.quantity.value)) change(l, { ...l.quantity, value: neg(l.quantity.value) });
+      l.presence = "ない"; l.revision++; tx.note = text(p.reason, 1000, true) || "削除（使い切った・無い）"; break;
+    }
     case "lot.eat":
     case "lot.discard": { const l = lot(p.lotId), q = quantity(p.amount); if (command.type === "lot.eat" && (l.kind !== "prepared" || l.presence !== "ある")) throw new KitchenError("確認済みの作り置きを選んでください"); change(l, { ...q, value: neg(q.value) }); tx.note = text(p.reason, 1000, true) || (command.type === "lot.eat" ? "食べた" : "廃棄"); break; }
     case "shopping.add": {
@@ -167,10 +187,17 @@ export function execute(state: KitchenState, owner: string, command: KitchenComm
       }
       break;
     }
+    case "shopping.remove": {
+      const row = s.shopping.find(r => r.id === text(p.shoppingId) && r.locationId === locationId);
+      if (!row) throw new KitchenError("買い物項目が見つかりません", 404);
+      if (row.purchasedBy) throw new KitchenError("この項目は購入済みです。履歴から取り消してください", 409);
+      row.removedBy = tx.id; tx.shoppingId = row.id; tx.note = `「${row.name}」を買い物から外した`; break;
+    }
     case "shopping.edit":
     case "shopping.purchase": {
       const row = s.shopping.find(r => r.id === text(p.shoppingId) && r.locationId === locationId);
       if (!row) throw new KitchenError("買い物項目が見つかりません", 404);
+      if (row.removedBy) throw new KitchenError("この項目は買い物から外しています。もう一度追加してください", 409);
       if (row.archived) throw new KitchenError("旧データで完了した買い物です。再購入は新しい項目で登録してください", 409);
       if (row.purchasedBy) throw new KitchenError("この項目は購入済みです。履歴から訂正してください", 409);
       const q = quantity(p.amount); row.quantity = q; row.originalQuantity = text(p.amount, 100);
@@ -295,7 +322,8 @@ export function execute(state: KitchenState, owner: string, command: KitchenComm
     }
     case "transaction.undo": {
       const original = s.transactions.find(t => t.id === text(p.transactionId) && t.locationId === locationId);
-      if (!original || original.reversedBy || !["shopping.purchase", "cook.complete", "lot.discard", "lot.eat", "eating.complete", "plan.skip"].includes(original.type)) throw new KitchenError("この操作は取り消せません", 409);
+      if (!original || original.reversedBy || !["shopping.purchase", "cook.complete", "lot.discard", "lot.eat", "lot.remove", "eating.complete", "plan.skip"].includes(original.type)) throw new KitchenError("この操作は取り消せません", 409);
+      if (original.type === "lot.remove") { const before = original.metadataBefore?.[0], l = s.lots.find(l => l.id === before?.id); if (!before || !l) throw new KitchenError("対象ロットがありません", 409); l.presence = before.presence; l.revision++; }
       if (original.type === "shopping.purchase" && s.transactions.some(t => t.type === "purchase.correct" && t.shoppingId === original.shoppingId)) throw new KitchenError("数量訂正済みです。購入量を0に訂正してください", 409);
       for (const created of original.createdLots) {
         const l = s.lots.find(l => l.id === created);

@@ -28,6 +28,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     const owner = value.state?.owner || value.owner, previousOwner = server.current?.state?.owner || server.current?.owner;
     if (!value.ai && owner === previousOwner) value = { ...value, ai: server.current?.ai };
     if (owner !== previousOwner) { const selected = owner ? localStorage.getItem(`cooksync:kitchen:location:${owner}`) : null; setLocation(selected && value.state?.locations.some(l => l.id === selected) ? selected : "default"); setReview(null); }
+    // A place removed from another screen must not leave the UI pointing at it.
+    else if (value.state) setLocation(current => value.state!.locations.some(l => l.id === current) ? current : value.state!.locations[0]?.id || "default");
     server.current = value;
     try {
       const pending = owner ? loadQueue(localStorage, owner) : []; setQueue(pending);
@@ -66,7 +68,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       const item: PendingOperation = { owner: base.owner, command, at: new Date().toISOString(), sent: false };
       projectQueue(projected, [item]);
       storePending(localStorage, item); accept(server.current!); setReview(null); accepted = true;
-      try { await drain(base.owner); setNotice(({ "shopping.purchase": "買った量を在庫に追加しました。取り消しは履歴からできます。", "shopping.edit": "購入予定を変更しました。", "shopping.add": "買うものを追加しました。", "shopping.recalculate": "献立の不足分を買い物に反映しました。", "lot.add": "在庫を追加しました。", "lot.update": "残量・保存先を更新しました。", "plan.add": "献立に追加しました。", "cook.complete": "調理と残りの保存を記録しました。", "transaction.undo": "操作を取り消しました。" } as Record<string, string>)[type] || "保存しました。"); }
+      try { await drain(base.owner); setNotice(({ "shopping.purchase": "買った量を在庫に追加しました。取り消しは履歴からできます。", "shopping.edit": "購入予定を変更しました。", "shopping.add": "買うものを追加しました。", "shopping.recalculate": "献立の不足分を買い物に反映しました。", "lot.add": "在庫を追加しました。", "lot.update": "残量・保存先を更新しました。", "plan.add": "献立に追加しました。", "cook.complete": "調理と残りの保存を記録しました。", "transaction.undo": "操作を取り消しました。", "lot.remove": "在庫から外しました。戻すときは履歴の「この操作を取り消す」。", "shopping.remove": "買い物から外しました。", "location.add": "場所を追加しました。上の場所から選べます。", "location.rename": "場所の名前を変えました。", "location.remove": "場所を削除しました。", "plan.skip": "献立から外しました。取り消しは履歴からできます。" } as Record<string, string>)[type] || "保存しました。"); }
       catch (e) { setError((e as Error).message); setNotice("この端末に保留しました。表示は保留操作を含みます。実際の保存は再送時に確認します。"); }
     }); return accepted;
   };

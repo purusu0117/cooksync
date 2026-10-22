@@ -14,6 +14,37 @@ function fixture() {
   const cook = (planId: string, extra = {}) => { run("cook.start", { planId }); const c = s.cooking.at(-1)!; run("cook.complete", { cookingId: c.id, ...extra }); return s.transactions.at(-1)!; };
   return { get s() { return s; }, run, stock, plan, cook };
 }
+describe("one-tap removal commands", () => {
+  it("lot.remove takes stock out of use in one step and is reversible from the history", () => {
+    const f = fixture(); const l = f.stock("白菜", "1/4玉");
+    f.run("lot.remove", { lotId: l.id });
+    expect(f.s.lots[0].presence).toBe("ない"); expect(showQuantity(f.s.lots[0].quantity)).toBe("0玉");
+    expect(requirements(f.s, "default", undefined, now)).toHaveLength(0);
+    const tx = f.s.transactions.at(-1)!; expect(tx.type).toBe("lot.remove"); expect(tx.note).toContain("削除");
+    f.run("transaction.undo", { transactionId: tx.id });
+    expect(f.s.lots[0].presence).toBe("ある"); expect(showQuantity(f.s.lots[0].quantity)).toBe("1/4玉");
+    // Unknown quantities can be removed too; nothing is invented.
+    const u = f.stock("豆腐", ""); f.run("lot.remove", { lotId: u.id }); expect(f.s.lots[1].presence).toBe("ない"); expect(f.s.lots[1].quantity).toBeNull();
+  });
+  it("shopping.remove hides an unpurchased row without touching purchases", () => {
+    const f = fixture(); f.run("shopping.add", { name: "にんじん", amount: "2本" }); const row = f.s.shopping[0];
+    f.run("shopping.remove", { shoppingId: row.id });
+    expect(f.s.shopping[0].removedBy).toBeTruthy(); expect(f.s.lots).toHaveLength(0);
+    expect(() => f.run("shopping.purchase", { shoppingId: row.id, amount: "2本" })).toThrow("外して");
+    f.run("shopping.add", { name: "卵", amount: "3個" }); f.run("shopping.purchase", { shoppingId: f.s.shopping[1].id, amount: "3個", compartment: "冷蔵" });
+    expect(() => f.run("shopping.remove", { shoppingId: f.s.shopping[1].id })).toThrow("購入済み");
+  });
+  it("location.remove deletes only an empty place and never the last one", () => {
+    const f = fixture(); expect(() => f.run("location.remove", {})).toThrow("最後の場所");
+    f.run("location.add", { name: "実家" }); const home = f.s.locations[1].id;
+    f.stock("白菜", "1/4玉", {}); f.run("lot.update", { lotId: f.s.lots[0].id, lotRevision: f.s.lots[0].revision, targetLocationId: home });
+    expect(() => f.run("location.remove", {}, home)).toThrow("在庫");
+    f.run("lot.remove", { lotId: f.s.lots[0].id }, home);
+    f.run("location.remove", {}, home);
+    expect(f.s.locations.map(l => l.name)).toEqual(["いつもの場所"]);
+    expect(() => f.run("lot.add", { name: "卵", amount: "1個" }, home)).toThrow("利用できません");
+  });
+});
 describe("quantity and allocation acceptance", () => {
   it("uses an exact prepared serving with a storage note without consuming its raw ingredients", () => {
     const f = fixture(); f.stock("ミートソース", "2食", { kind: "prepared" }); f.stock("肉", "100g");
