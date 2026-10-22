@@ -20,7 +20,55 @@ export interface VideoMeta {
   description: string;
   webpageUrl: string;
   /** どこから取れたか。UIとログで「何を根拠にしたか」を出すために持つ */
-  via: ("oembed" | "watch-page" | "yt-dlp" | "captions" | "frames")[];
+  via: ("oembed" | "watch-page" | "youtube-data-api" | "yt-dlp" | "captions" | "frames")[];
+}
+
+// 公式経路（2026-10-22 確認）:
+//   YouTube Data API v3 videos.list part=snippet → snippet.description（公開動画はAPIキーで可・1ユニット/回・既定1万ユニット/日）
+//   https://developers.google.com/youtube/v3/docs/videos/list
+//   字幕(captions.download)は動画所有者のOAuthが要る＝他人の動画は取れない。
+// watchページのHTML解析は規約上「自動化された手段でのアクセス」に当たり得るため、
+// キーが設定されていればData APIだけを使い、HTML取得は COOKSYNC_VIDEO_WATCH_PAGE=0 で止められる。
+const YOUTUBE_API = "https://www.googleapis.com/youtube/v3/videos";
+
+/** YouTubeの動画ID（watch?v= / youtu.be/ / shorts/ / embed/ / live/）。取れなければ null */
+export function youtubeVideoId(pageUrl: string): string | null {
+  try {
+    const u = new URL(pageUrl);
+    const host = u.hostname.replace(/^www\.|^m\./, "").toLowerCase();
+    const valid = (id: string | null | undefined) => (id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null);
+    if (host === "youtu.be") return valid(u.pathname.split("/")[1]);
+    if (!/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return null;
+    const fromQuery = valid(u.searchParams.get("v"));
+    if (fromQuery) return fromQuery;
+    const m = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{11})(?:[/?]|$)/);
+    return valid(m?.[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** 公式Data APIで概要欄・タイトル・投稿者を取る。キー未設定・失敗時は null（例外にしない） */
+async function fetchYoutubeSnippet(videoId: string, key: string): Promise<{ title: string; channel: string; description: string } | null> {
+  try {
+    const url = `${YOUTUBE_API}?part=snippet&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) { await res.body?.cancel(); return null; }
+    const j = (await res.json()) as { items?: { snippet?: { title?: unknown; channelTitle?: unknown; description?: unknown } }[] };
+    const s = j.items?.[0]?.snippet;
+    if (!s) return null;
+    return {
+      title: typeof s.title === "string" ? s.title : "",
+      channel: typeof s.channelTitle === "string" ? s.channelTitle : "",
+      description: typeof s.description === "string" ? s.description : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function watchPageAllowed(): boolean {
+  return process.env.COOKSYNC_VIDEO_WATCH_PAGE !== "0";
 }
 
 const UA =
@@ -176,9 +224,25 @@ async function fetchDescription(pageUrl: string): Promise<string> {
  */
 export async function fetchVideoMeta(pageUrl: string): Promise<VideoMeta> {
   if (!isSupportedVideoUrl(pageUrl)) throw new Error("対応する公開動画のURLを確認してください");
+  const key = process.env.YOUTUBE_DATA_API_KEY || "";
+  const videoId = key ? youtubeVideoId(pageUrl) : null;
+  if (videoId) {
+    // 公式経路。キーがある間はHTML解析をしない（取れなければ「説明欄なし」として正直に返す）。
+    const [oembed, snippet] = await Promise.all([fetchOEmbed(pageUrl), fetchYoutubeSnippet(videoId, key)]);
+    const via: VideoMeta["via"] = [];
+    if (oembed) via.push("oembed");
+    if (snippet?.description) via.push("youtube-data-api");
+    return {
+      title: snippet?.title || oembed?.title || "",
+      channel: snippet?.channel || oembed?.channel || "",
+      description: snippet?.description ?? "",
+      webpageUrl: pageUrl,
+      via,
+    };
+  }
   const [oembed, description] = await Promise.all([
     fetchOEmbed(pageUrl),
-    fetchDescription(pageUrl),
+    watchPageAllowed() ? fetchDescription(pageUrl) : Promise.resolve(""),
   ]);
   const via: VideoMeta["via"] = [];
   if (oembed) via.push("oembed");

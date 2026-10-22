@@ -34,6 +34,7 @@ import { consume, quotaResponse, refund } from "@/lib/quotaServer";
 
 import { sendPush, resolvePushTarget } from "@/lib/pushServer";
 import { validateImportedRecipe } from "@/lib/kitchen/importValidation";
+import { unavailableUrlVideoMaterials, type UrlVideoMaterial } from "@/lib/kitchen/videoFrames";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -84,6 +85,45 @@ interface Material {
   captions: string;
   frames: string[];
   framesNote: string;
+}
+
+/** 実際に取れた素材だけ。タイトル・投稿者（oEmbed）は素材ではないので含めない。 */
+function obtainedMaterials(m: Material): UrlVideoMaterial[] {
+  return [
+    m.info.description?.trim() ? "description" : "",
+    m.captions.trim() ? "captions" : "",
+    m.frames.length > 0 ? "frames" : "",
+  ].filter((x): x is UrlVideoMaterial => x !== "");
+}
+
+/** 何も取れなかった回。AIは呼ばない（＝費用ゼロ）ので、通常の失敗文言と分けて扱う。 */
+class MaterialUnavailableError extends Error {
+  constructor(m: Material, localFailure: string) {
+    const titleOnly = !!(m.info.title || m.info.channel);
+    super(
+      [
+        localFailure,
+        "この動画の説明欄・字幕・映像のいずれも取得できませんでした。",
+        titleOnly ? "タイトルと投稿者名だけでは読み取りません。" : "",
+        "AIは実行していないため、利用枠は戻しました。",
+      ].filter(Boolean).join(""),
+    );
+    this.name = "MaterialUnavailableError";
+  }
+}
+
+/** ログ・ジョブに残す「何が取れて何が取れなかったか」の1行 */
+function materialDetail(m: Material, extra = ""): string {
+  const obtained = obtainedMaterials(m);
+  return [
+    `via=${m.info.via?.join("+") || "none"}`,
+    `title=${m.info.title ? "yes" : "no"}`,
+    `obtained=${obtained.join("+") || "none"}`,
+    `unavailable=${unavailableUrlVideoMaterials(obtained).join("+") || "none"}`,
+    `frames=${m.frames.length}`,
+    m.framesNote,
+    extra,
+  ].filter(Boolean).join(" ");
 }
 
 function buildPrompt(m: Material): string {
@@ -208,8 +248,9 @@ async function handlePost(request: Request) {
           frames: rich?.frames ?? [],
           framesNote: rich?.framesNote || localFailure || "この環境では映像を取得できません",
         };
-        if (!material.captions.trim() && !material.frames.length && !material.info.description?.trim()) {
-          throw new Error("動画の字幕・説明欄・映像を取得できませんでした");
+        // タイトル・投稿者（oEmbed）だけ取れた回もここに落ちる＝素材としては「取得不能」。
+        if (obtainedMaterials(material).length === 0) {
+          throw new MaterialUnavailableError(material, localFailure);
         }
         await setJob(jobId, {
           status: "running",
@@ -249,7 +290,7 @@ async function handlePost(request: Request) {
             error: localFailure
               ? localFailure
               : "この動画からはレシピを読み取れませんでした。料理動画のURLでお試しください。",
-            detail: `via=${material.info.via?.join("+") || "none"} frames=${material.frames.length} ${material.framesNote}`,
+            detail: materialDetail(material, "ai=ran recipe=null"),
             createdAt: Date.now(),
           });
           return;
@@ -259,7 +300,17 @@ async function handlePost(request: Request) {
         await setJob(jobId, {
           status: "done",
           recipe: checked.recipe,
-          evidence: { kind: "video", obtained: [material.info.description ? "description" : "", material.captions ? "captions" : "", material.frames.length ? "frames" : ""].filter(Boolean), frameCount: material.frames.length, framesNote: material.framesNote, sourceUrl: material.info.webpageUrl, capturedAt: new Date().toISOString(), missing: checked.missing },
+          evidence: {
+            kind: "video",
+            obtained: obtainedMaterials(material),
+            unavailable: unavailableUrlVideoMaterials(obtainedMaterials(material)),
+            frameCount: material.frames.length,
+            framesNote: material.framesNote,
+            via: material.info.via ?? [],
+            sourceUrl: material.info.webpageUrl,
+            capturedAt: new Date().toISOString(),
+            missing: checked.missing,
+          },
           source: {
             title: material.info.title,
             channel: material.info.channel,
@@ -285,10 +336,14 @@ async function handlePost(request: Request) {
         console.error("[import-video] failed (details withheld)");
         // AIが失敗したのに枠だけ減るのは理不尽なので戻す
         await refund(uid, "import", request).catch(() => {});
+        const unavailable = e instanceof MaterialUnavailableError;
         await setJob(jobId, {
           status: "error",
-          error: localFailure || friendlyError(raw),
-          detail: "取得または構造検証に失敗",
+          // 素材ゼロの回は「何が取れなかったか＋AI未実行」をそのまま出す（generic文言に丸めない）
+          error: unavailable ? raw : localFailure || friendlyError(raw),
+          detail: unavailable
+            ? "obtained=none unavailable=description+captions+frames ai=not-run"
+            : "取得または構造検証に失敗",
           createdAt: Date.now(),
         });
       } finally {
