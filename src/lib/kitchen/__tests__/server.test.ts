@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID, createHash } from "node:crypto";
-import { activateKitchen, cancelKitchenOperation, commitKitchen, copyVerifiedDeviceKitchen, exportDigest, readKitchenData } from "../server";
+import { activateKitchen, cancelKitchenOperation, commitKitchen, copyVerifiedDeviceKitchen, deactivateKitchen, exportDigest, readKitchenData } from "../server";
 import { localSetKey } from "../../storeLocal";
 import { createSession, SESSION_COOKIE } from "../../session";
 import { GET, POST } from "../../../app/api/kitchen/route";
@@ -47,6 +47,19 @@ describe("durability, ownership and concurrency", () => {
     await expect(localSetKey(owner, "fridge-app:items:v2", [])).rejects.toThrow("画面を更新");
     await expect(localSetKey(owner, "cooksync:kitchen:v3", {})).rejects.toThrow();
     expect((await readKitchenData(owner)).state?.lots[0].id).toBe("legacy-cabbage");
+  });
+  it("A14/A28 an unused activation can be set aside without deleting anything; a used one cannot", async () => {
+    const owner = randomUUID(); await localSetKey(owner, "fridge-app:items:v2", [{ id: "legacy-cabbage", name: "白菜", quantity: "1/4玉", zone: "野菜" }]);
+    const read = await readKitchenData(owner); const state = await activateKitchen(owner, read.revision);
+    const retired = await POST(new Request("http://localhost/api/kitchen", { method: "POST", headers: { cookie: cookie(owner), "content-type": "application/json" }, body: JSON.stringify({ action: "deactivate", owner }) }));
+    expect(retired.status).toBe(200); const { retiredAs } = await retired.json(); expect(retiredAs).toMatch(/^cooksync:kitchen:v3:retired:/);
+    const after = await readKitchenData(owner); expect(after.state).toBeNull(); expect(after.legacy[retiredAs]).toEqual(state);
+    expect(after.legacy["fridge-app:items:v2"]).toEqual([{ id: "legacy-cabbage", name: "白菜", quantity: "1/4玉", zone: "野菜" }]);
+    await localSetKey(owner, "fridge-app:items:v2", [{ id: "legacy-cabbage", name: "白菜", quantity: "1/8玉", zone: "野菜" }]);
+    const again = await activateKitchen(owner, after.revision + 1); expect(again.lots[0].originalQuantity).toBe("1/8玉");
+    await commitKitchen(owner, { id: randomUUID(), locationId: "default", expectedRevision: 0, type: "lot.add", payload: { name: "にんじん", amount: "3本", compartment: "冷蔵" } });
+    await expect(deactivateKitchen(owner)).rejects.toThrow("自動では戻せません");
+    expect((await readKitchenData(owner)).state?.lots).toHaveLength(2);
   });
   it("A12 persistent same-ID retries and concurrent commits apply once", async () => {
     const owner = randomUUID(), state = await activateKitchen(owner, 0);

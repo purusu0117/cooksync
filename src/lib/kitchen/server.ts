@@ -49,6 +49,35 @@ export async function activateKitchen(owner: string, expectedLegacyRevision: num
   if (!await save(owner, current.revision, state)) throw new KitchenError("保存中に更新がありました。内容を読み直してください", 409);
   return state;
 }
+const RETIRE = `
+local current = tonumber(redis.call('HGET', KEYS[1], '__rev') or '0')
+if current ~= tonumber(ARGV[1]) then return 0 end
+local existing = redis.call('HGET', KEYS[1], ARGV[2])
+if not existing or existing ~= ARGV[4] then return 0 end
+redis.call('HSET', KEYS[1], ARGV[3], existing, ARGV[2], 'null', '__rev', current + 1)
+return 1
+`;
+/**
+ * Undo an activation that has not been used yet: the new state is moved aside (never deleted) and the legacy
+ * screens take over again. Refused as soon as any transaction, device copy or revision exists, so recorded
+ * purchases and cooking are never dropped. Legacy keys were never modified by activation, so nothing is restored.
+ */
+export async function deactivateKitchen(owner: string): Promise<{ retiredAs: string }> {
+  const current = await readKitchenData(owner), state = current.state;
+  if (!state) throw new KitchenError("新しい在庫管理はまだ開始していません", 409);
+  if (state.revision !== 0 || state.transactions.length || state.migration.signedDeviceCopy) throw new KitchenError("すでに購入・調理などを記録しているため、自動では戻せません。バックアップを保存して履歴を確認してください", 409);
+  const retiredAs = `${KITCHEN_KEY}:retired:${new Date().toISOString()}`;
+  if (redis) {
+    const encoded = JSON.stringify(state);
+    if (Number(await redis.eval(RETIRE, [userKey(owner)], [current.revision, KITCHEN_KEY, retiredAs, encoded])) !== 1) throw new KitchenError("保存中に更新がありました。内容を読み直してください", 409);
+  } else {
+    const kept = await localSetKey(owner, retiredAs, state, { expectRev: current.revision, kitchenWrite: true });
+    if (!kept.ok) throw new KitchenError("保存中に更新がありました。内容を読み直してください", 409);
+    const cleared = await localSetKey(owner, KITCHEN_KEY, null, { expectRev: kept.rev, kitchenWrite: true });
+    if (!cleared.ok) throw new KitchenError("保存中に更新がありました。内容を読み直してください", 409);
+  }
+  return { retiredAs };
+}
 export async function commitKitchen(owner: string, command: ReturnType<typeof decodeCommand>): Promise<KitchenState> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = await readKitchenData(owner);
