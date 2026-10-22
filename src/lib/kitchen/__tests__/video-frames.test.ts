@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { validateVideoManifest, videoContainerError, videoEvidenceLabel } from "../videoFrames";
+import { unavailableUrlVideoMaterials, urlVideoEvidenceLabel, validateVideoManifest, videoContainerError, videoEvidenceLabel } from "../videoFrames";
 const valid = { version: 1, duration: 10, timestamps: [0.5, 3.5, 6.5, 9.5], sourceSha256: "a".repeat(64) };
 it("accepts only bounded, chronological frame metadata and strips untrusted extra claims", () => {
   expect(validateVideoManifest({ ...valid, audio: "取得済み" }, 4)).toEqual(valid);
@@ -21,4 +21,17 @@ it("preserves sampled-only evidence after saving without claiming audio or whole
   expect(videoEvidenceLabel(evidence)).toContain("音声・字幕は未取得");
   expect(videoEvidenceLabel({ kind: "photo" })).toBeNull();
   expect(videoEvidenceLabel({ ...evidence, video: {} })).toContain("確認できません");
+});
+it("labels URL imports by what was actually fetched and never claims unfetched video, audio or captions", () => {
+  expect(urlVideoEvidenceLabel(["description"])).toBe("説明欄だけを読み取りました。映像・音声・字幕は未取得です。");
+  expect(urlVideoEvidenceLabel(["captions"])).toBe("字幕だけを読み取りました。説明欄・映像は未取得です。");
+  expect(urlVideoEvidenceLabel(["description", "captions"])).toBe("説明欄と字幕を読み取りました。映像は未取得です。");
+  expect(urlVideoEvidenceLabel(["description", "captions", "frames"], 16)).toBe("説明欄と字幕と映像のコマ16枚を読み取りました。動画全編は未確認です。");
+  expect(urlVideoEvidenceLabel(["frames"], 8)).toBe("映像のコマ8枚だけを読み取りました。説明欄・音声・字幕は未取得です。動画全編は未確認です。");
+  expect(urlVideoEvidenceLabel([])).toBe("説明欄・字幕・映像のいずれも取得できていません。");
+  expect(unavailableUrlVideoMaterials(["captions"])).toEqual(["description", "frames"]);
+  // The route's done-job evidence (title/channel live in source, not here) renders through the same entry point.
+  expect(videoEvidenceLabel({ kind: "video", obtained: ["description"], unavailable: ["captions", "frames"], frameCount: 0 })).toContain("説明欄だけ");
+  expect(videoEvidenceLabel({ kind: "video", obtained: ["description", "frames"], frameCount: 4 })).toBe("説明欄と映像のコマ4枚を読み取りました。音声・字幕は未取得です。動画全編は未確認です。");
+  expect(videoEvidenceLabel({ kind: "video", obtained: ["something-else"] })).toBeNull();
 });

@@ -63,6 +63,7 @@ vi.mock("@/lib/videoMeta", () => ({
 }));
 
 import { GET, POST } from "../route";
+import { videoEvidenceLabel } from "@/lib/kitchen/videoFrames";
 
 const URL_OK = "https://www.youtube.com/watch?v=x";
 
@@ -94,6 +95,49 @@ describe("POST /api/import-video", () => {
     const job = await runImport();
     expect(job.status).toBe("error");
     expect(h.askClaudeForJson).not.toHaveBeenCalled();
+  });
+
+  // oEmbed でタイトル・投稿者だけ取れた回（TikTok/Instagramで起きる）は素材ゼロ＝取得不能。
+  // タイトルを素材扱いしてAIに“それらしいレシピ”を作らせない。
+  it("タイトル・投稿者だけ（説明欄が空白）でも取得不能＝何が無いかとAI未実行を伝え、枠を戻す", async () => {
+    h.description = " \t ";
+    const job = await runImport();
+    expect(job.status).toBe("error");
+    expect(h.askClaudeForJson).not.toHaveBeenCalled();
+    expect(String(job.error)).toContain("説明欄・字幕・映像のいずれも取得できませんでした");
+    expect(String(job.error)).toContain("タイトルと投稿者名だけでは読み取りません");
+    expect(String(job.error)).toContain("AIは実行していない");
+    expect(String(job.detail)).toBe("obtained=none unavailable=description+captions+frames ai=not-run");
+    expect(h.refund).toHaveBeenCalledWith("u-test", "import", expect.anything());
+  });
+
+  it("説明欄だけの回：AIには「映像は見ていない・字幕なし」と渡し、done の evidence とラベルも「説明欄だけ」になる", async () => {
+    h.askClaudeForJson.mockResolvedValue({
+      recipe: {
+        name: "肉じゃが",
+        ingredients: [{ name: "じゃがいも", amount: "3個" }],
+        steps: [{ title: "下準備", text: "じゃがいもを切る" }],
+      },
+      confidence: "high",
+    });
+
+    const job = await runImport();
+
+    const prompt = String(h.askClaudeForJson.mock.calls[0][0]);
+    expect(prompt).toContain(h.description);
+    expect(prompt).toContain("■ 映像: 見ていません");
+    expect(prompt).toContain("■ 字幕: 取得できません");
+
+    expect(job.status).toBe("done");
+    const evidence = job.evidence as { kind: string; obtained: string[]; unavailable: string[]; frameCount: number };
+    expect(evidence.kind).toBe("video");
+    expect(evidence.obtained).toEqual(["description"]);
+    expect(evidence.unavailable).toEqual(["captions", "frames"]);
+    expect(evidence.frameCount).toBe(0);
+    // クライアントはジョブ本体をそのまま ImportedRecipePreview に渡す＝このラベルが結果カードに出る
+    expect(videoEvidenceLabel(job.evidence as Record<string, unknown>)).toBe(
+      "説明欄だけを読み取りました。映像・音声・字幕は未取得です。",
+    );
   });
   it("recipe:null（料理と無関係な動画）は error にして枠も戻す＝ホーム画面が落ちない", async () => {
     h.askClaudeForJson.mockResolvedValue({ recipe: null, confidence: "low" });
